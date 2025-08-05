@@ -317,6 +317,10 @@
       ctx.strokeRect(x - width/2, y, width, height);
     }
 
+    // --- Correction ici ---
+    let lastShootTime = 0;
+    const SHOOT_INTERVAL = 500; // doit être égal à celui du serveur
+
     function update(deltaTime) {
       if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
       let player = playersHealth[myId];
@@ -330,20 +334,19 @@
         socket.emit('playerMovement', { x: newX, y: newY });
       }
       if (mouseDown) {
-        if (!shootBlocked) {
-          shootBlocked = true;
+        const now = Date.now();
+        if (now - lastShootTime >= SHOOT_INTERVAL) {
+          lastShootTime = now;
           const mouseWorldX = cameraX + mousePos.x;
           const mouseWorldY = cameraY + mousePos.y;
           socket.emit('shoot', {
             targetX: mouseWorldX,
             targetY: mouseWorldY
           });
-          setTimeout(() => { shootBlocked = false; }, 500);
         }
       }
     }
-
-    let shootBlocked = false;
+    // --- Fin correction ---
 
     function updateCamera() {
       if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
