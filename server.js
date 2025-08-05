@@ -35,7 +35,6 @@ const MAX_PLAYERS = 8;
 const LOBBY_TIME = 30 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 150;
 
-// Système de parties multiples
 let activeGames = [];
 let nextGameId = 1;
 
@@ -44,7 +43,6 @@ function getBotPseudo(i) {
   return `[BOT${i}]`;
 }
 
-// Pour savoir si un id est un bot (côté serveur)
 function isBotId(id) {
   return typeof id === "string" && id.startsWith("BOT-");
 }
@@ -59,7 +57,7 @@ function createNewGame() {
       timer: null,
     },
     players: {},
-    bots: [], // liste d'ids bots (pour gestion)
+    bots: [],
     zombies: {},
     bullets: {},
     currentRound: 1,
@@ -68,6 +66,7 @@ function createNewGame() {
     map: null,
     spawnInterval: null,
     spawningActive: false,
+    playerInputs: {}, // <--- nouveau: stocke les directions joueurs (serveur = autorité)
   };
   game.map = createEmptyMap(MAP_ROWS, MAP_COLS);
   placeObstacles(game.map, OBSTACLE_COUNT);
@@ -85,6 +84,7 @@ const socketToGame = {};
 
 const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
+const PLAYER_SPEED = 300; // pixels/seconde (pour tous, bots et joueurs, à ajuster si besoin !)
 
 function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus=0) {
   const dx = ax - bx;
@@ -92,7 +92,7 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus=0) {
   return Math.sqrt(dx * dx + dy * dy) < (aradius + bradius + bonus);
 }
 
-// Spawner joueur ou bot autour du centre
+// Spawn tous joueurs/bots au centre
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
   const centerY = (MAP_ROWS / 2) * TILE_SIZE;
@@ -121,97 +121,61 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     game.players[sid] = {
       x: spawnX, y: spawnY,
       lastShot: 0, alive: true, health: 100, kills: 0, pseudo,
-      isBot: isBotId(sid), // PATCH: identifie si c'est un bot
+      isBot: isBotId(sid),
       botBrain: isBotId(sid) ? {
         aimTarget: null, movingBack: false, moveDir: {x:0,y:0}
       } : null
     };
+    if (!isBotId(sid)) {
+      game.playerInputs[sid] = { x: 0, y: 0 }; // direction de base neutre
+    }
   }
 }
 
-function spawnZombieOnBorder(game, hp = 10, speed = 40) {
-  let spawnX, spawnY, border, tries = 0;
-  do {
-    border = Math.floor(Math.random() * 4);
-    if (border === 0) {
-      spawnY = TILE_SIZE + TILE_SIZE / 2;
-      spawnX = Math.floor(Math.random() * (MAP_COLS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
-    } else if (border === 1) {
-      spawnY = (MAP_ROWS - 2) * TILE_SIZE + TILE_SIZE / 2;
-      spawnX = Math.floor(Math.random() * (MAP_COLS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
-    } else if (border === 2) {
-      spawnX = TILE_SIZE + TILE_SIZE / 2;
-      spawnY = Math.floor(Math.random() * (MAP_ROWS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
-    } else {
-      spawnX = (MAP_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
-      spawnY = Math.floor(Math.random() * (MAP_ROWS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
+// --- IA BOT "EVITE MUR" ---
+function getNextBotDirection(game, bot) {
+  // Dirige vers le zombie le plus proche
+  let closestZombie = null, closestDist = Infinity;
+  for (const zid in game.zombies) {
+    const z = game.zombies[zid];
+    const dx = z.x - bot.x;
+    const dy = z.y - bot.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestZombie = z;
     }
-    tries++;
-    if (tries > 50) break;
-  } while (isCollision(game.map, spawnX, spawnY));
-  return { x: spawnX, y: spawnY, hp: hp, lastAttack: 0, speed: speed };
-}
+  }
+  if (!closestZombie) return { x: 0, y: 0 };
 
-// Pour le pathfinding bots (zombie ou cible)
-function findPath(game, startX, startY, endX, endY) {
-  const openSet = [];
-  const closedSet = new Set();
-  const cameFrom = new Map();
+  let angle = Math.atan2(closestZombie.y - bot.y, closestZombie.x - bot.x);
 
-  function nodeKey(x, y) { return `${x},${y}`; }
-  function heuristic(x1, y1, x2, y2) { return Math.abs(x1 - x2) + Math.abs(y1 - y2); }
+  // Si trop près (<60px), recule !
+  let moveBack = closestDist < 60;
+  let dir = moveBack ? -1 : 1;
+  let dx = Math.cos(angle) * dir;
+  let dy = Math.sin(angle) * dir;
 
-  const startNode = { x: Math.floor(startX / TILE_SIZE), y: Math.floor(startY / TILE_SIZE), g: 0 };
-  startNode.f = heuristic(startNode.x, startNode.y, Math.floor(endX / TILE_SIZE), Math.floor(endY / TILE_SIZE));
-  openSet.push(startNode);
-
-  const goalX = Math.floor(endX / TILE_SIZE);
-  const goalY = Math.floor(endY / TILE_SIZE);
-
-  while (openSet.length > 0) {
-    openSet.sort((a, b) => a.f - b.f);
-    const current = openSet.shift();
-    if (current.x === goalX && current.y === goalY) {
-      const path = [];
-      let cur = current;
-      while (cur) {
-        path.unshift({ x: cur.x, y: cur.y });
-        cur = cameFrom.get(nodeKey(cur.x, cur.y));
-      }
-      return path;
-    }
-    closedSet.add(nodeKey(current.x, current.y));
-    const neighbors = [
-      { x: current.x + 1, y: current.y },
-      { x: current.x - 1, y: current.y },
-      { x: current.x, y: current.y + 1 },
-      { x: current.x, y: current.y - 1 },
-    ];
-    for (const n of neighbors) {
-      if (
-        n.x < 0 || n.x >= MAP_COLS ||
-        n.y < 0 || n.y >= MAP_ROWS ||
-        game.map[n.y][n.x] === 1 ||
-        closedSet.has(nodeKey(n.x, n.y))
-      ) {
-        continue;
-      }
-      const tentativeG = current.g + 1;
-      const existingNode = openSet.find(node => node.x === n.x && node.y === n.y);
-      if (!existingNode || tentativeG < existingNode.g) {
-        cameFrom.set(nodeKey(n.x, n.y), current);
-        const f = tentativeG + heuristic(n.x, n.y, goalX, goalY);
-        if (existingNode) {
-          existingNode.g = tentativeG;
-          existingNode.f = f;
-        } else {
-          openSet.push({ x: n.x, y: n.y, g: tentativeG, f });
-        }
+  // Anticipe collision
+  let futureX = bot.x + dx * PLAYER_SPEED * 0.07;
+  let futureY = bot.y + dy * PLAYER_SPEED * 0.07;
+  if (isCollision(game.map, futureX, futureY)) {
+    // Si collision : essaye de tourner d’un côté
+    for (let da = -Math.PI/2; da<=Math.PI/2; da+=Math.PI/8) {
+      let tryAngle = angle + da;
+      let tx = bot.x + Math.cos(tryAngle) * PLAYER_SPEED * 0.07;
+      let ty = bot.y + Math.sin(tryAngle) * PLAYER_SPEED * 0.07;
+      if (!isCollision(game.map, tx, ty)) {
+        dx = Math.cos(tryAngle) * dir;
+        dy = Math.sin(tryAngle) * dir;
+        break;
       }
     }
   }
-  return null;
+  return { x: dx, y: dy };
 }
+
+// Pathfinding si besoin pour améliorer encore l'IA (optionnel)
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
@@ -266,7 +230,6 @@ io.on('connection', socket => {
 
   socket.on('setPseudoAndReady', (pseudo) => {
     pseudo = (pseudo || '').trim().substring(0, 15);
-    // PATCH : bloque pseudo interdit
     if (!isValidPseudo(pseudo)) {
       socket.emit('pseudoInvalid');
       return;
@@ -285,43 +248,34 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     delete game.lobby.players[socket.id];
     delete game.players[socket.id];
+    delete game.playerInputs[socket.id];
     io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
     broadcastLobby(game);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
   });
 
-  socket.on('playerMovement', position => {
+  // PATCH : Réception des directions
+  socket.on('playerInput', (dir) => {
+    // dir: { x: -1..1, y: -1..1 }
     if (!game.lobby.started) return;
-    const player = game.players[socket.id];
-    if (player && player.alive) {
-      const oldX = player.x, oldY = player.y;
-      if (isCollision(game.map, position.x, position.y)) return;
-      if (isDiagonalBlocked(game.map, oldX, oldY, position.x, position.y)) return;
-      // PATCH : plus de collision entre joueurs
-      // (on garde collision avec zombies !)
-      for (const zid in game.zombies) {
-        const z = game.zombies[zid];
-        if (entitiesCollide(position.x, position.y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS)) return;
-      }
-      player.x = position.x;
-      player.y = position.y;
-      io.to('lobby' + game.id).emit('playerMoved', { id: socket.id, x: position.x, y: position.y });
-      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-    }
+    if (!game.playerInputs[socket.id]) return;
+    game.playerInputs[socket.id] = { x: dir.x, y: dir.y };
   });
 
-  socket.on('shoot', (data) => {
+  // PATCH : le tir maintenant, c'est juste un "ordre" de tir (direction visée), géré côté serveur
+  socket.on('playerShoot', (dir) => {
     if (!game.lobby.started) return;
     const player = game.players[socket.id];
     if (!player || !player.alive) return;
     const now = Date.now();
     if (now - player.lastShot < SHOOT_INTERVAL) return;
     player.lastShot = now;
-    const dx = data.targetX - player.x;
-    const dy = data.targetY - player.y;
+
+    const dx = dir.x;
+    const dy = dir.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 1) return;
-    const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+    if (dist < 0.1) return;
+    const bulletId = `${socket.id}_${now}_${Math.floor(Math.random() * 100000)}`;
     game.bullets[bulletId] = {
       id: bulletId,
       owner: socket.id,
@@ -352,6 +306,7 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
   });
 });
+
 function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
@@ -360,11 +315,7 @@ function getPlayersHealthState(game) {
   }
   return obj;
 }
-
-const zombieAttackCooldown = 350;
-const lastZombieAttackPerGame = {};
-
-// PATCH : Ajout des bots au lancement de partie, avec IA qui cible uniquement les zombies !
+// Lancement de partie avec bots pour compléter
 function launchGame(game, readyPlayersArr = null) {
   Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
@@ -373,6 +324,8 @@ function launchGame(game, readyPlayersArr = null) {
   game.totalZombiesToSpawn = 50;
   game.zombiesSpawnedThisWave = 0;
   game.spawningActive = false;
+  game.bots = [];
+  game.playerInputs = {};
 
   if (readyPlayersArr === null) {
     readyPlayersArr = Object.entries(game.lobby.players).filter(([sid, p]) => p.ready);
@@ -384,16 +337,14 @@ function launchGame(game, readyPlayersArr = null) {
     pseudosArr.push(pseudo);
     socketsArr.push(sid);
   }
-  // PATCH: Ajout de bots pour compléter à MAX_PLAYERS
+  // Ajout de bots pour compléter à MAX_PLAYERS
   const botsNeeded = Math.max(0, MAX_PLAYERS - pseudosArr.length);
-  game.bots = []; // stocker les ids bots pour les faire jouer en IA
   for (let i = 0; i < botsNeeded; i++) {
     const botId = "BOT-" + (i+1);
     game.bots.push(botId);
     pseudosArr.push(getBotPseudo(i+1));
     socketsArr.push(botId);
   }
-  // Spawn TOUS les joueurs (réels + bots) sur la map
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
 
   io.to('lobby' + game.id).emit('gameStarted', { map: game.map, players: game.players, round: game.currentRound });
@@ -404,7 +355,7 @@ function launchGame(game, readyPlayersArr = null) {
   console.log(`==== Partie lancée (#${game.id}) | ${pseudosArr.length} joueurs/bots ====`);
 }
 
-// PATCH: Fin de partie (partie terminée = tous morts)
+// Fin de partie (tous morts)
 function endGame(game) {
   // Cherche la vague atteinte
   const waveReached = game.currentRound;
@@ -412,151 +363,98 @@ function endGame(game) {
   console.log(`---- Partie #${game.id} terminée | vague atteinte : ${waveReached} ----`);
 }
 
-// PATCH : IA bots côté serveur, appelée dans gameLoop
+// IA bots : direction, évite murs
 function botsThink(game, deltaTime) {
   for (const botId of (game.bots || [])) {
     const bot = game.players[botId];
     if (!bot || !bot.alive) continue;
 
-    // Trouver le zombie le plus proche
-    let closestZombie = null, closestDist = Infinity, zid = null;
-    for (const id in game.zombies) {
-      const z = game.zombies[id];
+    // Calcul direction
+    let dir = getNextBotDirection(game, bot);
+    // Déplacement
+    if (Math.abs(dir.x) > 0.01 || Math.abs(dir.y) > 0.01) {
+      let len = Math.sqrt(dir.x * dir.x + dir.y * dir.y);
+      bot.x += (dir.x / (len || 1)) * PLAYER_SPEED * deltaTime;
+      bot.y += (dir.y / (len || 1)) * PLAYER_SPEED * deltaTime;
+      // Collision map (empêche de traverser)
+      if (isCollision(game.map, bot.x, bot.y)) {
+        // recule
+        bot.x -= (dir.x / (len || 1)) * PLAYER_SPEED * deltaTime;
+        bot.y -= (dir.y / (len || 1)) * PLAYER_SPEED * deltaTime;
+      }
+    }
+
+    // Tirer sur zombie si ligne de vue
+    let closestZombie = null, closestDist = Infinity;
+    for (const zid in game.zombies) {
+      const z = game.zombies[zid];
       const dx = z.x - bot.x;
       const dy = z.y - bot.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
       if (dist < closestDist) {
         closestDist = dist;
         closestZombie = z;
-        zid = id;
       }
     }
-    if (!closestZombie) continue; // rien à faire si pas de zombies
-
-    // Comportement : s'approche ou fuit si trop proche
-    let moveX = bot.x, moveY = bot.y;
-    let angle = Math.atan2(closestZombie.y - bot.y, closestZombie.x - bot.x);
-    const speed = 60; // Vitesse bot joueur
-
-    // Si trop près du zombie (<60px), recule
-    if (closestDist < 60) {
-      moveX -= Math.cos(angle) * speed * deltaTime;
-      moveY -= Math.sin(angle) * speed * deltaTime;
-    } else {
-      // Sinon avance vers le zombie
-      moveX += Math.cos(angle) * speed * deltaTime;
-      moveY += Math.sin(angle) * speed * deltaTime;
+    if (closestZombie) {
+      let canShoot = true;
+      const steps = Math.ceil(closestDist / 8);
+      for (let s = 1; s < steps; s++) {
+        let tx = bot.x + (closestZombie.x - bot.x) * (s / steps);
+        let ty = bot.y + (closestZombie.y - bot.y) * (s / steps);
+        if (isCollision(game.map, tx, ty)) {
+          canShoot = false;
+          break;
+        }
+      }
+      // Vérifie cooldown
+      const now = Date.now();
+      if (canShoot && now - bot.lastShot >= SHOOT_INTERVAL) {
+        bot.lastShot = now;
+        const dx = closestZombie.x - bot.x;
+        const dy = closestZombie.y - bot.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist > 1) {
+          const bulletId = `${botId}_${now}_${Math.floor(Math.random() * 100000)}`;
+          game.bullets[bulletId] = {
+            id: bulletId,
+            owner: botId,
+            x: bot.x,
+            y: bot.y,
+            dx: dx / dist,
+            dy: dy / dist,
+            createdAt: now
+          };
+        }
+      }
     }
+  }
+}
+
+// --- DÉPLACEMENT SERVEUR POUR TOUS ---
+function movePlayers(game, deltaTime) {
+  for (const pid in game.players) {
+    const p = game.players[pid];
+    if (!p.alive) continue;
+    // BOTS : déplacés direct, déjà fait dans botsThink
+    if (p.isBot) continue;
+    // Joueurs humains : déplacer en fonction de la direction envoyée (game.playerInputs)
+    let input = game.playerInputs[pid];
+    if (!input) continue;
+    let dirX = input.x, dirY = input.y;
+    if (Math.abs(dirX) < 0.01 && Math.abs(dirY) < 0.01) continue;
+    let len = Math.sqrt(dirX * dirX + dirY * dirY);
+    let newX = p.x + (dirX / (len || 1)) * PLAYER_SPEED * deltaTime;
+    let newY = p.y + (dirY / (len || 1)) * PLAYER_SPEED * deltaTime;
     // Collision map
-    if (!isCollision(game.map, moveX, moveY)) {
-      bot.x = moveX;
-      bot.y = moveY;
-    }
-
-    // Tirer SEULEMENT si zombie dans la ligne de vue (pas de mur entre bot et zombie)
-    let canShoot = true;
-    const steps = Math.ceil(closestDist / 8);
-    for (let s = 1; s < steps; s++) {
-      let tx = bot.x + (closestZombie.x - bot.x) * (s / steps);
-      let ty = bot.y + (closestZombie.y - bot.y) * (s / steps);
-      if (isCollision(game.map, tx, ty)) {
-        canShoot = false;
-        break;
-      }
-    }
-    // Vérifie cooldown
-    const now = Date.now();
-    if (canShoot && now - bot.lastShot >= SHOOT_INTERVAL) {
-      bot.lastShot = now;
-      // Le bot "tire" sur le zombie
-      const dx = closestZombie.x - bot.x;
-      const dy = closestZombie.y - bot.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist > 1) {
-        const bulletId = `${botId}_${now}_${Math.floor(Math.random() * 100000)}`;
-        game.bullets[bulletId] = {
-          id: bulletId,
-          owner: botId,
-          x: bot.x,
-          y: bot.y,
-          dx: dx / dist,
-          dy: dy / dist,
-          createdAt: now
-        };
-      }
+    if (!isCollision(game.map, newX, newY)) {
+      p.x = newX;
+      p.y = newY;
     }
   }
 }
-function spawnZombies(game, count) {
-  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
-  if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) return;
-
-  const hp = 10 + (game.currentRound - 1);
-  const baseSpeed = 40;
-  const speedIncreasePercent = 0.10;
-  const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
-
-  let spawnedCount = 0;
-  for (let i = 0; i < count; i++) {
-    if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) break;
-    if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) break;
-
-    const z = spawnZombieOnBorder(game, hp, speed);
-    let tries = 0;
-    let ok = false;
-    while (tries < 20) {
-      ok = true;
-      if (isCollision(game.map, z.x, z.y)) {
-        ok = false;
-        Object.assign(z, spawnZombieOnBorder(game, hp, speed));
-      }
-      if (ok) break;
-      tries++;
-    }
-    const id = `zombie${Date.now()}_${Math.floor(Math.random()*1000000)}`;
-    game.zombies[id] = z;
-    game.zombiesSpawnedThisWave++;
-    spawnedCount++;
-  }
-  // PATCH : plus de log de spawn de zombies
-}
-
-function checkWaveEnd(game) {
-  // Fin de partie si tous les joueurs ET bots sont morts !
-  const allDead = Object.values(game.players).every(p => !p.alive);
-  if (allDead) {
-    endGame(game);
-    // On reset la partie dans le lobby
-    game.lobby.started = false;
-    return;
-  }
-  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && Object.keys(game.zombies).length === 0) {
-    game.currentRound++;
-    game.zombiesSpawnedThisWave = 0;
-    game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
-    io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
-    io.to('lobby' + game.id).emit('currentRound', game.currentRound);  // <-- Important !
-    console.log(`Starting wave ${game.currentRound}, total zombies to spawn: ${game.totalZombiesToSpawn}`);
-  }
-}
-
-function startSpawning(game) {
-  if (game.spawnInterval) clearInterval(game.spawnInterval);
-  game.spawningActive = true;
-  game.spawnInterval = setInterval(() => {
-    if (!game.spawningActive) return;
-    spawnZombies(game, 1);
-    checkWaveEnd(game);
-  }, 200);
-}
-
-function stopSpawning(game) {
-  game.spawningActive = false;
-  if (game.spawnInterval) {
-    clearInterval(game.spawnInterval);
-    game.spawnInterval = null;
-  }
-}
+const zombieAttackCooldown = 350;
+const lastZombieAttackPerGame = {};
 
 function moveZombies(game, deltaTime) {
   const now = Date.now();
@@ -585,13 +483,17 @@ function moveZombies(game, deltaTime) {
         if (closestPlayer.health <= 0) {
           closestPlayer.health = 0;
           closestPlayer.alive = false;
-          io.to(closestPid).emit('youDied', {
-            kills: closestPlayer.kills,
-            round: game.currentRound
-          });
+          if (!closestPlayer.isBot) {
+            io.to(closestPid).emit('youDied', {
+              kills: closestPlayer.kills,
+              round: game.currentRound
+            });
+          }
           io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
         }
-        io.to(closestPid).emit('healthUpdate', closestPlayer.health);
+        if (!closestPlayer.isBot) {
+          io.to(closestPid).emit('healthUpdate', closestPlayer.health);
+        }
         io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
       }
       nextPos[id] = { x: z.x, y: z.y };
@@ -618,6 +520,7 @@ function moveZombies(game, deltaTime) {
         ny += (dy / dist) * speed * deltaTime;
       }
     } else {
+      // pathfinding
       const path = findPath(game, z.x, z.y, closestPlayer.x, closestPlayer.y);
       if (path && path.length > 1) {
         const nextNode = path[1];
@@ -637,7 +540,6 @@ function moveZombies(game, deltaTime) {
   for (const [id, pos] of Object.entries(nextPos)) {
     let collide = false;
     if (isCollision(game.map, pos.x, pos.y)) continue;
-    // PATCH : plus de collision avec les autres joueurs (déjà retiré)
     for (const pid in game.players) {
       const p = game.players[pid];
       if (p.alive && entitiesCollide(pos.x, pos.y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS)) {
@@ -672,7 +574,9 @@ function moveBullets(game, deltaTime) {
         if (z.hp <= 0) {
           if (game.players[bullet.owner]) {
             game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
-            io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+            if (!game.players[bullet.owner].isBot) {
+              io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+            }
           }
           delete game.zombies[zid];
         }
@@ -683,12 +587,108 @@ function moveBullets(game, deltaTime) {
   }
 }
 
+function spawnZombieOnBorder(game, hp = 10, speed = 40) {
+  let spawnX, spawnY, border, tries = 0;
+  do {
+    border = Math.floor(Math.random() * 4);
+    if (border === 0) {
+      spawnY = TILE_SIZE + TILE_SIZE / 2;
+      spawnX = Math.floor(Math.random() * (MAP_COLS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
+    } else if (border === 1) {
+      spawnY = (MAP_ROWS - 2) * TILE_SIZE + TILE_SIZE / 2;
+      spawnX = Math.floor(Math.random() * (MAP_COLS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
+    } else if (border === 2) {
+      spawnX = TILE_SIZE + TILE_SIZE / 2;
+      spawnY = Math.floor(Math.random() * (MAP_ROWS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
+    } else {
+      spawnX = (MAP_COLS - 2) * TILE_SIZE + TILE_SIZE / 2;
+      spawnY = Math.floor(Math.random() * (MAP_ROWS - 2)) * TILE_SIZE + TILE_SIZE + TILE_SIZE / 2;
+    }
+    tries++;
+    if (tries > 50) break;
+  } while (isCollision(game.map, spawnX, spawnY));
+  return { x: spawnX, y: spawnY, hp: hp, lastAttack: 0, speed: speed };
+}
+
+function spawnZombies(game, count) {
+  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
+  if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) return;
+
+  const hp = 10 + (game.currentRound - 1);
+  const baseSpeed = 40;
+  const speedIncreasePercent = 0.10;
+  const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
+
+  let spawnedCount = 0;
+  for (let i = 0; i < count; i++) {
+    if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) break;
+    if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) break;
+
+    const z = spawnZombieOnBorder(game, hp, speed);
+    let tries = 0;
+    let ok = false;
+    while (tries < 20) {
+      ok = true;
+      if (isCollision(game.map, z.x, z.y)) {
+        ok = false;
+        Object.assign(z, spawnZombieOnBorder(game, hp, speed));
+      }
+      if (ok) break;
+      tries++;
+    }
+    const id = `zombie${Date.now()}_${Math.floor(Math.random()*1000000)}`;
+    game.zombies[id] = z;
+    game.zombiesSpawnedThisWave++;
+    spawnedCount++;
+  }
+  // PAS DE LOGS de spawn de zombies !
+}
+
+function checkWaveEnd(game) {
+  // Fin de partie si tous les joueurs ET bots sont morts !
+  const allDead = Object.values(game.players).every(p => !p.alive);
+  if (allDead) {
+    endGame(game);
+    // On reset la partie dans le lobby
+    game.lobby.started = false;
+    return;
+  }
+  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && Object.keys(game.zombies).length === 0) {
+    game.currentRound++;
+    game.zombiesSpawnedThisWave = 0;
+    game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
+    io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
+    io.to('lobby' + game.id).emit('currentRound', game.currentRound);
+    // Log vague suivante
+    console.log(`Starting wave ${game.currentRound}, total zombies to spawn: ${game.totalZombiesToSpawn}`);
+  }
+}
+
+function startSpawning(game) {
+  if (game.spawnInterval) clearInterval(game.spawnInterval);
+  game.spawningActive = true;
+  game.spawnInterval = setInterval(() => {
+    if (!game.spawningActive) return;
+    spawnZombies(game, 1);
+    checkWaveEnd(game);
+  }, 200);
+}
+
+function stopSpawning(game) {
+  game.spawningActive = false;
+  if (game.spawnInterval) {
+    clearInterval(game.spawnInterval);
+    game.spawnInterval = null;
+  }
+}
+
+// BOUCLE PRINCIPALE JEU
 function gameLoop() {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
     const deltaTime = 1 / 30;
-    // PATCH : IA bots à chaque frame
     botsThink(game, deltaTime);
+    movePlayers(game, deltaTime);
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
