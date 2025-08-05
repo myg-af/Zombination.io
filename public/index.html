@@ -70,12 +70,12 @@
       display: none;
       position: fixed;
       left: 0; top: 0; width: 100vw; height: 100vh; z-index: 99;
-      pointer-events: none;
+      pointer-events: none; /* Important : change dynamiquement avec JS */
       user-select: none;
     }
     .joystickZone {
       position: absolute;
-      width: 220px; height: 220px; /* 2x plus gros qu'avant */
+      width: 220px; height: 220px;
       background: rgba(70,70,70,0.13);
       border-radius: 50%;
       pointer-events: auto;
@@ -83,16 +83,16 @@
     }
     #joystickMove {
       left: 80px;
-      bottom: 24vh;
+      bottom: 28vh;
     }
     #joystickShoot {
       right: 80px;
-      bottom: 24vh;
+      bottom: 28vh;
     }
     .joystickStick {
       position: absolute;
       left: 50%; top: 50%;
-      width: 112px; height: 112px;  /* 2x plus gros qu'avant */
+      width: 112px; height: 112px;
       margin-left: -56px; margin-top: -56px;
       background: rgba(140,255,120,0.43);
       border-radius: 50%;
@@ -155,8 +155,10 @@
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
+
     if (isMobile) {
       document.getElementById('mobileControls').style.display = 'block';
+      document.getElementById('mobileControls').style.pointerEvents = 'none'; // par défaut
     }
 
     const LANGS = [
@@ -268,7 +270,7 @@
     let myKills = 0;
     let myPseudo = "";
 
-    const PLAYER_SPEED_PER_SEC = isMobile ? 700 : 700; // Vitesse identique PC/Mobile
+    const PLAYER_SPEED_PER_SEC = 700;
 
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
@@ -293,6 +295,173 @@
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+
+    // JOYSTICK MOBILE LOGIC
+    let joystickDirMove = {x:0, y:0}, joystickDirShoot = {x:0, y:0};
+    let joystickActiveMove = false, joystickActiveShoot = false;
+
+    function setupMobileJoysticks() {
+      if (!isMobile) return;
+      // Move
+      const joyZoneMove = document.getElementById('joystickMove');
+      const joyStickMove = document.getElementById('joystickStickMove');
+      let moveTouchId = null;
+      joyZoneMove.addEventListener('touchstart', function(e){
+        let t = e.changedTouches[0];
+        moveTouchId = t.identifier;
+        joystickActiveMove = true;
+        joyStickMove.style.background = 'rgba(160,255,100,0.7)';
+      }, {passive:false});
+      joyZoneMove.addEventListener('touchmove', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === moveTouchId) {
+            let zoneRect = joyZoneMove.getBoundingClientRect();
+            let centerX = zoneRect.left + zoneRect.width/2;
+            let centerY = zoneRect.top + zoneRect.height/2;
+            let dx = t.clientX - centerX;
+            let dy = t.clientY - centerY;
+            let len = Math.sqrt(dx*dx + dy*dy);
+            if (len > 10) {
+              joystickDirMove.x = dx / len;
+              joystickDirMove.y = dy / len;
+            } else {
+              joystickDirMove.x = 0;
+              joystickDirMove.y = 0;
+            }
+            let maxLen = zoneRect.width/2 - 24;
+            if (len > maxLen) len = maxLen;
+            joyStickMove.style.left = (50 + (dx/zoneRect.width)*100) + '%';
+            joyStickMove.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
+          }
+        }
+      }, {passive:false});
+      joyZoneMove.addEventListener('touchend', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === moveTouchId) {
+            joystickActiveMove = false;
+            joystickDirMove.x = joystickDirMove.y = 0;
+            moveTouchId = null;
+            joyStickMove.style.left = "50%";
+            joyStickMove.style.top = "50%";
+            joyStickMove.style.background = 'rgba(140,255,120,0.43)';
+          }
+        }
+      }, {passive:false});
+
+      // Shoot
+      const joyZoneShoot = document.getElementById('joystickShoot');
+      const joyStickShoot = document.getElementById('joystickStickShoot');
+      let shootTouchId = null;
+      joyZoneShoot.addEventListener('touchstart', function(e){
+        let t = e.changedTouches[0];
+        shootTouchId = t.identifier;
+        joystickActiveShoot = true;
+        joyStickShoot.style.background = 'rgba(255,120,120,0.65)';
+      }, {passive:false});
+      joyZoneShoot.addEventListener('touchmove', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === shootTouchId) {
+            let zoneRect = joyZoneShoot.getBoundingClientRect();
+            let centerX = zoneRect.left + zoneRect.width/2;
+            let centerY = zoneRect.top + zoneRect.height/2;
+            let dx = t.clientX - centerX;
+            let dy = t.clientY - centerY;
+            let len = Math.sqrt(dx*dx + dy*dy);
+            if (len > 10) {
+              joystickDirShoot.x = dx / len;
+              joystickDirShoot.y = dy / len;
+            } else {
+              joystickDirShoot.x = 0;
+              joystickDirShoot.y = 0;
+            }
+            let maxLen = zoneRect.width/2 - 24;
+            if (len > maxLen) len = maxLen;
+            joyStickShoot.style.left = (50 + (dx/zoneRect.width)*100) + '%';
+            joyStickShoot.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
+          }
+        }
+      }, {passive:false});
+      joyZoneShoot.addEventListener('touchend', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === shootTouchId) {
+            joystickActiveShoot = false;
+            joystickDirShoot.x = joystickDirShoot.y = 0;
+            shootTouchId = null;
+            joyStickShoot.style.left = "50%";
+            joyStickShoot.style.top = "50%";
+            joyStickShoot.style.background = 'rgba(255,120,120,0.37)';
+          }
+        }
+      }, {passive:false});
+    }
+    setupMobileJoysticks();
+
+    // Nouvelle logique: tick mouvement au moins 30 fois/seconde pour égalité mobile/PC
+    let lastMoveSent = 0;
+    function update(deltaTime) {
+      if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+      let player = playersHealth[myId];
+      let newX = player.x, newY = player.y;
+      let move = PLAYER_SPEED_PER_SEC * deltaTime;
+      let moved = false;
+      if (isMobile) {
+        if (joystickActiveMove && (joystickDirMove.x !== 0 || joystickDirMove.y !== 0)) {
+          newX += move * joystickDirMove.x;
+          newY += move * joystickDirMove.y;
+          moved = true;
+        }
+      } else {
+        if (keys['arrowup'] || keys['w']) { newY -= move; moved = true; }
+        if (keys['arrowdown'] || keys['s']) { newY += move; moved = true; }
+        if (keys['arrowleft'] || keys['a']) { newX -= move; moved = true; }
+        if (keys['arrowright'] || keys['d']) { newX += move; moved = true; }
+      }
+      // Pour égalité : envoi régulier même si le FPS est bas
+      let now = performance.now();
+      if ((moved && (now - lastMoveSent > 1000/32)) || (newX !== player.x || newY !== player.y)) {
+        socket.emit('playerMovement', { x: newX, y: newY });
+        lastMoveSent = now;
+      }
+      // SHOOT on mobile
+      if (isMobile && joystickActiveShoot && (joystickDirShoot.x !== 0 || joystickDirShoot.y !== 0)) {
+        if (!shootBlocked) {
+          shootBlocked = true;
+          const targetX = player.x + joystickDirShoot.x * 1000;
+          const targetY = player.y + joystickDirShoot.y * 1000;
+          socket.emit('shoot', { targetX, targetY });
+          setTimeout(() => { shootBlocked = false; }, 500);
+        }
+      }
+      // SHOOT on PC
+      if (!isMobile && mouseDown) {
+        if (!shootBlocked) {
+          shootBlocked = true;
+          const mouseWorldX = cameraX + mousePos.x;
+          const mouseWorldY = cameraY + mousePos.y;
+          socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
+          setTimeout(() => { shootBlocked = false; }, 500);
+        }
+      }
+    }
+
+    let shootBlocked = false;
+
+    function updateCamera() {
+      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+      let player = playersHealth[myId];
+      cameraX = player.x - canvas.width / 2;
+      cameraY = player.y - canvas.height / 2;
+      if (isMobile) {
+        cameraX -= canvas.width * 0.12;
+        cameraY -= canvas.height * 0.08;
+      }
+      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
+      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
+    }
 
     function drawMap() {
       if (!map.length) return;
@@ -375,184 +544,6 @@
       ctx.strokeRect(x - width/2, y, width, height);
     }
 
-    // ---------- JOYSTICK MOBILE LOGIC ---------
-    let joystickDirMove = {x:0, y:0}, joystickDirShoot = {x:0, y:0};
-    let joystickActiveMove = false, joystickActiveShoot = false;
-
-    function setupMobileJoysticks() {
-      if (!isMobile) return;
-      // Move
-      const joyZoneMove = document.getElementById('joystickMove');
-      const joyStickMove = document.getElementById('joystickStickMove');
-      let moveTouchId = null;
-      joyZoneMove.addEventListener('touchstart', function(e){
-        let t = e.changedTouches[0];
-        moveTouchId = t.identifier;
-        joystickActiveMove = true;
-        joyStickMove.style.background = 'rgba(160,255,100,0.7)';
-      }, {passive:false});
-      joyZoneMove.addEventListener('touchmove', function(e){
-        for(let i=0;i<e.changedTouches.length;i++) {
-          let t = e.changedTouches[i];
-          if (t.identifier === moveTouchId) {
-            let zoneRect = joyZoneMove.getBoundingClientRect();
-            let centerX = zoneRect.left + zoneRect.width/2;
-            let centerY = zoneRect.top + zoneRect.height/2;
-            let dx = t.clientX - centerX;
-            let dy = t.clientY - centerY;
-            let len = Math.sqrt(dx*dx + dy*dy);
-            // --- direction TOUJOURS À FOND si il y a mouvement ---
-            if (len > 10) {
-              joystickDirMove.x = dx / len;
-              joystickDirMove.y = dy / len;
-            } else {
-              joystickDirMove.x = 0;
-              joystickDirMove.y = 0;
-            }
-            // Visuel
-            let maxLen = zoneRect.width/2 - 24;
-            if (len > maxLen) len = maxLen;
-            joyStickMove.style.left = (50 + (dx/zoneRect.width)*100) + '%';
-            joyStickMove.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
-          }
-        }
-      }, {passive:false});
-      joyZoneMove.addEventListener('touchend', function(e){
-        for(let i=0;i<e.changedTouches.length;i++) {
-          let t = e.changedTouches[i];
-          if (t.identifier === moveTouchId) {
-            joystickActiveMove = false;
-            joystickDirMove.x = joystickDirMove.y = 0;
-            moveTouchId = null;
-            joyStickMove.style.left = "50%";
-            joyStickMove.style.top = "50%";
-            joyStickMove.style.background = 'rgba(140,255,120,0.43)';
-          }
-        }
-      }, {passive:false});
-
-      // Shoot
-      const joyZoneShoot = document.getElementById('joystickShoot');
-      const joyStickShoot = document.getElementById('joystickStickShoot');
-      let shootTouchId = null;
-      joyZoneShoot.addEventListener('touchstart', function(e){
-        let t = e.changedTouches[0];
-        shootTouchId = t.identifier;
-        joystickActiveShoot = true;
-        joyStickShoot.style.background = 'rgba(255,120,120,0.65)';
-      }, {passive:false});
-      joyZoneShoot.addEventListener('touchmove', function(e){
-        for(let i=0;i<e.changedTouches.length;i++) {
-          let t = e.changedTouches[i];
-          if (t.identifier === shootTouchId) {
-            let zoneRect = joyZoneShoot.getBoundingClientRect();
-            let centerX = zoneRect.left + zoneRect.width/2;
-            let centerY = zoneRect.top + zoneRect.height/2;
-            let dx = t.clientX - centerX;
-            let dy = t.clientY - centerY;
-            let len = Math.sqrt(dx*dx + dy*dy);
-            // --- direction TOUJOURS À FOND si il y a mouvement ---
-            if (len > 10) {
-              joystickDirShoot.x = dx / len;
-              joystickDirShoot.y = dy / len;
-            } else {
-              joystickDirShoot.x = 0;
-              joystickDirShoot.y = 0;
-            }
-            // Visuel
-            let maxLen = zoneRect.width/2 - 24;
-            if (len > maxLen) len = maxLen;
-            joyStickShoot.style.left = (50 + (dx/zoneRect.width)*100) + '%';
-            joyStickShoot.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
-          }
-        }
-      }, {passive:false});
-      joyZoneShoot.addEventListener('touchend', function(e){
-        for(let i=0;i<e.changedTouches.length;i++) {
-          let t = e.changedTouches[i];
-          if (t.identifier === shootTouchId) {
-            joystickActiveShoot = false;
-            joystickDirShoot.x = joystickDirShoot.y = 0;
-            shootTouchId = null;
-            joyStickShoot.style.left = "50%";
-            joyStickShoot.style.top = "50%";
-            joyStickShoot.style.background = 'rgba(255,120,120,0.37)';
-          }
-        }
-      }, {passive:false});
-    }
-    setupMobileJoysticks();
-
-    // Nouvelle logique: "tick" mouvement au moins 30 fois/seconde pour égalité mobile/PC
-    let lastMoveSent = 0;
-    function update(deltaTime) {
-      if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      let newX = player.x, newY = player.y;
-      let move = PLAYER_SPEED_PER_SEC * deltaTime;
-      let moved = false;
-      if (isMobile) {
-        if (joystickActiveMove && (joystickDirMove.x !== 0 || joystickDirMove.y !== 0)) {
-          newX += move * joystickDirMove.x;
-          newY += move * joystickDirMove.y;
-          moved = true;
-        }
-      } else {
-        if (keys['arrowup'] || keys['w']) { newY -= move; moved = true; }
-        if (keys['arrowdown'] || keys['s']) { newY += move; moved = true; }
-        if (keys['arrowleft'] || keys['a']) { newX -= move; moved = true; }
-        if (keys['arrowright'] || keys['d']) { newX += move; moved = true; }
-      }
-      // Pour égalité : envoi régulier même si le FPS est bas
-      let now = performance.now();
-      if ((moved && (now - lastMoveSent > 1000/32)) || (newX !== player.x || newY !== player.y)) {
-        socket.emit('playerMovement', { x: newX, y: newY });
-        lastMoveSent = now;
-      }
-      // SHOOT on mobile
-      if (isMobile && joystickActiveShoot && (joystickDirShoot.x !== 0 || joystickDirShoot.y !== 0)) {
-        if (!shootBlocked) {
-          shootBlocked = true;
-          // Tire dans la direction du joystick de shoot
-          const targetX = player.x + joystickDirShoot.x * 1000;
-          const targetY = player.y + joystickDirShoot.y * 1000;
-          socket.emit('shoot', {
-            targetX, targetY
-          });
-          setTimeout(() => { shootBlocked = false; }, 500);
-        }
-      }
-      // SHOOT on PC
-      if (!isMobile && mouseDown) {
-        if (!shootBlocked) {
-          shootBlocked = true;
-          const mouseWorldX = cameraX + mousePos.x;
-          const mouseWorldY = cameraY + mousePos.y;
-          socket.emit('shoot', {
-            targetX: mouseWorldX,
-            targetY: mouseWorldY
-          });
-          setTimeout(() => { shootBlocked = false; }, 500);
-        }
-      }
-    }
-
-    let shootBlocked = false;
-
-    function updateCamera() {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      cameraX = player.x - canvas.width / 2;
-      cameraY = player.y - canvas.height / 2;
-      // Dézoom un peu plus sur mobile
-      if (isMobile) {
-        cameraX -= canvas.width * 0.12;
-        cameraY -= canvas.height * 0.08;
-      }
-      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
-      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
-    }
-
     function drawHUD() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
@@ -585,28 +576,129 @@
       if (!isDead) requestAnimationFrame(gameLoop);
     }
 
-    // ... (le reste du code socket reste inchangé par rapport à la version précédente) ...
-
+    // SOCKETS, GESTION LOBBY, ETC.
     socket.on('connect', () => { myId = socket.id; });
-    socket.on('lobbyUpdate', (data) => { /* ... comme avant ... */ });
-    lobbyJoin.onclick = () => { /* ... comme avant ... */ };
-    pseudoInput.onkeydown = (e) => { if (e.key === "Enter") lobbyJoin.click(); };
-    socket.on('gameStarted', (data) => { /* ... comme avant ... */ });
-    socket.on('playersHealthUpdate', (players) => { playersHealth = players; const playerId = socket.id; if (players[playerId]) { playerHealth = players[playerId].health; } });
-    socket.on('zombiesUpdate', (z) => { zombies = z; });
-    socket.on('bulletsUpdate', (b) => { bullets = b; });
-    socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
-    socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
-    socket.on('healthUpdate', (health) => { playerHealth = health; drawHUD(); });
-    socket.on('playersHealthUpdate', (playersState) => { for (const id in playersState) { if (!playersHealth[id]) playersHealth[id] = {}; playersHealth[id].health = playersState[id].health; playersHealth[id].alive = playersState[id].alive; playersHealth[id].x = playersState[id].x; playersHealth[id].y = playersState[id].y; playersHealth[id].pseudo = playersState[id].pseudo || "Joueur"; } });
-    socket.on('youDied', (data) => { isDead = true; playerHealth = 0; showDeathScreen(data.kills, data.round); });
-    socket.on('waveMessage', (msg) => { waveMessage.textContent = msg; waveMessage.style.opacity = '1'; setTimeout(() => { waveMessage.style.opacity = '0'; }, 2500); });
+
+    socket.on('lobbyUpdate', (data) => {
+      lobbyData = {
+        ...data,
+        players: {...data.players}
+      };
+      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+      if (data.started) {
+        lobbyScreen.style.display = 'none';
+        lobbyStarted = true;
+        if (isMobile) document.getElementById('mobileControls').style.pointerEvents = 'auto';
+        return;
+      }
+      lobbyScreen.style.display = 'flex';
+      lobbyStarted = false;
+      if (isMobile) document.getElementById('mobileControls').style.pointerEvents = 'none';
+      updateLobbyTexts();
+      lobbyJoin.disabled = lobbyJoined;
+      pseudoInput.disabled = lobbyJoined;
+      if (lobbyJoined) lobbyJoin.textContent = tr.waiting;
+      else lobbyJoin.textContent = tr.join;
+    });
+
+    lobbyJoin.onclick = () => {
+      if (!pseudoInput.value.trim()) {
+        pseudoInput.focus();
+        pseudoInput.style.background = "#fdd";
+        setTimeout(() => pseudoInput.style.background = "", 600);
+        return;
+      }
+      socket.emit('setPseudoAndReady', pseudoInput.value.trim());
+      myPseudo = pseudoInput.value.trim();
+      lobbyJoined = true;
+      lobbyJoin.disabled = true;
+      pseudoInput.disabled = true;
+      lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
+    };
+
+    pseudoInput.onkeydown = (e) => {
+      if (e.key === "Enter") lobbyJoin.click();
+    };
+
+    socket.on('gameStarted', (data) => {
+      map = data.map;
+      MAP_ROWS = map.length;
+      MAP_COLS = map[0].length;
+      playersHealth = data.players;
+      currentRound = data.round;
+      lobbyScreen.style.display = 'none';
+      isDead = false; playerHealth = 100; myKills = 0;
+      setTimeout(()=>{ gameLoop(); }, 400);
+      if (isMobile) document.getElementById('mobileControls').style.pointerEvents = 'auto';
+    });
+
+    socket.on('playersHealthUpdate', (players) => {
+      playersHealth = players;
+      const playerId = socket.id;
+      if (players[playerId]) {
+        playerHealth = players[playerId].health;
+      }
+    });
+
+    socket.on('zombiesUpdate', (z) => {
+      zombies = z;
+    });
+
+    socket.on('bulletsUpdate', (b) => {
+      bullets = b;
+    });
+
+    socket.on('killsUpdate', (kills) => {
+      myKills = kills;
+      drawHUD();
+    });
+
+    socket.on('currentRound', (round) => {
+      currentRound = round;  // Bien mettre à jour ici la variable
+      drawHUD();             // Et redraw le HUD
+    });
+
+    socket.on('healthUpdate', (health) => {
+      playerHealth = health;
+      drawHUD();
+    });
+
+    socket.on('playersHealthUpdate', (playersState) => {
+      for (const id in playersState) {
+        if (!playersHealth[id]) playersHealth[id] = {};
+        playersHealth[id].health = playersState[id].health;
+        playersHealth[id].alive = playersState[id].alive;
+        playersHealth[id].x = playersState[id].x;
+        playersHealth[id].y = playersState[id].y;
+        playersHealth[id].pseudo = playersState[id].pseudo || "Joueur";
+      }
+    });
+
+    socket.on('youDied', (data) => {
+      isDead = true;
+      playerHealth = 0;
+      showDeathScreen(data.kills, data.round);
+    });
+
+    socket.on('waveMessage', (msg) => {
+      waveMessage.textContent = msg;
+      waveMessage.style.opacity = '1';
+      setTimeout(() => {
+        waveMessage.style.opacity = '0';
+      }, 2500);
+    });
+
     setInterval(drawHUD, 150);
     setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 100);
+
     updateUITexts();
     drawHUD();
-    window.addEventListener('keydown', e => { if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') { socket.emit('killAllZombies'); } });
 
+    window.addEventListener('keydown', e => {
+      if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
+        socket.emit('killAllZombies');
+      }
+    });
   </script>
 </body>
 </html>
