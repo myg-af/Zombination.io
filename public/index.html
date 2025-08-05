@@ -370,6 +370,28 @@ function updateCamera() {
   cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
   cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
 }
+function drawMap() {
+  if (!map.length) return;
+  const startCol = Math.floor(cameraX / TILE_SIZE);
+  const startRow = Math.floor(cameraY / TILE_SIZE);
+  const visibleCols = Math.ceil(canvas.width / TILE_SIZE) + 2;
+  const visibleRows = Math.ceil(canvas.height / TILE_SIZE) + 2;
+  for (let row = startRow; row < startRow + visibleRows; row++) {
+    if (row < 0 || row >= MAP_ROWS) continue;
+    for (let col = startCol; col < startCol + visibleCols; col++) {
+      if (col < 0 || col >= MAP_COLS) continue;
+      if (map[row][col] === 1) {
+        ctx.fillStyle = '#363636';
+        ctx.fillRect(
+          col * TILE_SIZE - cameraX,
+          row * TILE_SIZE - cameraY,
+          TILE_SIZE,
+          TILE_SIZE
+        );
+      }
+    }
+  }
+}
 
     // ----------- PATCH HUD (PLAYER ALIVE / BOT ALIVE) -----------
     function drawHUD() {
