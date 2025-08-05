@@ -70,53 +70,55 @@
     #mobileControls { display: none; position: fixed; left:0; top:0; width:100vw; height:100vh; pointer-events: none; z-index: 15;}
     .joystickZone {
       position: absolute;
-      left: 18px;
-      bottom: 16px;
-      width: 120px;
-      height: 120px;
+      left: 16px;
+      /* Plus haut qu'avant */
+      bottom: 90px;
+      width: 82px;
+      height: 82px;
       pointer-events: auto;
       z-index: 100;
       touch-action: none;
-      opacity: 0.88;
+      opacity: 0.62; /* plus transparent */
     }
     .joystickBase {
       position: absolute;
       left: 0; top: 0;
-      width: 120px; height: 120px;
-      background: rgba(80,90,80,0.13);
-      border-radius: 60px;
-      border: 3px solid #4e8e51;
-      box-shadow: 0 0 16px #0006;
+      width: 82px; height: 82px;
+      background: rgba(80,90,80,0.11);
+      border-radius: 41px;
+      border: 2px solid #4e8e51;
+      box-shadow: 0 0 10px #0006;
       pointer-events: none;
     }
     .joystickStick {
       position: absolute;
-      width: 58px; height: 58px;
-      left: 31px; top: 31px;
-      background: rgba(93,206,77,0.84);
+      width: 35px; height: 35px;
+      left: 23.5px; top: 23.5px;
+      background: rgba(93,206,77,0.68);
       border-radius: 50%;
-      border: 3px solid #38b154;
-      box-shadow: 0 2px 10px #0005;
+      border: 2px solid #38b154;
+      box-shadow: 0 2px 8px #0005;
       pointer-events: none;
       transition: background 0.1s;
     }
     #btnShoot {
       position: absolute;
-      right: 28px;
-      bottom: 38px;
-      width: 90px; height: 90px;
+      right: 24px;
+      /* Plus haut qu'avant */
+      bottom: 100px;
+      width: 60px; height: 60px;
       background: linear-gradient(145deg,#ff5555 75%,#ffadad 100%);
       border-radius: 50%;
-      border: 2.5px solid #fff8;
-      box-shadow: 0 3px 15px #d9030345;
+      border: 2px solid #fff8;
+      box-shadow: 0 2px 9px #d9030345;
       color: #fff;
-      font-size: 28px;
+      font-size: 23px;
       font-weight: bold;
       display: flex;
       align-items: center;
       justify-content: center;
       pointer-events: auto;
-      opacity: 0.92;
+      opacity: 0.66; /* plus transparent */
       user-select: none;
       z-index: 101;
       touch-action: none;
@@ -143,6 +145,10 @@
         font-size: 8vw;
         min-width: 150px;
       }
+      .joystickZone { width: 62px; height: 62px; bottom: 80px;}
+      .joystickBase { width: 62px; height: 62px; border-radius: 31px;}
+      .joystickStick { width: 25px; height: 25px; left: 18.5px; top: 18.5px;}
+      #btnShoot { width: 45px; height: 45px; bottom: 86px; right: 14px; }
     }
     @media (max-width: 700px) {
       #hudStats { font-size: 12.5px; min-width: 92px; }
@@ -192,7 +198,7 @@
       <div class="joystickStick" id="joystickStick"></div>
     </div>
     <button id="btnShoot" style="display:none;">
-      <svg width="43" height="43" viewBox="0 0 43 43"><circle cx="21.5" cy="21.5" r="17.5" fill="#fff3" /><circle cx="21.5" cy="21.5" r="12.5" fill="#ff3c3c"/><path d="M14 22 l7 -7 l7 7" stroke="#fff" stroke-width="3" fill="none"/></svg>
+      <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="13" fill="#fff3" /><circle cx="17" cy="17" r="9" fill="#ff3c3c"/><path d="M11 18 l6 -6 l6 6" stroke="#fff" stroke-width="2" fill="none"/></svg>
     </button>
   </div>
 
@@ -294,7 +300,7 @@
     let myKills = 0;
     let myPseudo = "";
 
-    const PLAYER_SPEED_PER_SEC = 300;
+    const PLAYER_SPEED_PER_SEC = 500; // <<<<<<<<  NOUVELLE VITESSE 500
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
@@ -386,7 +392,7 @@
         const dx = touch.clientX - cx;
         const dy = touch.clientY - cy;
         let dist = Math.sqrt(dx*dx + dy*dy);
-        let max = 48;
+        let max = rect.width/2.3;
         let normDx = dx, normDy = dy;
         if (dist > max) {
           normDx = dx * max / dist;
@@ -399,7 +405,7 @@
 
       function setJoystick(dx, dy) {
         let l = Math.sqrt(dx*dx + dy*dy);
-        if (l < 14) { mobileMove.x = 0; mobileMove.y = 0; }
+        if (l < 9) { mobileMove.x = 0; mobileMove.y = 0; }
         else {
           let nx = dx / l;
           let ny = dy / l;
