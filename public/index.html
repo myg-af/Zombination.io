@@ -17,14 +17,25 @@
     #btnReplay:hover { background: #393; color: #fff; }
     /* --- LOBBY --- */
     #lobbyScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; position: fixed; left:0;top:0;width:100vw;height:100vh;z-index:30; background: #181c; }
-    #lobbyBox { background: #19191e; border-radius: 20px; padding: 36px 42px; box-shadow: 0 6px 30px #000c; min-width: 350px; min-height: 190px; text-align: center; }
+    #lobbyBox { background: #19191e; border-radius: 20px; padding: 36px 42px; box-shadow: 0 6px 30px #000c; min-width: 350px; min-height: 190px; text-align: center; position: relative; }
     #lobbyBox input[type=text] { font-size: 20px; padding: 7px 12px; border-radius: 7px; border: 1px solid #444; outline: none; margin-bottom: 10px; width: 175px; }
     #lobbyJoin { padding: 7px 32px; border-radius: 8px; border:none; font-size: 20px; background:#49c749; color: #fff; cursor: pointer; margin-top: 7px; }
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
     #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
-
+    /* --- VERSION LOBBY --- */
+    #lobbyVersion {
+      position: absolute;
+      right: 16px;
+      bottom: 10px;
+      color: #ffe98c;
+      font-size: 14px;
+      opacity: 0.8;
+      pointer-events: none;
+      font-family: monospace;
+      user-select: none;
+    }
     /* --- LANG SELECT --- */
     #langSelectRow {
       margin-top: 18px;
@@ -49,7 +60,6 @@
       transform: scale(1.07);
       box-shadow: 0 2px 16px #33fc6930;
     }
-
     /* --- WAVE MESSAGE --- */
     #waveMessage {
       position: fixed;
@@ -70,32 +80,32 @@
     #mobileControls { display: none; position: fixed; left:0; top:0; width:100vw; height:100vh; pointer-events: none; z-index: 15;}
     .joystickZone.move {
       position: absolute;
-      bottom: 32px;
-      left: 32px;
-      width: 72px;
-      height: 72px;
+      bottom: 54px;
+      left: 44px;
+      width: 78px;
+      height: 78px;
       pointer-events: auto;
       z-index: 100;
       touch-action: none;
-      opacity: 0.62;
+      opacity: 0.64;
     }
     #btnShoot {
       position: absolute;
-      bottom: 36px;
-      right: 36px;
-      width: 60px; height: 60px;
+      bottom: 58px;
+      right: 48px;
+      width: 68px; height: 68px;
       background: linear-gradient(145deg,#ff5555 75%,#ffadad 100%);
       border-radius: 50%;
-      border: 2px solid #fff8;
-      box-shadow: 0 2px 9px #d9030345;
+      border: 2.2px solid #fff8;
+      box-shadow: 0 2px 14px #d9030345;
       color: #fff;
-      font-size: 23px;
+      font-size: 25px;
       font-weight: bold;
       display: flex;
       align-items: center;
       justify-content: center;
       pointer-events: auto;
-      opacity: 0.66;
+      opacity: 0.70;
       user-select: none;
       z-index: 101;
       touch-action: none;
@@ -107,17 +117,17 @@
     .joystickBase {
       position: absolute;
       left: 0; top: 0;
-      width: 72px; height: 72px;
-      background: rgba(80,90,80,0.11);
-      border-radius: 36px;
+      width: 78px; height: 78px;
+      background: rgba(80,90,80,0.13);
+      border-radius: 39px;
       border: 2px solid #4e8e51;
       box-shadow: 0 0 10px #0006;
       pointer-events: none;
     }
     .joystickStick {
       position: absolute;
-      width: 32px; height: 32px;
-      left: 20px; top: 20px;
+      width: 36px; height: 36px;
+      left: 21px; top: 21px;
       background: rgba(93,206,77,0.68);
       border-radius: 50%;
       border: 2px solid #38b154;
@@ -126,14 +136,14 @@
       transition: background 0.1s;
     }
     @media (max-width: 900px) {
-      .joystickZone.move { width: 54px; height: 54px; bottom: 22px; left: 7vw; }
-      #btnShoot { width: 38px; height: 38px; bottom: 16px; right: 7vw; }
-      .joystickBase { width: 54px; height: 54px; border-radius: 27px;}
-      .joystickStick { width: 20px; height: 20px; left: 15px; top: 15px;}
+      .joystickZone.move { width: 64px; height: 64px; bottom: 26px; left: 6vw; }
+      #btnShoot { width: 44px; height: 44px; bottom: 24px; right: 7vw; }
+      .joystickBase { width: 64px; height: 64px; border-radius: 32px;}
+      .joystickStick { width: 18px; height: 18px; left: 14px; top: 14px;}
     }
     @media (max-width: 600px) {
-      .joystickZone.move { left: 3vw; }
-      #btnShoot { right: 3vw; }
+      .joystickZone.move { left: 2vw; }
+      #btnShoot { right: 2vw; }
     }
   </style>
 </head>
@@ -163,6 +173,7 @@
       <br>
       <button id="lobbyJoin"></button>
       <div id="langSelectRow"></div>
+      <div id="lobbyVersion">Version 1.0.0 par Myg</div>
     </div>
   </div>
   <div id="waveMessage"></div>
@@ -172,8 +183,12 @@
       <div class="joystickBase"></div>
       <div class="joystickStick" id="joystickStick"></div>
     </div>
-    <button id="btnShoot" style="display:none;">
-      <svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="13" fill="#fff3" /><circle cx="17" cy="17" r="9" fill="#ff3c3c"/><path d="M11 18 l6 -6 l6 6" stroke="#fff" stroke-width="2" fill="none"/></svg>
+    <button id="btnShoot">
+      <svg width="34" height="34" viewBox="0 0 34 34">
+        <circle cx="17" cy="17" r="13" fill="#fff3" />
+        <circle cx="17" cy="17" r="9" fill="#ff3c3c"/>
+        <path d="M11 18 l6 -6 l6 6" stroke="#fff" stroke-width="2" fill="none"/>
+      </svg>
     </button>
   </div>
   <script src="/translations.js"></script>
@@ -292,7 +307,7 @@
     }
     const isMobile = detectMobile();
     let mobileZoomFactor = 1.0;
-    if (isMobile) mobileZoomFactor = 0.78; // Dézoome sur mobile !
+    if (isMobile) mobileZoomFactor = 0.65; // Encore plus de dézoom pour mobile !
 
     function resizeCanvas() {
       canvas.width = window.innerWidth;
@@ -651,4 +666,3 @@
   </script>
 </body>
 </html>
-
