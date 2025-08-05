@@ -403,16 +403,63 @@
     }
     setupMobileJoysticks();
 
-    let lastTime = 0, shootBlocked = false, lastMoveSent = 0;
+    let lastTime = 0, shootBlocked = false, lastDirSent = 0, lastShootSent = 0;
+    let currentMoveDir = {x: 0, y: 0};
     function gameLoop(timestamp = 0) {
       const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
       lastTime = timestamp;
 
+      // Envoie direction au serveur (30x/sec max)
+      let now = performance.now();
+      let dir = {x:0, y:0};
+
       if (isMobile) {
-        updateMobile(deltaTime);
+        if (joystickActiveMove && (joystickMoveDirection.x !== 0 || joystickMoveDirection.y !== 0)) {
+          let len = Math.sqrt(joystickMoveDirection.x*joystickMoveDirection.x + joystickMoveDirection.y*joystickMoveDirection.y) || 1;
+          dir.x = joystickMoveDirection.x / len;
+          dir.y = joystickMoveDirection.y / len;
+        }
       } else {
-        updatePC(deltaTime);
+        // PC
+        if (keys['arrowup'] || keys['w']) dir.y -= 1;
+        if (keys['arrowdown'] || keys['s']) dir.y += 1;
+        if (keys['arrowleft'] || keys['a']) dir.x -= 1;
+        if (keys['arrowright'] || keys['d']) dir.x += 1;
+        let len = Math.sqrt(dir.x*dir.x + dir.y*dir.y);
+        if (len > 0) { dir.x /= len; dir.y /= len; }
       }
+      // N'envoie que si la direction a changé ou toutes les 80ms
+      if (dir.x !== currentMoveDir.x || dir.y !== currentMoveDir.y || now - lastDirSent > 80) {
+        socket.emit('moveDir', dir);
+        currentMoveDir = {...dir};
+        lastDirSent = now;
+      }
+
+      // Envoie tir
+      let shootDir = {x:0,y:0};
+      if (isMobile && joystickActiveShoot && (joystickShootDirection.x !== 0 || joystickShootDirection.y !== 0)) {
+        let len = Math.sqrt(joystickShootDirection.x*joystickShootDirection.x + joystickShootDirection.y*joystickShootDirection.y) || 1;
+        shootDir.x = joystickShootDirection.x / len;
+        shootDir.y = joystickShootDirection.y / len;
+        if (now - lastShootSent > 180) {
+          let myPlayer = playersHealth[myId];
+          if (myPlayer) {
+            let tx = myPlayer.x + shootDir.x*1000;
+            let ty = myPlayer.y + shootDir.y*1000;
+            socket.emit('shoot', {targetX: tx, targetY: ty});
+            lastShootSent = now;
+          }
+        }
+      } else if (!isMobile && mouseDown) {
+        let myPlayer = playersHealth[myId];
+        if (myPlayer && now - lastShootSent > 180) {
+          const mouseWorldX = cameraX + mousePos.x;
+          const mouseWorldY = cameraY + mousePos.y;
+          socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
+          lastShootSent = now;
+        }
+      }
+
       updateCamera();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawMap();
@@ -421,66 +468,6 @@
       drawPlayers();
       drawHUD();
       if (!isDead) requestAnimationFrame(gameLoop);
-    }
-
-    function updateMobile(deltaTime) {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      let move = PLAYER_SPEED_PER_SEC * deltaTime;
-
-      // Direction joystick : toujours pleine puissance (sauf si pas touché)
-      let dx = 0, dy = 0;
-      if (joystickActiveMove && (joystickMoveDirection.x !== 0 || joystickMoveDirection.y !== 0)) {
-        let len = Math.sqrt(joystickMoveDirection.x*joystickMoveDirection.x + joystickMoveDirection.y*joystickMoveDirection.y) || 1;
-        dx = joystickMoveDirection.x / len;
-        dy = joystickMoveDirection.y / len;
-        player.x += dx * move;
-        player.y += dy * move;
-      }
-      // Envoie au serveur régulièrement
-      let now = performance.now();
-      if (now - lastMoveSent > 30) {
-        socket.emit('playerMovement', { x: player.x, y: player.y });
-        lastMoveSent = now;
-      }
-
-      // Tir continu vers la direction du joystick tir
-      if (joystickActiveShoot && (joystickShootDirection.x !== 0 || joystickShootDirection.y !== 0)) {
-        let len = Math.sqrt(joystickShootDirection.x*joystickShootDirection.x + joystickShootDirection.y*joystickShootDirection.y) || 1;
-        let tx = player.x + (joystickShootDirection.x/len)*1000;
-        let ty = player.y + (joystickShootDirection.y/len)*1000;
-        if (!shootBlocked) {
-          shootBlocked = true;
-          socket.emit('shoot', { targetX: tx, targetY: ty });
-          setTimeout(() => { shootBlocked = false; }, 200);
-        }
-      }
-    }
-
-    function updatePC(deltaTime) {
-      if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      let newX = player.x, newY = player.y;
-      let move = PLAYER_SPEED_PER_SEC * deltaTime;
-      let moved = false;
-      if (keys['arrowup'] || keys['w']) { newY -= move; moved = true; }
-      if (keys['arrowdown'] || keys['s']) { newY += move; moved = true; }
-      if (keys['arrowleft'] || keys['a']) { newX -= move; moved = true; }
-      if (keys['arrowright'] || keys['d']) { newX += move; moved = true; }
-      let now = performance.now();
-      if (moved && now - lastMoveSent > 30) {
-        socket.emit('playerMovement', { x: newX, y: newY });
-        lastMoveSent = now;
-      }
-      if (mouseDown) {
-        if (!shootBlocked) {
-          shootBlocked = true;
-          const mouseWorldX = cameraX + mousePos.x;
-          const mouseWorldY = cameraY + mousePos.y;
-          socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
-          setTimeout(() => { shootBlocked = false; }, 200);
-        }
-      }
     }
 
     function updateCamera() {
@@ -592,7 +579,7 @@
     }
     btnReplay.onclick = () => { location.reload(); };
 
-    // Sockets (inchangé)
+    // Sockets
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
       lobbyData = { ...data, players: {...data.players}};

@@ -129,11 +129,11 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     const sid = socketsArr[i];
     game.players[sid] = {
       x: spawnX, y: spawnY,
-      lastShot: 0, alive: true, health: 100, kills: 0, pseudo
+      lastShot: 0, alive: true, health: 100, kills: 0, pseudo,
+      moveDir: {x: 0, y: 0} // ← Patch : direction du joueur
     };
   }
 }
-
 function findPath(game, startX, startY, endX, endY) {
   const openSet = [];
   const closedSet = new Set();
@@ -193,9 +193,11 @@ function findPath(game, startX, startY, endX, endY) {
   }
   return null;
 }
+
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
+const PLAYER_SPEED_PER_SEC = 700; // PATCH : vitesse contrôlée côté serveur
 
 function broadcastLobby(game) {
   io.to('lobby' + game.id).emit('lobbyUpdate', {
@@ -258,7 +260,6 @@ function spawnZombies(game, count) {
     game.zombiesSpawnedThisWave++;
     spawnedCount++;
   }
-  // log supprimé volontairement (plus de log "spawned zombies")
 }
 
 function checkWaveEnd(game) {
@@ -268,7 +269,7 @@ function checkWaveEnd(game) {
     game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);  // <-- Important !
-    console.log(`Starting wave ${game.currentRound}, total zombies to spawn: ${game.totalZombiesToSpawn}`);
+    console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
 }
 
@@ -313,21 +314,9 @@ function launchGame(game, readyPlayersArr = null) {
 
   io.to('lobby' + game.id).emit('gameStarted', { map: game.map, players: game.players, round: game.currentRound });
 
+  // Log nouvelle partie
+  console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
   startSpawning(game);
-
-  // Nouveau log lancement de partie
-  console.log(`[PARTIE LANCÉE] ID=${game.id}, Joueurs: ${pseudosArr.length}`);
-}
-
-function finishGame(game) {
-  // On appelle ça quand tous les joueurs sont morts
-  // Nouveau log fin de partie
-  console.log(`[PARTIE TERMINÉE] ID=${game.id}, Manche atteinte: ${game.currentRound}`);
-  // Option: reset lobby pour repartir automatiquement si tu veux, ou reset manuellement si besoin
-  // (ici on stoppe les spawns et "reset" la partie pour un nouveau lobby)
-  stopSpawning(game);
-  game.lobby.started = false;
-  game.lobby.players = {};
 }
 
 io.on('connection', socket => {
@@ -364,24 +353,12 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
   });
 
-  socket.on('playerMovement', position => {
-    if (!game.lobby.started) return;
+  // PATCH: On ne gère plus 'playerMovement', mais 'moveDir'
+  socket.on('moveDir', (dir) => {
     const player = game.players[socket.id];
-    if (player && player.alive) {
-      const oldX = player.x, oldY = player.y;
-      if (isCollision(game.map, position.x, position.y)) return;
-      if (isDiagonalBlocked(game.map, oldX, oldY, position.x, position.y)) return;
-      // Suppression collision joueur/joueur : on autorise tout
-      // (ne rien mettre ici)
-      for (const zid in game.zombies) {
-        const z = game.zombies[zid];
-        if (entitiesCollide(position.x, position.y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS)) return;
-      }
-      player.x = position.x;
-      player.y = position.y;
-      io.to('lobby' + game.id).emit('playerMoved', { id: socket.id, x: position.x, y: position.y });
-      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-    }
+    if (!game.lobby.started || !player || !player.alive) return;
+    // dir.x et dir.y entre -1 et 1
+    player.moveDir = dir;
   });
 
   socket.on('shoot', (data) => {
@@ -426,7 +403,6 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
   });
 });
-
 function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
@@ -438,6 +414,27 @@ function getPlayersHealthState(game) {
 
 const zombieAttackCooldown = 350;
 const lastZombieAttackPerGame = {};
+
+// PATCH : Boucle qui déplace les joueurs depuis le serveur
+function movePlayers(game, deltaTime) {
+  for (const pid in game.players) {
+    const p = game.players[pid];
+    if (!p.alive) continue;
+    if (!p.moveDir) p.moveDir = {x:0, y:0};
+    let len = Math.sqrt(p.moveDir.x*p.moveDir.x + p.moveDir.y*p.moveDir.y);
+    if (len > 0) {
+      let move = PLAYER_SPEED_PER_SEC * deltaTime;
+      let dx = p.moveDir.x / len * move;
+      let dy = p.moveDir.y / len * move;
+      let nx = p.x + dx, ny = p.y + dy;
+      // PAS DE COLLISION ENTRE JOUEURS
+      if (!isCollision(game.map, nx, ny)) {
+        p.x = nx;
+        p.y = ny;
+      }
+    }
+  }
+}
 
 function moveZombies(game, deltaTime) {
   const now = Date.now();
@@ -471,10 +468,6 @@ function moveZombies(game, deltaTime) {
             round: game.currentRound
           });
           io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-          // --- Vérifier si partie terminée (tous morts) ---
-          if (Object.values(game.players).filter(p => p.alive).length === 0) {
-            finishGame(game);
-          }
         }
         io.to(closestPid).emit('healthUpdate', closestPlayer.health);
         io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
@@ -522,13 +515,7 @@ function moveZombies(game, deltaTime) {
   for (const [id, pos] of Object.entries(nextPos)) {
     let collide = false;
     if (isCollision(game.map, pos.x, pos.y)) continue;
-    for (const pid in game.players) {
-      const p = game.players[pid];
-      if (p.alive && entitiesCollide(pos.x, pos.y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS)) {
-        collide = true;
-        break;
-      }
-    }
+    // PAS DE COLLISION ENTRE JOUEURS (plus de vérif ici !)
     if (!collide) {
       game.zombies[id].x = pos.x;
       game.zombies[id].y = pos.y;
@@ -567,24 +554,36 @@ function moveBullets(game, deltaTime) {
   }
 }
 
-// --------------------
-// DELTA TIME CORRECTION (Railway/Production)
-// --------------------
-let lastLoopTime = Date.now();
-function gameLoop() {
-  const now = Date.now();
-  let deltaTime = (now - lastLoopTime) / 1000;
-  if (deltaTime > 0.25) deltaTime = 0.25;
-  lastLoopTime = now;
+// PATCH: log de fin de partie
+function checkGameEnd(game) {
+  const allDead = Object.values(game.players).filter(p=>p.alive).length === 0;
+  if (allDead && game.lobby.started) {
+    console.log(`---- Partie terminée, vague atteinte : ${game.currentRound}`);
+    game.lobby.started = false;
+    stopSpawning(game);
+    // Optionnel: reset lobby ?
+    setTimeout(() => {
+      // Reset la partie pour lobby
+      game.lobby.players = {};
+      broadcastLobby(game);
+    }, 3000);
+  }
+}
 
+function gameLoop() {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
+    const deltaTime = 1 / 30;
+
+    movePlayers(game, deltaTime); // PATCH: déplacement serveur
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
     io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+
+    checkGameEnd(game);
   }
   setTimeout(gameLoop, 1000 / 30);
 }
