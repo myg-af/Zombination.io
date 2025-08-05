@@ -389,6 +389,52 @@
     btnReplay.onclick = () => { location.reload(); };
 
     let lastTime = 0;
+	function update(deltaTime) {
+  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  let player = playersHealth[myId];
+  let move = { x: 0, y: 0 };
+
+  // PC
+  if (!isMobileDevice) {
+    if (keys['arrowup'] || keys['w']) move.y -= 1;
+    if (keys['arrowdown'] || keys['s']) move.y += 1;
+    if (keys['arrowleft'] || keys['a']) move.x -= 1;
+    if (keys['arrowright'] || keys['d']) move.x += 1;
+  } else {
+    let len = Math.sqrt(moveJoyVal.x * moveJoyVal.x + moveJoyVal.y * moveJoyVal.y);
+    if (len > 8) {
+      move.x = moveJoyVal.x / len;
+      move.y = moveJoyVal.y / len;
+    }
+  }
+  socket.emit('moveDir', move);
+
+  let shooting = false;
+  let shootDir = { x: 1, y: 0 };
+  if (!isMobileDevice) {
+    let dx = (cameraX + mousePos.x) - player.x;
+    let dy = (cameraY + mousePos.y) - player.y;
+    let len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 3) {
+      shootDir = { x: dx / len, y: dy / len };
+    }
+    if (mouseDown) shooting = true;
+  } else {
+    let len = Math.sqrt(aimJoyVal.x * aimJoyVal.x + aimJoyVal.y * aimJoyVal.y);
+    if (len > 8) {
+      shootDir = { x: aimJoyVal.x / len, y: aimJoyVal.y / len };
+      shooting = true;
+    }
+  }
+  if (shooting && !shootBlocked) {
+    shootBlocked = true;
+    socket.emit('shoot', {
+      targetX: player.x + shootDir.x * 120,
+      targetY: player.y + shootDir.y * 120
+    });
+    setTimeout(() => { shootBlocked = false; }, 500);
+  }
+}
     function gameLoop(timestamp = 0) {
       const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
       lastTime = timestamp;
