@@ -160,11 +160,9 @@
   <script>
     const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
 
-    // Bloquer le pinch-zoom (zoom à deux doigts)
     if (isMobile) {
       document.getElementById('mobileControls').style.display = 'block';
       document.getElementById('mobileControls').style.pointerEvents = 'none';
-      // Empêche le pinch-zoom/double-tap sur toute la page
       document.addEventListener('touchmove', function(e) {
         if (e.touches.length > 1) e.preventDefault();
       }, { passive: false });
@@ -307,7 +305,6 @@
     // Joystick mobile state
     let joystickMoveDirection = { x: 0, y: 0 }, joystickActiveMove = false;
     let joystickShootDirection = { x: 0, y: 0 }, joystickActiveShoot = false;
-    let mobileMoveInterval = null, mobileShootInterval = null;
 
     function setupMobileJoysticks() {
       if (!isMobile) return;
@@ -332,8 +329,8 @@
             let dy = t.clientY - centerY;
             let len = Math.sqrt(dx*dx + dy*dy);
             if (len > 10) {
-              joystickMoveDirection.x = dx / Math.abs(dx || 1);
-              joystickMoveDirection.y = dy / Math.abs(dy || 1);
+              joystickMoveDirection.x = dx;
+              joystickMoveDirection.y = dy;
             } else {
               joystickMoveDirection.x = 0; joystickMoveDirection.y = 0;
             }
@@ -378,8 +375,8 @@
             let dy = t.clientY - centerY;
             let len = Math.sqrt(dx*dx + dy*dy);
             if (len > 10) {
-              joystickShootDirection.x = dx / Math.abs(dx || 1);
-              joystickShootDirection.y = dy / Math.abs(dy || 1);
+              joystickShootDirection.x = dx;
+              joystickShootDirection.y = dy;
             } else {
               joystickShootDirection.x = 0; joystickShootDirection.y = 0;
             }
@@ -405,36 +402,17 @@
       }, {passive:false});
     }
     setupMobileJoysticks();
-    // -- TIMER DE MOUVEMENT MOBILE & TIR MOBILE (corrige lag/saccade mobile)
-    if (isMobile) {
-      if (mobileMoveInterval) clearInterval(mobileMoveInterval);
-      mobileMoveInterval = setInterval(function() {
-        if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-        let player = playersHealth[myId];
-        let move = PLAYER_SPEED_PER_SEC / 32; // 700px/seconde, 32Hz
-        let newX = player.x + move * joystickMoveDirection.x;
-        let newY = player.y + move * joystickMoveDirection.y;
-        socket.emit('playerMovement', { x: newX, y: newY });
-      }, 1000/32);
 
-      if (mobileShootInterval) clearInterval(mobileShootInterval);
-      mobileShootInterval = setInterval(function() {
-        if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-        if (joystickActiveShoot && (joystickShootDirection.x !== 0 || joystickShootDirection.y !== 0)) {
-          let player = playersHealth[myId];
-          const targetX = player.x + joystickShootDirection.x * 1000;
-          const targetY = player.y + joystickShootDirection.y * 1000;
-          socket.emit('shoot', { targetX, targetY });
-        }
-      }, 200);
-    }
-
-    // ---- GAME LOOP ----
     let lastTime = 0, shootBlocked = false, lastMoveSent = 0;
     function gameLoop(timestamp = 0) {
       const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
       lastTime = timestamp;
-      if (!isMobile) updatePC(deltaTime);
+
+      if (isMobile) {
+        updateMobile(deltaTime);
+      } else {
+        updatePC(deltaTime);
+      }
       updateCamera();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawMap();
@@ -443,6 +421,40 @@
       drawPlayers();
       drawHUD();
       if (!isDead) requestAnimationFrame(gameLoop);
+    }
+
+    function updateMobile(deltaTime) {
+      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+      let player = playersHealth[myId];
+      let move = PLAYER_SPEED_PER_SEC * deltaTime;
+
+      // Direction joystick : toujours pleine puissance (sauf si pas touché)
+      let dx = 0, dy = 0;
+      if (joystickActiveMove && (joystickMoveDirection.x !== 0 || joystickMoveDirection.y !== 0)) {
+        let len = Math.sqrt(joystickMoveDirection.x*joystickMoveDirection.x + joystickMoveDirection.y*joystickMoveDirection.y) || 1;
+        dx = joystickMoveDirection.x / len;
+        dy = joystickMoveDirection.y / len;
+        player.x += dx * move;
+        player.y += dy * move;
+      }
+      // Envoie au serveur régulièrement
+      let now = performance.now();
+      if (now - lastMoveSent > 30) {
+        socket.emit('playerMovement', { x: player.x, y: player.y });
+        lastMoveSent = now;
+      }
+
+      // Tir continu vers la direction du joystick tir
+      if (joystickActiveShoot && (joystickShootDirection.x !== 0 || joystickShootDirection.y !== 0)) {
+        let len = Math.sqrt(joystickShootDirection.x*joystickShootDirection.x + joystickShootDirection.y*joystickShootDirection.y) || 1;
+        let tx = player.x + (joystickShootDirection.x/len)*1000;
+        let ty = player.y + (joystickShootDirection.y/len)*1000;
+        if (!shootBlocked) {
+          shootBlocked = true;
+          socket.emit('shoot', { targetX: tx, targetY: ty });
+          setTimeout(() => { shootBlocked = false; }, 200);
+        }
+      }
     }
 
     function updatePC(deltaTime) {
@@ -456,7 +468,7 @@
       if (keys['arrowleft'] || keys['a']) { newX -= move; moved = true; }
       if (keys['arrowright'] || keys['d']) { newX += move; moved = true; }
       let now = performance.now();
-      if (moved && now - lastMoveSent > 1000/32) {
+      if (moved && now - lastMoveSent > 30) {
         socket.emit('playerMovement', { x: newX, y: newY });
         lastMoveSent = now;
       }
@@ -466,7 +478,7 @@
           const mouseWorldX = cameraX + mousePos.x;
           const mouseWorldY = cameraY + mousePos.y;
           socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
-          setTimeout(() => { shootBlocked = false; }, 500);
+          setTimeout(() => { shootBlocked = false; }, 200);
         }
       }
     }
@@ -690,7 +702,6 @@
     updateUITexts();
     drawHUD();
 
-    // Touche 'P' pour kill zombies (admin)
     window.addEventListener('keydown', e => {
       if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
         socket.emit('killAllZombies');
