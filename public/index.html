@@ -5,7 +5,7 @@
   <title>Zombination.io</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
-    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; touch-action: none; }
+    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
     #hudAlive { font-weight: bold; color: #fd7; }
     #deathScreen { display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(30,0,0,0.8); z-index: 3; justify-content: center; align-items: center; flex-direction: column; }
@@ -23,8 +23,7 @@
     #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
-    #lobbyVersion { position: absolute; right: 30px; bottom: 15px; color: #888; font-size: 14px; pointer-events:none; user-select:none; }
-
+    #versionInfo { position: fixed; right: 18px; bottom: 8px; color: #cfc; font-size: 15px; opacity: 0.7; user-select: none; z-index: 99; }
     /* --- LANG SELECT --- */
     #langSelectRow {
       margin-top: 18px;
@@ -66,47 +65,53 @@
       user-select: none;
     }
 
-    /* --- MOBILE JOYSTICK CONTROLS --- */
+    /* ---- MOBILE CONTROLS ---- */
     #mobileControls {
       display: none;
       position: fixed;
-      left: 0; top: 0; width: 100vw; height: 100vh; z-index: 8; pointer-events: none;
+      left: 0; top: 0; width: 100vw; height: 100vh; z-index: 99;
+      pointer-events: none;
+      user-select: none;
     }
     .joystickZone {
       position: absolute;
       width: 110px; height: 110px;
-      background: rgba(255,255,255,0.05);
+      background: rgba(70,70,70,0.13);
       border-radius: 50%;
       pointer-events: auto;
-      touch-action: none;
+      opacity: 0.68;
+      /* Nouvelle position, nettement plus haut ! */
     }
+    /* Joystick MOVE : en bas à gauche mais remonté et décalé à droite */
     #joystickMove {
-      left: 44px; bottom: 90px;
+      left: 38px;
+      bottom: 24vh;
     }
+    /* Joystick SHOOT : en bas à droite mais remonté et décalé à gauche */
     #joystickShoot {
-      right: 44px; bottom: 90px;
+      right: 38px;
+      bottom: 24vh;
     }
     .joystickStick {
       position: absolute;
       left: 50%; top: 50%;
-      width: 58px; height: 58px;
-      margin-left: -29px; margin-top: -29px;
-      background: rgba(170,220,255,0.25);
+      width: 56px; height: 56px;
+      margin-left: -28px; margin-top: -28px;
+      background: rgba(140,255,120,0.43);
       border-radius: 50%;
-      box-shadow: 0 2px 7px #0092;
+      box-shadow: 0 0 12px #7f7  inset;
+      border: 2.2px solid #fff8;
       pointer-events: none;
       transition: background 0.12s;
-      border: 2px solid #77cfff55;
     }
     #joystickShoot .joystickStick {
-      background: rgba(255,180,150,0.25);
-      border: 2px solid #ffeebb55;
+      background: rgba(255,120,120,0.37);
+      box-shadow: 0 0 12px #f77  inset;
     }
-    @media (max-width:700px) {
-      #lobbyBox { min-width: 0; width: 97vw; }
-      #lobbyVersion { right: 9px; }
-      #joystickMove, #joystickShoot { width: 95px; height: 95px; }
-      .joystickStick { width: 44px; height: 44px; margin-left: -22px; margin-top: -22px; }
+    @media (max-width: 800px) {
+      .joystickZone { width: 94px; height: 94px; }
+      .joystickStick { width: 45px; height: 45px; margin-left: -22.5px; margin-top: -22.5px; }
+      #joystickMove, #joystickShoot { left: 16px; right: 16px; }
     }
   </style>
 </head>
@@ -136,11 +141,11 @@
       <br>
       <button id="lobbyJoin"></button>
       <div id="langSelectRow"></div>
-      <div id="lobbyVersion">Version 1.0.0 par Myg</div>
     </div>
   </div>
+  <div id="versionInfo">Version 1.0.0 par Myg</div>
   <div id="waveMessage"></div>
-  <!-- MOBILE CONTROLS -->
+
   <div id="mobileControls">
     <div id="joystickMove" class="joystickZone">
       <div id="joystickStickMove" class="joystickStick"></div>
@@ -152,6 +157,11 @@
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script>
+    const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
+    if (isMobile) {
+      document.getElementById('mobileControls').style.display = 'block';
+    }
+
     const LANGS = [
       { code: 'en', flag: 'gb.png', label: 'English' },
       { code: 'cn', flag: 'cn.png', label: '中文' },
@@ -261,7 +271,7 @@
     let myKills = 0;
     let myPseudo = "";
 
-    const PLAYER_SPEED_PER_SEC = 700;
+    const PLAYER_SPEED_PER_SEC = isMobile ? 700 : 700; // Vitesse identique PC/Mobile pour égalité
 
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
@@ -274,14 +284,11 @@
     let mouseDown = false;
     let mousePos = { x: 0, y: 0 };
 
-    // --- MOBILE/PC detection
-    const isMobile = /iPhone|iPad|Android|Mobile|Opera Mini|IEMobile|WPDesktop|BlackBerry|webOS|Windows Phone|Kindle/i.test(navigator.userAgent);
-
     window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-    window.addEventListener('mousedown', e => { if (!isMobile) mouseDown = e.button === 0; });
-    window.addEventListener('mouseup', e => { if (!isMobile && e.button === 0) mouseDown = false; });
-    window.addEventListener('mousemove', e => { if (!isMobile) mousePos = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mousedown', e => { mouseDown = e.button === 0; });
+    window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+    window.addEventListener('mousemove', e => { mousePos = { x: e.clientX, y: e.clientY }; });
 
     function resizeCanvas() {
       canvas.width = window.innerWidth;
@@ -290,7 +297,6 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // ------ DESSIN -------
     function drawMap() {
       if (!map.length) return;
       const startCol = Math.floor(cameraX / TILE_SIZE);
@@ -371,89 +377,159 @@
       ctx.strokeStyle = '#fff';
       ctx.strokeRect(x - width/2, y, width, height);
     }
-    // -------- LIGNE DE VISÉE --------
-    function drawAimLine() {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      let x = player.x - cameraX;
-      let y = player.y - cameraY;
 
-      let dirX = 0, dirY = 0;
-      if (!isMobile) {
-        // Souris
-        dirX = mousePos.x - x;
-        dirY = mousePos.y - y;
-      } else {
-        // Mobile, joystick tir
-        dirX = joystickDirShoot.x;
-        dirY = joystickDirShoot.y;
-      }
-      let length = Math.sqrt(dirX*dirX + dirY*dirY);
-      if (length < 0.1) return;
-      dirX /= length;
-      dirY /= length;
+    // ---------- JOYSTICK MOBILE LOGIC ---------
+    let joystickDirMove = {x:0, y:0}, joystickDirShoot = {x:0, y:0};
+    let joystickActiveMove = false, joystickActiveShoot = false;
 
-      let L = 90;
-      ctx.save();
-      ctx.strokeStyle = "#fffc";
-      ctx.lineWidth = 4;
-      ctx.globalAlpha = 0.47;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + dirX * L, y + dirY * L);
-      ctx.stroke();
-      ctx.restore();
+    function setupMobileJoysticks() {
+      if (!isMobile) return;
+      // Move
+      const joyZoneMove = document.getElementById('joystickMove');
+      const joyStickMove = document.getElementById('joystickStickMove');
+      let moveTouchId = null;
+      joyZoneMove.addEventListener('touchstart', function(e){
+        let t = e.changedTouches[0];
+        moveTouchId = t.identifier;
+        joystickActiveMove = true;
+        joyStickMove.style.background = 'rgba(160,255,100,0.7)';
+      }, {passive:false});
+      joyZoneMove.addEventListener('touchmove', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === moveTouchId) {
+            let zoneRect = joyZoneMove.getBoundingClientRect();
+            let centerX = zoneRect.left + zoneRect.width/2;
+            let centerY = zoneRect.top + zoneRect.height/2;
+            let dx = t.clientX - centerX;
+            let dy = t.clientY - centerY;
+            let len = Math.sqrt(dx*dx + dy*dy);
+            // --- Correction : direction TOUJOURS À FOND si il y a mouvement ---
+            if (len > 10) {
+              joystickDirMove.x = dx / len;
+              joystickDirMove.y = dy / len;
+            } else {
+              joystickDirMove.x = 0;
+              joystickDirMove.y = 0;
+            }
+            // Visuel
+            let maxLen = zoneRect.width/2 - 12;
+            if (len > maxLen) len = maxLen;
+            joyStickMove.style.left = (50 + (dx/zoneRect.width)*100) + '%';
+            joyStickMove.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
+          }
+        }
+      }, {passive:false});
+      joyZoneMove.addEventListener('touchend', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === moveTouchId) {
+            joystickActiveMove = false;
+            joystickDirMove.x = joystickDirMove.y = 0;
+            moveTouchId = null;
+            joyStickMove.style.left = "50%";
+            joyStickMove.style.top = "50%";
+            joyStickMove.style.background = 'rgba(140,255,120,0.43)';
+          }
+        }
+      }, {passive:false});
+
+      // Shoot
+      const joyZoneShoot = document.getElementById('joystickShoot');
+      const joyStickShoot = document.getElementById('joystickStickShoot');
+      let shootTouchId = null;
+      joyZoneShoot.addEventListener('touchstart', function(e){
+        let t = e.changedTouches[0];
+        shootTouchId = t.identifier;
+        joystickActiveShoot = true;
+        joyStickShoot.style.background = 'rgba(255,120,120,0.65)';
+      }, {passive:false});
+      joyZoneShoot.addEventListener('touchmove', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === shootTouchId) {
+            let zoneRect = joyZoneShoot.getBoundingClientRect();
+            let centerX = zoneRect.left + zoneRect.width/2;
+            let centerY = zoneRect.top + zoneRect.height/2;
+            let dx = t.clientX - centerX;
+            let dy = t.clientY - centerY;
+            let len = Math.sqrt(dx*dx + dy*dy);
+            // --- Correction : direction TOUJOURS À FOND si il y a mouvement ---
+            if (len > 10) {
+              joystickDirShoot.x = dx / len;
+              joystickDirShoot.y = dy / len;
+            } else {
+              joystickDirShoot.x = 0;
+              joystickDirShoot.y = 0;
+            }
+            // Visuel
+            let maxLen = zoneRect.width/2 - 12;
+            if (len > maxLen) len = maxLen;
+            joyStickShoot.style.left = (50 + (dx/zoneRect.width)*100) + '%';
+            joyStickShoot.style.top  = (50 + (dy/zoneRect.height)*100) + '%';
+          }
+        }
+      }, {passive:false});
+      joyZoneShoot.addEventListener('touchend', function(e){
+        for(let i=0;i<e.changedTouches.length;i++) {
+          let t = e.changedTouches[i];
+          if (t.identifier === shootTouchId) {
+            joystickActiveShoot = false;
+            joystickDirShoot.x = joystickDirShoot.y = 0;
+            shootTouchId = null;
+            joyStickShoot.style.left = "50%";
+            joyStickShoot.style.top = "50%";
+            joyStickShoot.style.background = 'rgba(255,120,120,0.37)';
+          }
+        }
+      }, {passive:false});
     }
+    setupMobileJoysticks();
 
-    // -------- JEU / UPDATE --------
     function update(deltaTime) {
       if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
       let player = playersHealth[myId];
       let newX = player.x, newY = player.y;
       let move = PLAYER_SPEED_PER_SEC * deltaTime;
-      if (!isMobile) {
+      if (isMobile) {
+        // --- Correction: joystick toujours à fond ---
+        if (joystickActiveMove && (joystickDirMove.x !== 0 || joystickDirMove.y !== 0)) {
+          newX += move * joystickDirMove.x;
+          newY += move * joystickDirMove.y;
+        }
+      } else {
         if (keys['arrowup'] || keys['w']) newY -= move;
         if (keys['arrowdown'] || keys['s']) newY += move;
         if (keys['arrowleft'] || keys['a']) newX -= move;
         if (keys['arrowright'] || keys['d']) newX += move;
-      } else {
-        // MOBILE - joystick déplacement
-        if (joystickDirMove.x || joystickDirMove.y) {
-          newX += joystickDirMove.x * move;
-          newY += joystickDirMove.y * move;
-        }
       }
       if (newX !== player.x || newY !== player.y) {
         socket.emit('playerMovement', { x: newX, y: newY });
       }
-
-      // SHOOT
-      if (!isMobile) {
-        if (mouseDown) {
-          if (!shootBlocked) {
-            shootBlocked = true;
-            const mouseWorldX = cameraX + mousePos.x;
-            const mouseWorldY = cameraY + mousePos.y;
-            socket.emit('shoot', {
-              targetX: mouseWorldX,
-              targetY: mouseWorldY
-            });
-            setTimeout(() => { shootBlocked = false; }, 500);
-          }
+      // SHOOT on mobile
+      if (isMobile && joystickActiveShoot && (joystickDirShoot.x !== 0 || joystickDirShoot.y !== 0)) {
+        if (!shootBlocked) {
+          shootBlocked = true;
+          // Tire dans la direction du joystick de shoot
+          const targetX = player.x + joystickDirShoot.x * 1000;
+          const targetY = player.y + joystickDirShoot.y * 1000;
+          socket.emit('shoot', {
+            targetX, targetY
+          });
+          setTimeout(() => { shootBlocked = false; }, 500);
         }
-      } else {
-        // MOBILE tir automatique si joystick tir bougé
-        if ((Math.abs(joystickDirShoot.x) > 0.18 || Math.abs(joystickDirShoot.y) > 0.18)) {
-          if (!shootBlocked) {
-            shootBlocked = true;
-            const targetX = player.x + joystickDirShoot.x * 120;
-            const targetY = player.y + joystickDirShoot.y * 120;
-            socket.emit('shoot', {
-              targetX,
-              targetY
-            });
-            setTimeout(() => { shootBlocked = false; }, 500);
-          }
+      }
+      // SHOOT on PC
+      if (!isMobile && mouseDown) {
+        if (!shootBlocked) {
+          shootBlocked = true;
+          const mouseWorldX = cameraX + mousePos.x;
+          const mouseWorldY = cameraY + mousePos.y;
+          socket.emit('shoot', {
+            targetX: mouseWorldX,
+            targetY: mouseWorldY
+          });
+          setTimeout(() => { shootBlocked = false; }, 500);
         }
       }
     }
@@ -463,11 +539,15 @@
     function updateCamera() {
       if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
       let player = playersHealth[myId];
-      let zoom = (isMobile ? 0.82 : 1.0); // Dézoom sur mobile
-      cameraX = player.x - canvas.width / 2 / zoom;
-      cameraY = player.y - canvas.height / 2 / zoom;
-      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width / zoom));
-      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height / zoom));
+      cameraX = player.x - canvas.width / 2;
+      cameraY = player.y - canvas.height / 2;
+      // Dézoom un peu plus sur mobile
+      if (isMobile) {
+        cameraX -= canvas.width * 0.12;
+        cameraY -= canvas.height * 0.08;
+      }
+      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
+      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
     }
 
     function drawHUD() {
@@ -498,11 +578,9 @@
       drawBullets();
       drawZombies();
       drawPlayers();
-      drawAimLine();
       drawHUD();
       if (!isDead) requestAnimationFrame(gameLoop);
     }
-
     socket.on('connect', () => { myId = socket.id; });
 
     socket.on('lobbyUpdate', (data) => {
@@ -576,8 +654,8 @@
     });
 
     socket.on('currentRound', (round) => {
-      currentRound = round;
-      drawHUD();
+      currentRound = round;  // Bien mettre à jour ici la variable
+      drawHUD();             // Et redraw le HUD
     });
 
     socket.on('healthUpdate', (health) => {
@@ -616,105 +694,12 @@
     updateUITexts();
     drawHUD();
 
+    // Gestion touche 'P' pour tuer tous les zombies (uniquement si pseudo = 'Myg')
     window.addEventListener('keydown', e => {
       if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
         socket.emit('killAllZombies');
       }
     });
-
-    // ------------- MOBILE CONTROLS -------------
-    let joystickDirMove = { x:0, y:0 };
-    let joystickDirShoot = { x:0, y:0 };
-    let moveTouchId = null, shootTouchId = null;
-
-    const mobileControls = document.getElementById('mobileControls');
-    const joystickMove = document.getElementById('joystickMove');
-    const joystickStickMove = document.getElementById('joystickStickMove');
-    const joystickShoot = document.getElementById('joystickShoot');
-    const joystickStickShoot = document.getElementById('joystickStickShoot');
-
-    if (isMobile) {
-      mobileControls.style.display = "block";
-      document.body.style.overscrollBehavior = "none";
-      document.body.style.touchAction = "none";
-      document.body.addEventListener('touchmove', function(e){e.preventDefault();}, {passive:false});
-    }
-    // --- MOUVEMENT (gauche) ---
-    joystickMove.addEventListener('touchstart', function(e) {
-      for (let t of e.changedTouches) {
-        if (moveTouchId === null) {
-          moveTouchId = t.identifier;
-          updateJoystick(t, joystickMove, joystickStickMove, joystickDirMove);
-          break;
-        }
-      }
-    });
-    joystickMove.addEventListener('touchmove', function(e) {
-      for (let t of e.changedTouches) {
-        if (t.identifier === moveTouchId) {
-          updateJoystick(t, joystickMove, joystickStickMove, joystickDirMove);
-          break;
-        }
-      }
-    });
-    joystickMove.addEventListener('touchend', function(e) {
-      for (let t of e.changedTouches) {
-        if (t.identifier === moveTouchId) {
-          resetJoystick(joystickMove, joystickStickMove, joystickDirMove);
-          moveTouchId = null;
-          break;
-        }
-      }
-    });
-    // --- TIR (droite) ---
-    joystickShoot.addEventListener('touchstart', function(e) {
-      for (let t of e.changedTouches) {
-        if (shootTouchId === null) {
-          shootTouchId = t.identifier;
-          updateJoystick(t, joystickShoot, joystickStickShoot, joystickDirShoot);
-          break;
-        }
-      }
-    });
-    joystickShoot.addEventListener('touchmove', function(e) {
-      for (let t of e.changedTouches) {
-        if (t.identifier === shootTouchId) {
-          updateJoystick(t, joystickShoot, joystickStickShoot, joystickDirShoot);
-          break;
-        }
-      }
-    });
-    joystickShoot.addEventListener('touchend', function(e) {
-      for (let t of e.changedTouches) {
-        if (t.identifier === shootTouchId) {
-          resetJoystick(joystickShoot, joystickStickShoot, joystickDirShoot);
-          shootTouchId = null;
-          break;
-        }
-      }
-    });
-    // --- FONCTIONS D'AIDE ---
-    function updateJoystick(touch, zone, stick, dirObj) {
-      let zoneRect = zone.getBoundingClientRect();
-      let centerX = zoneRect.left + zoneRect.width/2;
-      let centerY = zoneRect.top + zoneRect.height/2;
-      let dx = touch.clientX - centerX;
-      let dy = touch.clientY - centerY;
-      let len = Math.sqrt(dx*dx + dy*dy);
-      let maxLen = zoneRect.width/2 - 12;
-      if (len > maxLen) { dx *= maxLen/len; dy *= maxLen/len; }
-      dirObj.x = dx/maxLen;
-      dirObj.y = dy/maxLen;
-      stick.style.left = (zoneRect.width/2 + dx - stick.offsetWidth/2) + "px";
-      stick.style.top = (zoneRect.height/2 + dy - stick.offsetHeight/2) + "px";
-    }
-    function resetJoystick(zone, stick, dirObj) {
-      let zoneRect = zone.getBoundingClientRect();
-      dirObj.x = 0; dirObj.y = 0;
-      stick.style.left = (zoneRect.width/2 - stick.offsetWidth/2) + "px";
-      stick.style.top = (zoneRect.height/2 - stick.offsetHeight/2) + "px";
-    }
-    // ------- FIN MOBILE CONTROLS ---------
   </script>
 </body>
 </html>
