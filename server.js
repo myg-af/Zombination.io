@@ -514,6 +514,7 @@ function findPath(game, startX, startY, endX, endY) {
     }
   }
   return null;
+}
 
 function moveZombies(game, deltaTime) {
   const now = Date.now();
