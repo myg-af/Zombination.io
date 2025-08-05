@@ -24,7 +24,6 @@
     #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
-    /* --- VERSION LOBBY --- */
     #lobbyVersion {
       position: absolute;
       right: 16px;
@@ -36,7 +35,6 @@
       font-family: monospace;
       user-select: none;
     }
-    /* --- LANG SELECT --- */
     #langSelectRow {
       margin-top: 18px;
       display: flex;
@@ -60,7 +58,6 @@
       transform: scale(1.07);
       box-shadow: 0 2px 16px #33fc6930;
     }
-    /* --- WAVE MESSAGE --- */
     #waveMessage {
       position: fixed;
       top: 50%;
@@ -80,8 +77,8 @@
     #mobileControls { display: none; position: fixed; left:0; top:0; width:100vw; height:100vh; pointer-events: none; z-index: 15;}
     .joystickZone.move {
       position: absolute;
-      bottom: 18vh;
-      left: 18vw;
+      bottom: 20vh;
+      left: 12vw;
       width: 78px;
       height: 78px;
       pointer-events: auto;
@@ -89,30 +86,16 @@
       touch-action: none;
       opacity: 0.64;
     }
-    #btnShoot {
+    .joystickZone.shoot {
       position: absolute;
-      bottom: 18vh;
-      right: 8vw;
-      width: 68px; height: 68px;
-      background: linear-gradient(145deg,#ff5555 75%,#ffadad 100%);
-      border-radius: 50%;
-      border: 2.2px solid #fff8;
-      box-shadow: 0 2px 14px #d9030345;
-      color: #fff;
-      font-size: 25px;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      bottom: 20vh;
+      right: 12vw;
+      width: 78px;
+      height: 78px;
       pointer-events: auto;
-      opacity: 0.70;
-      user-select: none;
       z-index: 101;
       touch-action: none;
-      transition: background 0.12s;
-    }
-    #btnShoot:active {
-      background: linear-gradient(145deg,#c0392b 70%,#ffadad 100%);
+      opacity: 0.64;
     }
     .joystickBase {
       position: absolute;
@@ -123,6 +106,9 @@
       border: 2px solid #4e8e51;
       box-shadow: 0 0 10px #0006;
       pointer-events: none;
+    }
+    .joystickBase.shoot {
+      border: 2px solid #c94a4a;
     }
     .joystickStick {
       position: absolute;
@@ -135,15 +121,19 @@
       pointer-events: none;
       transition: background 0.1s;
     }
+    .joystickStick.shoot {
+      background: rgba(255,90,90,0.65);
+      border: 2px solid #e82f2f;
+    }
     @media (max-width: 900px) {
-      .joystickZone.move { width: 64px; height: 64px; bottom: 16vh; left: 12vw; }
-      #btnShoot { width: 44px; height: 44px; bottom: 16vh; right: 5vw; }
-      .joystickBase { width: 64px; height: 64px; border-radius: 32px;}
-      .joystickStick { width: 18px; height: 18px; left: 14px; top: 14px;}
+      .joystickZone.move { width: 64px; height: 64px; bottom: 18vh; left: 9vw; }
+      .joystickZone.shoot { width: 64px; height: 64px; bottom: 18vh; right: 9vw; }
+      .joystickBase, .joystickBase.shoot { width: 64px; height: 64px; border-radius: 32px;}
+      .joystickStick, .joystickStick.shoot { width: 18px; height: 18px; left: 14px; top: 14px;}
     }
     @media (max-width: 600px) {
-      .joystickZone.move { left: 6vw; bottom: 12vh; }
-      #btnShoot { right: 4vw; bottom: 12vh;}
+      .joystickZone.move { left: 4vw; bottom: 12vh; }
+      .joystickZone.shoot { right: 4vw; bottom: 12vh;}
     }
   </style>
 </head>
@@ -179,17 +169,14 @@
   <div id="waveMessage"></div>
   <!-- Mobile Controls -->
   <div id="mobileControls">
-    <div class="joystickZone move" id="joystickZone">
+    <div class="joystickZone move" id="joystickMove">
       <div class="joystickBase"></div>
-      <div class="joystickStick" id="joystickStick"></div>
+      <div class="joystickStick" id="joystickStickMove"></div>
     </div>
-    <button id="btnShoot">
-      <svg width="34" height="34" viewBox="0 0 34 34">
-        <circle cx="17" cy="17" r="13" fill="#fff3" />
-        <circle cx="17" cy="17" r="9" fill="#ff3c3c"/>
-        <path d="M11 18 l6 -6 l6 6" stroke="#fff" stroke-width="2" fill="none"/>
-      </svg>
-    </button>
+    <div class="joystickZone shoot" id="joystickShoot">
+      <div class="joystickBase shoot"></div>
+      <div class="joystickStick shoot" id="joystickStickShoot"></div>
+    </div>
   </div>
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
@@ -439,11 +426,23 @@
         }
       } else {
         // Mobile controls
-        let j = joystickDir;
+        let j = joystickDirMove;
         if (j.x !== 0 || j.y !== 0) {
           newX += j.x * move;
           newY += j.y * move;
           socket.emit('playerMovement', { x: newX, y: newY });
+        }
+        // Tir continu dans la direction du joystick shoot
+        let s = joystickDirShoot;
+        if ((s.x !== 0 || s.y !== 0) && !shootBlocked) {
+          shootBlocked = true;
+          let px = player.x, py = player.y;
+          let norm = Math.sqrt(s.x*s.x + s.y*s.y);
+          let dx = s.x / (norm || 1), dy = s.y / (norm || 1);
+          const mouseWorldX = px + dx * 200;
+          const mouseWorldY = py + dy * 200;
+          socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
+          setTimeout(() => { shootBlocked = false; }, 500);
         }
       }
     }
@@ -592,75 +591,73 @@
       }
     });
 
-    // ------- MOBILE CONTROLS -------
-    // Variables pour mobile
-    let joystickActive = false;
-    let joystickStart = {x:0,y:0};
-    let joystickDir = {x:0,y:0};
-    // Elements
+    // ------- MOBILE CONTROLS 2 JOYSTICKS -------
+    let joystickActiveMove = false, joystickActiveShoot = false;
+    let joystickDirMove = {x:0, y:0}, joystickDirShoot = {x:0, y:0};
     const mobileControls = document.getElementById('mobileControls');
-    const joystickZone = document.getElementById('joystickZone');
-    const joystickStick = document.getElementById('joystickStick');
-    const btnShoot = document.getElementById('btnShoot');
-    // Afficher/masquer les contrôles mobiles
+    const joystickMove = document.getElementById('joystickMove');
+    const joystickStickMove = document.getElementById('joystickStickMove');
+    const joystickShoot = document.getElementById('joystickShoot');
+    const joystickStickShoot = document.getElementById('joystickStickShoot');
+    // Afficher les contrôles mobiles
     if (isMobile) {
       mobileControls.style.display = "block";
-      btnShoot.style.display = "flex";
       document.body.style.overscrollBehavior = "none";
       document.body.style.touchAction = "none";
       document.body.addEventListener('touchmove', function(e){e.preventDefault();}, {passive:false});
     }
-    // Gestion joystick déplacement
-    if (isMobile) {
-      let zoneRect = joystickZone.getBoundingClientRect();
-      function updateJoystickPos(x, y) {
+    function joystickEvents(zone, stick, joystickDir, joystickActiveFlag, assignDir) {
+      let zoneRect = zone.getBoundingClientRect();
+      function updatePos(x, y) {
         let centerX = zoneRect.left + zoneRect.width/2;
         let centerY = zoneRect.top + zoneRect.height/2;
         let dx = x - centerX;
         let dy = y - centerY;
         let len = Math.sqrt(dx*dx + dy*dy);
         let maxLen = zoneRect.width/2 - 12;
-        if (len > maxLen) {
-          dx *= maxLen/len; dy *= maxLen/len;
-        }
-        joystickDir.x = dx/maxLen;
-        joystickDir.y = dy/maxLen;
-        joystickStick.style.left = (zoneRect.width/2 + dx - joystickStick.offsetWidth/2) + "px";
-        joystickStick.style.top = (zoneRect.height/2 + dy - joystickStick.offsetHeight/2) + "px";
+        if (len > maxLen) { dx *= maxLen/len; dy *= maxLen/len; }
+        assignDir(dx/maxLen, dy/maxLen);
+        stick.style.left = (zoneRect.width/2 + dx - stick.offsetWidth/2) + "px";
+        stick.style.top = (zoneRect.height/2 + dy - stick.offsetHeight/2) + "px";
       }
-      joystickZone.addEventListener('touchstart', e => {
+      zone.addEventListener('touchstart', e => {
         if (e.touches.length>0) {
-          joystickActive = true;
-          zoneRect = joystickZone.getBoundingClientRect();
-          updateJoystickPos(e.touches[0].clientX, e.touches[0].clientY);
+          zoneRect = zone.getBoundingClientRect();
+          joystickActiveFlag.active = true;
+          updatePos(e.touches[0].clientX, e.touches[0].clientY);
         }
       });
-      joystickZone.addEventListener('touchmove', e => {
-        if (joystickActive && e.touches.length>0) {
-          updateJoystickPos(e.touches[0].clientX, e.touches[0].clientY);
+      zone.addEventListener('touchmove', e => {
+        if (joystickActiveFlag.active && e.touches.length>0) {
+          updatePos(e.touches[0].clientX, e.touches[0].clientY);
         }
       });
-      joystickZone.addEventListener('touchend', e => {
-        joystickActive = false;
-        joystickDir.x = joystickDir.y = 0;
-        joystickStick.style.left = (zoneRect.width/2 - joystickStick.offsetWidth/2) + "px";
-        joystickStick.style.top = (zoneRect.height/2 - joystickStick.offsetHeight/2) + "px";
+      zone.addEventListener('touchend', e => {
+        joystickActiveFlag.active = false;
+        assignDir(0, 0);
+        stick.style.left = (zoneRect.width/2 - stick.offsetWidth/2) + "px";
+        stick.style.top = (zoneRect.height/2 - stick.offsetHeight/2) + "px";
       });
-      // Tir avec le bouton
-      btnShoot.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (!shootBlocked && myId && playersHealth[myId]) {
-          shootBlocked = true;
-          let px = playersHealth[myId].x;
-          let py = playersHealth[myId].y;
-          let dirX = joystickDir.x, dirY = joystickDir.y;
-          if (dirX===0 && dirY===0) { dirY = -1; }
-          const mouseWorldX = px + dirX * 200;
-          const mouseWorldY = py + dirY * 200;
-          socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
-          setTimeout(() => { shootBlocked = false; }, 500);
-        }
-      });
+    }
+    if (isMobile) {
+      // MOVE joystick
+      let joystickMoveFlag = {active:false};
+      joystickEvents(
+        joystickMove,
+        joystickStickMove,
+        joystickDirMove,
+        joystickMoveFlag,
+        (x,y)=>{ joystickDirMove.x = x; joystickDirMove.y = y; }
+      );
+      // SHOOT joystick
+      let joystickShootFlag = {active:false};
+      joystickEvents(
+        joystickShoot,
+        joystickStickShoot,
+        joystickDirShoot,
+        joystickShootFlag,
+        (x,y)=>{ joystickDirShoot.x = x; joystickDirShoot.y = y; }
+      );
     }
     // ------- FIN MOBILE CONTROLS ---------
   </script>
