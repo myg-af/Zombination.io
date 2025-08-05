@@ -555,10 +555,20 @@ function moveBullets(game, deltaTime) {
   }
 }
 
+// ----------- CHANGEMENT PRINCIPAL CI-DESSOUS --------------------
+
+// Ajout d'une variable globale pour le temps de la dernière boucle
+let lastGameLoopTime = Date.now();
+
 function gameLoop() {
+  const now = Date.now();
+  // Calcul dynamique du vrai deltaTime (en secondes)
+  let deltaTime = (now - lastGameLoopTime) / 1000;
+  if (deltaTime > 0.1) deltaTime = 0.1; // Limite pour éviter les gros lags d'un coup
+  if (deltaTime < 0.008) deltaTime = 0.008; // minimum
+
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
-    const deltaTime = 1 / 30;
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
@@ -566,9 +576,12 @@ function gameLoop() {
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
   }
+  lastGameLoopTime = now;
   setTimeout(gameLoop, 1000 / 30);
 }
 gameLoop();
+
+// ----------- FIN DU CHANGEMENT PRINCIPAL ------------------------
 
 const PORT = process.env.PORT || 3000;
 console.log('Avant listen');
