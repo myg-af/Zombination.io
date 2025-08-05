@@ -456,6 +456,65 @@ function movePlayers(game, deltaTime) {
 const zombieAttackCooldown = 350;
 const lastZombieAttackPerGame = {};
 
+function findPath(game, startX, startY, endX, endY) {
+  const openSet = [];
+  const closedSet = new Set();
+  const cameFrom = new Map();
+
+  function nodeKey(x, y) { return `${x},${y}`; }
+  function heuristic(x1, y1, x2, y2) { return Math.abs(x1 - x2) + Math.abs(y1 - y2); }
+
+  const startNode = { x: Math.floor(startX / TILE_SIZE), y: Math.floor(startY / TILE_SIZE), g: 0 };
+  startNode.f = heuristic(startNode.x, startNode.y, Math.floor(endX / TILE_SIZE), Math.floor(endY / TILE_SIZE));
+  openSet.push(startNode);
+
+  const goalX = Math.floor(endX / TILE_SIZE);
+  const goalY = Math.floor(endY / TILE_SIZE);
+
+  while (openSet.length > 0) {
+    openSet.sort((a, b) => a.f - b.f);
+    const current = openSet.shift();
+    if (current.x === goalX && current.y === goalY) {
+      const path = [];
+      let cur = current;
+      while (cur) {
+        path.unshift({ x: cur.x, y: cur.y });
+        cur = cameFrom.get(nodeKey(cur.x, cur.y));
+      }
+      return path;
+    }
+    closedSet.add(nodeKey(current.x, current.y));
+    const neighbors = [
+      { x: current.x + 1, y: current.y },
+      { x: current.x - 1, y: current.y },
+      { x: current.x, y: current.y + 1 },
+      { x: current.x, y: current.y - 1 },
+    ];
+    for (const n of neighbors) {
+      if (
+        n.x < 0 || n.x >= MAP_COLS ||
+        n.y < 0 || n.y >= MAP_ROWS ||
+        game.map[n.y][n.x] === 1 ||
+        closedSet.has(nodeKey(n.x, n.y))
+      ) {
+        continue;
+      }
+      const tentativeG = current.g + 1;
+      const existingNode = openSet.find(node => node.x === n.x && node.y === n.y);
+      if (!existingNode || tentativeG < existingNode.g) {
+        cameFrom.set(nodeKey(n.x, n.y), current);
+        const f = tentativeG + heuristic(n.x, n.y, goalX, goalY);
+        if (existingNode) {
+          existingNode.g = tentativeG;
+          existingNode.f = f;
+        } else {
+          openSet.push({ x: n.x, y: n.y, g: tentativeG, f });
+        }
+      }
+    }
+  }
+  return null;
+
 function moveZombies(game, deltaTime) {
   const now = Date.now();
   const zombieList = Object.entries(game.zombies);
