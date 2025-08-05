@@ -2,30 +2,147 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Zombination.io</title>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
-    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
-    #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif;
+      touch-action: none;
+      -webkit-user-select: none; user-select: none;
+    }
+    #gameCanvas {
+      display: block;
+      background: #222;
+      position: absolute;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+    #hudStats {
+      position: fixed;
+      left: 10px;
+      bottom: 10px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 7px;
+      padding: 10px 20px 10px 15px;
+      font-size: 18px;
+      user-select: none;
+      min-width: 210px;
+    }
     #hudAlive { font-weight: bold; color: #fd7; }
-    #deathScreen { display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(30,0,0,0.8); z-index: 3; justify-content: center; align-items: center; flex-direction: column; }
-    #deathScreenInner { background: #181818; border-radius: 20px; padding: 35px 45px; color: #fff; box-shadow: 0 6px 30px #000c; text-align: center; min-width: 320px; }
-    #deathScreen h2 { margin: 0 0 15px 0; color: #fc2c3c; }
-    #deathStats { margin-bottom: 15px; font-size: 20px; }
-    #btnReplay { background: #222; color: #fff; padding: 10px 32px; border: none; border-radius: 10px; font-size: 20px; cursor: pointer; transition: background 0.16s; }
-    #btnReplay:hover { background: #393; color: #fff; }
-    /* --- LOBBY --- */
-    #lobbyScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; position: fixed; left:0;top:0;width:100vw;height:100vh;z-index:10; background: #181c; }
-    #lobbyBox { background: #19191e; border-radius: 20px; padding: 36px 42px; box-shadow: 0 6px 30px #000c; min-width: 350px; min-height: 190px; text-align: center; }
-    #lobbyBox input[type=text] { font-size: 20px; padding: 7px 12px; border-radius: 7px; border: 1px solid #444; outline: none; margin-bottom: 10px; width: 175px; }
-    #lobbyJoin { padding: 7px 32px; border-radius: 8px; border:none; font-size: 20px; background:#49c749; color: #fff; cursor: pointer; margin-top: 7px; }
-    #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
-    #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
-    #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
-    #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
-    /* --- Version Info --- */
-    #versionInfo { position: absolute; right: 18px; bottom: 7px; color: #aaa; font-size: 13px; z-index:11; pointer-events:none; user-select: none;}
-    /* --- LANG SELECT --- */
+    #deathScreen {
+      display: none;
+      position: fixed;
+      left: 0; top: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(30,0,0,0.8);
+      z-index: 3;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      user-select: none;
+    }
+    #deathScreenInner {
+      background: #181818;
+      border-radius: 20px;
+      padding: 35px 45px;
+      color: #fff;
+      box-shadow: 0 6px 30px #000c;
+      text-align: center;
+      min-width: 320px;
+    }
+    #deathScreen h2 {
+      margin: 0 0 15px 0;
+      color: #fc2c3c;
+    }
+    #deathStats {
+      margin-bottom: 15px;
+      font-size: 20px;
+    }
+    #btnReplay {
+      background: #222;
+      color: #fff;
+      padding: 10px 32px;
+      border: none;
+      border-radius: 10px;
+      font-size: 20px;
+      cursor: pointer;
+      transition: background 0.16s;
+    }
+    #btnReplay:hover {
+      background: #393;
+      color: #fff;
+    }
+
+    /* LOBBY */
+    #lobbyScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      left:0; top:0;
+      width: 100vw; height: 100vh;
+      z-index: 10;
+      background: #181c;
+      user-select: none;
+    }
+    #lobbyBox {
+      background: #19191e;
+      border-radius: 20px;
+      padding: 36px 42px;
+      box-shadow: 0 6px 30px #000c;
+      min-width: 350px;
+      min-height: 190px;
+      text-align: center;
+    }
+    #lobbyBox input[type=text] {
+      font-size: 20px;
+      padding: 7px 12px;
+      border-radius: 7px;
+      border: 1px solid #444;
+      outline: none;
+      margin-bottom: 10px;
+      width: 175px;
+    }
+    #lobbyJoin {
+      padding: 7px 32px;
+      border-radius: 8px;
+      border:none;
+      font-size: 20px;
+      background:#49c749;
+      color: #fff;
+      cursor: pointer;
+      margin-top: 7px;
+    }
+    #lobbyJoin[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    #lobbyPlayers {
+      margin: 18px 0 12px 0;
+      color: #9fd;
+    }
+    #lobbyTimer {
+      font-size: 17px;
+      margin-bottom: 9px;
+    }
+    #lobbyStatus {
+      margin: 4px 0 0 0;
+      color: #ccc;
+      font-size: 14px;
+    }
+    #lobbyVersion {
+      position: fixed;
+      bottom: 8px;
+      right: 8px;
+      color: #888;
+      font-size: 13px;
+      user-select: none;
+    }
+
+    /* LANG SELECT */
     #langSelectRow {
       margin-top: 18px;
       display: flex;
@@ -49,7 +166,8 @@
       transform: scale(1.07);
       box-shadow: 0 2px 16px #33fc6930;
     }
-    /* --- WAVE MESSAGE --- */
+
+    /* WAVE MESSAGE */
     #waveMessage {
       position: fixed;
       top: 50%;
@@ -65,37 +183,30 @@
       z-index: 20;
       user-select: none;
     }
-    /* --- JOYSTICKS MOBILE --- */
-    #joystickMove, #joystickShoot {
+
+    /* Joysticks Mobile */
+    #joystickMove, #joystickAim {
       position: fixed;
-      width: 124px; height: 124px;
-      z-index: 99;
-      opacity: 0.77;
+      bottom: 160px;
+      width: 160px;
+      height: 160px;
+      opacity: 0.3;
+      user-select: none;
       touch-action: none;
-      background: none;
-      display: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
-    #joystickMove { left: 44px; bottom: 70px; }
-    #joystickShoot { right: 44px; bottom: 70px; }
-    .joystickBase {
-      background: rgba(0,0,0,0.23);
-      border: 2px solid #fff3;
-      border-radius: 50%; width: 100%; height: 100%; position: absolute; left: 0; top: 0;
+    #joystickMove {
+      left: 40px;
     }
-    .joystickStick {
-      background: linear-gradient(150deg, #fff6, #d7d7f3 60%, #ccc 95%);
-      border: 3.5px solid #58e29f;
-      box-shadow: 0 0 18px #28fc70b7;
-      border-radius: 50%;
-      width: 54px; height: 54px;
-      position: absolute; left: 35px; top: 35px;
-      transition: box-shadow 0.08s;
+    #joystickAim {
+      right: 40px;
     }
-    .joystickStick.active { box-shadow: 0 0 26px #4ef; border-color: #89e; }
   </style>
 </head>
 <body>
   <canvas id="gameCanvas"></canvas>
+
   <div id="hudStats">
     <div id="hudAlive"></div>
     <div id="hudZombies"></div>
@@ -103,6 +214,7 @@
     <div id="hudRound"></div>
     <div id="hudHP"></div>
   </div>
+
   <div id="deathScreen">
     <div id="deathScreenInner">
       <h2 id="deathTitle"></h2>
@@ -110,569 +222,464 @@
       <button id="btnReplay"></button>
     </div>
   </div>
+
   <div id="lobbyScreen">
     <div id="lobbyBox">
       <div id="lobbyTitle" style="font-size: 28px; margin-bottom: 18px;"><b>Zombination.io</b></div>
       <div id="lobbyPlayers"></div>
       <div id="lobbyTimer"></div>
       <div id="lobbyStatus"></div>
-      <input type="text" id="pseudoInput" maxlength="15" placeholder="" pattern="[A-Za-z0-9]{1,15}" />
+      <input type="text" id="pseudoInput" maxlength="15" placeholder="" />
       <br>
       <button id="lobbyJoin"></button>
       <div id="langSelectRow"></div>
     </div>
-    <div id="versionInfo">Version 1.0.0 par Myg</div>
+    <div id="lobbyVersion">Version 1.0.0 par Myg</div>
   </div>
+
   <div id="waveMessage"></div>
-  <!-- Joysticks -->
-  <div id="joystickMove">
-    <div class="joystickBase"></div>
-    <div class="joystickStick"></div>
-  </div>
-  <div id="joystickShoot">
-    <div class="joystickBase"></div>
-    <div class="joystickStick"></div>
-  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/nipplejs@0.7.3/dist/nipplejs.min.js"></script>
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
-  <script>
-    // ---- LANGS & UI INIT ----
-    const LANGS = [
-      { code: 'en', flag: 'gb.png', label: 'English' },
-      { code: 'cn', flag: 'cn.png', label: '中文' },
-      { code: 'ru', flag: 'ru.png', label: 'Русский' },
-      { code: 'es', flag: 'es.png', label: 'Español' },
-      { code: 'pt', flag: 'pt.png', label: 'Português' },
-      { code: 'de', flag: 'de.png', label: 'Deutsch' },
-      { code: 'jp', flag: 'jp.png', label: '日本語' },
-      { code: 'fr', flag: 'fr.png', label: 'Français' },
-      { code: 'pl', flag: 'pl.png', label: 'Polski' },
-      { code: 'kr', flag: 'kr.png', label: '한국어' }
-    ];
+<script>
+  const LANGS = [
+    { code: 'en', flag: 'gb.png', label: 'English' },
+    { code: 'cn', flag: 'cn.png', label: '中文' },
+    { code: 'ru', flag: 'ru.png', label: 'Русский' },
+    { code: 'es', flag: 'es.png', label: 'Español' },
+    { code: 'pt', flag: 'pt.png', label: 'Português' },
+    { code: 'de', flag: 'de.png', label: 'Deutsch' },
+    { code: 'jp', flag: 'jp.png', label: '日本語' },
+    { code: 'fr', flag: 'fr.png', label: 'Français' },
+    { code: 'pl', flag: 'pl.png', label: 'Polski' },
+    { code: 'kr', flag: 'kr.png', label: '한국어' }
+  ];
 
-    function getDefaultLang() { return "en"; }
-    let currentLang = getDefaultLang();
+  function getDefaultLang() {
+    return "en";
+  }
 
-    let lobbyData = {
-      started: false, count: 0, max: 8, timeLeft: 30, players: {}
-    };
-    let lobbyJoined = false;
-    let lobbyStarted = false;
+  let currentLang = getDefaultLang();
 
-    function initLobbyTexts() {
-      updateLobbyTexts();
-      pseudoInput.placeholder = TRANSLATIONS[currentLang].enterPseudo;
-      lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
-    }
+  let lobbyData = {
+    started: false,
+    count: 0,
+    max: 8,
+    timeLeft: 30,
+    players: {}
+  };
+  let lobbyJoined = false;
+  let lobbyStarted = false;
 
-    function updateLobbyTexts() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      lobbyPlayers.textContent = `${tr.playersInGame} : ${lobbyData.count}/${lobbyData.max}`;
-      lobbyTimer.textContent = `${tr.timeLeft} : ${lobbyData.timeLeft}s`;
-      const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
-      lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
-    }
+  const pseudoInput = document.getElementById('pseudoInput');
+  const lobbyJoin = document.getElementById('lobbyJoin');
+  const lobbyPlayers = document.getElementById('lobbyPlayers');
+  const lobbyTimer = document.getElementById('lobbyTimer');
+  const lobbyStatus = document.getElementById('lobbyStatus');
+  const deathTitle = document.getElementById('deathTitle');
+  const deathStats = document.getElementById('deathStats');
+  const btnReplay = document.getElementById('btnReplay');
+  const waveMessage = document.getElementById('waveMessage');
 
-    function updateUITexts() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      document.getElementById('lobbyTitle').innerHTML = `<b>${tr.zombination}</b>`;
-      pseudoInput.placeholder = tr.enterPseudo;
-      lobbyJoin.textContent = lobbyJoined ? tr.waiting : tr.join;
-      document.getElementById('deathTitle').textContent = tr.youDied;
-      btnReplay.textContent = tr.replay;
-      if (!lobbyStarted) updateLobbyTexts();
-    }
+  function initLobbyTexts() {
+    updateLobbyTexts();
+    pseudoInput.placeholder = TRANSLATIONS[currentLang].enterPseudo;
+    lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
+  }
 
-    const langSelectRow = document.getElementById('langSelectRow');
-    function renderLangFlags() {
-      langSelectRow.innerHTML = '';
-      LANGS.forEach(lang => {
-        const img = document.createElement('img');
-        img.src = `/flags/${lang.flag}`;
-        img.alt = lang.label;
-        img.title = lang.label;
-        img.className = 'langFlag' + (lang.code === currentLang ? ' selected' : '');
-        img.onclick = () => {
-          if (currentLang !== lang.code) {
-            currentLang = lang.code;
-            renderLangFlags();
-            updateUITexts();
-            drawHUD();
-          }
-        };
-        langSelectRow.appendChild(img);
-      });
-    }
+  function updateLobbyTexts() {
+    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    lobbyPlayers.textContent = `${tr.playersInGame} : ${lobbyData.count}/${lobbyData.max}`;
+    lobbyTimer.textContent = `${tr.timeLeft} : ${lobbyData.timeLeft}s`;
+    const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
+    lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
+  }
 
-    const pseudoInput = document.getElementById('pseudoInput');
-    const lobbyJoin = document.getElementById('lobbyJoin');
-    const lobbyPlayers = document.getElementById('lobbyPlayers');
-    const lobbyTimer = document.getElementById('lobbyTimer');
-    const lobbyStatus = document.getElementById('lobbyStatus');
-    const deathTitle = document.getElementById('deathTitle');
-    const deathStats = document.getElementById('deathStats');
-    const btnReplay = document.getElementById('btnReplay');
-    renderLangFlags();
-    initLobbyTexts();
+  function updateUITexts() {
+    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    document.getElementById('lobbyTitle').innerHTML = `<b>${tr.zombination}</b>`;
+    pseudoInput.placeholder = tr.enterPseudo;
+    lobbyJoin.textContent = lobbyJoined ? tr.waiting : tr.join;
+    deathTitle.textContent = tr.youDied;
+    btnReplay.textContent = tr.replay;
+    if (!lobbyStarted) updateLobbyTexts();
+  }
 
-    // ----- GAME VARS -----
-    const socket = io();
-
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const hudAlive = document.getElementById('hudAlive');
-    const hudZombies = document.getElementById('hudZombies');
-    const hudKills = document.getElementById('hudKills');
-    const hudRound = document.getElementById('hudRound');
-    const hudHP = document.getElementById('hudHP');
-    const waveMessage = document.getElementById('waveMessage');
-
-    let currentRound = 1;
-    let playersHealth = {};
-    let zombies = {};
-    let bullets = {};
-
-    let myId = null;
-    let playerHealth = 100;
-    let isDead = false;
-    let myKills = 0;
-    let myPseudo = "";
-
-    const TILE_SIZE = 40;
-    const PLAYER_RADIUS = 10;
-    const ZOMBIE_RADIUS = 10;
-
-    let map = [];
-    let MAP_ROWS = 0, MAP_COLS = 0;
-    let cameraX = 0, cameraY = 0;
-    let keys = {};
-    let mouseDown = false;
-    let mousePos = { x: 0, y: 0 };
-    let isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent);
-
-    function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    // --- JOYSTICK (Mobile) ----
-    // Deux joysticks : déplacement (gauche), tir (droite)
-    let joystickMove = document.getElementById('joystickMove');
-    let joystickShoot = document.getElementById('joystickShoot');
-    let joystickMoveActive = false, joystickShootActive = false;
-    let joystickMoveDir = { x: 0, y: 0 };
-    let joystickShootDir = { x: 0, y: 0 };
-
-    function showJoysticks() {
-      if (isMobile) {
-        joystickMove.style.display = 'block';
-        joystickShoot.style.display = 'block';
-      }
-    }
-    function hideJoysticks() {
-      joystickMove.style.display = 'none';
-      joystickShoot.style.display = 'none';
-    }
-    // Afficher/masquer selon plateforme
-    if (isMobile) showJoysticks();
-
-    // --- JOYSTICK HANDLERS ---
-    function joystickInit(jEl, cbMove, cbEnd) {
-      let stick = jEl.querySelector('.joystickStick');
-      let base = jEl.querySelector('.joystickBase');
-      let dragging = false;
-      let origin = { x: 0, y: 0 };
-
-      function getPos(e) {
-        let t = e.touches ? e.touches[0] : e;
-        let rect = jEl.getBoundingClientRect();
-        return { x: t.clientX - rect.left, y: t.clientY - rect.top };
-      }
-
-      function start(e) {
-        e.preventDefault();
-        dragging = true;
-        stick.classList.add('active');
-        let p = getPos(e);
-        origin = p;
-        move(e);
-      }
-      function move(e) {
-        if (!dragging) return;
-        let p = getPos(e);
-        let dx = p.x - 62, dy = p.y - 62;
-        let len = Math.sqrt(dx * dx + dy * dy);
-        if (len > 44) {
-          dx = dx / len * 44;
-          dy = dy / len * 44;
+  const langSelectRow = document.getElementById('langSelectRow');
+  function renderLangFlags() {
+    langSelectRow.innerHTML = '';
+    LANGS.forEach(lang => {
+      const img = document.createElement('img');
+      img.src = `/flags/${lang.flag}`;
+      img.alt = lang.label;
+      img.title = lang.label;
+      img.className = 'langFlag' + (lang.code === currentLang ? ' selected' : '');
+      img.onclick = () => {
+        if (currentLang !== lang.code) {
+          currentLang = lang.code;
+          renderLangFlags();
+          updateUITexts();
+          drawHUD();
         }
-        stick.style.left = (62 + dx - 27) + "px";
-        stick.style.top = (62 + dy - 27) + "px";
-        let norm = len > 4 ? { x: dx / 44, y: dy / 44 } : { x: 0, y: 0 };
-        cbMove(norm);
+      };
+      langSelectRow.appendChild(img);
+    });
+  }
+
+  renderLangFlags();
+  initLobbyTexts();
+
+  const socket = io();
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let players = {};
+  let zombies = {};
+  let bullets = {};
+  let myId = null;
+  let playerHealth = 100;
+  let isDead = false;
+  let myKills = 0;
+  let myPseudo = "";
+
+  const PLAYER_RADIUS = 10;
+  const ZOMBIE_RADIUS = 10;
+  const TILE_SIZE = 40;
+
+  let cameraX = 0;
+  let cameraY = 0;
+
+  let aimDir = { x: 0, y: 0 };
+  let moveDir = { x: 0, y: 0 };
+
+  // Joysticks
+  let joystickMove = null;
+  let joystickAim = null;
+
+  function setupJoysticks() {
+    if (joystickMove) joystickMove.destroy();
+    if (joystickAim) joystickAim.destroy();
+
+    joystickMove = nipplejs.create({
+      zone: document.body,
+      mode: 'static',
+      position: { left: 120, bottom: 160 },
+      color: 'white',
+      size: 160,
+      restOpacity: 0.3
+    });
+
+    joystickAim = nipplejs.create({
+      zone: document.body,
+      mode: 'static',
+      position: { right: 120, bottom: 160 },
+      color: 'yellow',
+      size: 160,
+      restOpacity: 0.3
+    });
+
+    joystickMove.on('move', (evt, data) => {
+      if (!data.vector) return;
+      moveDir = { x: data.vector.x, y: data.vector.y };
+      sendMoveInput(moveDir);
+    });
+    joystickMove.on('end', () => {
+      moveDir = { x: 0, y: 0 };
+      sendMoveInput(moveDir);
+    });
+
+    joystickAim.on('move', (evt, data) => {
+      if (!data.vector) return;
+      aimDir = { x: data.vector.x, y: data.vector.y };
+      sendShootInput(aimDir);
+    });
+    joystickAim.on('end', () => {
+      aimDir = { x: 0, y: 0 };
+      sendShootInput(aimDir);
+    });
+  }
+
+  function sendMoveInput(dir) {
+    if (!socket.connected) return;
+    socket.emit('playerInput', dir);
+  }
+
+  function sendShootInput(dir) {
+    if (!socket.connected) return;
+    socket.emit('playerShoot', dir);
+  }
+
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  function drawHealthBar(x, y, current, max, width = 30, height = 5) {
+    const ratio = Math.max(0, Math.min(1, current / max));
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x - width/2, y, width, height);
+    ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
+    ctx.fillRect(x - width/2, y, width * ratio, height);
+    ctx.strokeStyle = '#fff';
+    ctx.strokeRect(x - width/2, y, width, height);
+  }
+
+  function drawAimLine(x, y, dx, dy) {
+    const length = 200; // 200% length
+    const angle = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.strokeStyle = 'yellow';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMap() {
+    if (!map || !map.length) return;
+    const startCol = Math.floor(cameraX / TILE_SIZE);
+    const startRow = Math.floor(cameraY / TILE_SIZE);
+    const visibleCols = Math.ceil(canvas.width / TILE_SIZE) + 2;
+    const visibleRows = Math.ceil(canvas.height / TILE_SIZE) + 2;
+    for (let row = startRow; row < startRow + visibleRows; row++) {
+      if (row < 0 || row >= map.length) continue;
+      for (let col = startCol; col < startCol + visibleCols; col++) {
+        if (col < 0 || col >= map[0].length) continue;
+        if (map[row][col] === 1) {
+          ctx.fillStyle = '#363636';
+          ctx.fillRect(
+            col * TILE_SIZE - cameraX,
+            row * TILE_SIZE - cameraY,
+            TILE_SIZE,
+            TILE_SIZE
+          );
+        }
       }
-      function end() {
-        dragging = false;
-        stick.style.left = "35px";
-        stick.style.top = "35px";
-        stick.classList.remove('active');
-        cbMove({ x: 0, y: 0 });
-        cbEnd && cbEnd();
+    }
+  }
+
+  function drawPlayers() {
+    for (const id in players) {
+      const p = players[id];
+      if (!p.alive) continue;
+      const screenX = p.x - cameraX;
+      const screenY = p.y - cameraY;
+      ctx.beginPath();
+      ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
+      ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = "bold 17px Arial";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#aad8ff";
+      ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
+      drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 32, 6);
+      if (id === myId && (Math.abs(aimDir.x) > 0.1 || Math.abs(aimDir.y) > 0.1)) {
+        drawAimLine(screenX, screenY, aimDir.x, aimDir.y);
       }
-      jEl.addEventListener('touchstart', start, { passive: false });
-      jEl.addEventListener('touchmove', move, { passive: false });
-      jEl.addEventListener('touchend', end, { passive: false });
-      jEl.addEventListener('touchcancel', end, { passive: false });
     }
+  }
 
-    if (isMobile) {
-      joystickInit(joystickMove, dir => {
-        joystickMoveActive = true;
-        joystickMoveDir = dir;
-      }, () => { joystickMoveActive = false; });
-      joystickInit(joystickShoot, dir => {
-        joystickShootActive = true;
-        joystickShootDir = dir;
-      }, () => { joystickShootActive = false; });
+  function drawZombies() {
+    for (const id in zombies) {
+      const z = zombies[id];
+      const screenX = z.x - cameraX;
+      const screenY = z.y - cameraY;
+      ctx.beginPath();
+      ctx.fillStyle = 'red';
+      ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp || 10);
     }
+  }
 
-    // ----- PC Inputs -----
-    if (!isMobile) {
-      window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-      window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-      window.addEventListener('mousedown', e => { mouseDown = e.button === 0; });
-      window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
-      window.addEventListener('mousemove', e => { mousePos = { x: e.clientX, y: e.clientY }; });
-    }
-
-    // --- MAP DRAW ---
-    function drawMap() {
-      if (!map.length) return;
-      let scale = isMobile ? 0.78 : 1;
+  function drawBullets() {
+    for (const id in bullets) {
+      const b = bullets[id];
       ctx.save();
-      ctx.scale(scale, scale);
-      const startCol = Math.floor(cameraX / TILE_SIZE);
-      const startRow = Math.floor(cameraY / TILE_SIZE);
-      const visibleCols = Math.ceil(canvas.width / TILE_SIZE / scale) + 2;
-      const visibleRows = Math.ceil(canvas.height / TILE_SIZE / scale) + 2;
-      for (let row = startRow; row < startRow + visibleRows; row++) {
-        if (row < 0 || row >= MAP_ROWS) continue;
-        for (let col = startCol; col < startCol + visibleCols; col++) {
-          if (col < 0 || col >= MAP_COLS) continue;
-          if (map[row][col] === 1) {
-            ctx.fillStyle = '#363636';
-            ctx.fillRect(
-              col * TILE_SIZE - cameraX,
-              row * TILE_SIZE - cameraY,
-              TILE_SIZE,
-              TILE_SIZE
-            );
-          }
-        }
-      }
+      ctx.beginPath();
+      ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+      ctx.lineWidth = 3;
+      ctx.moveTo(b.x - cameraX, b.y - cameraY);
+      ctx.lineTo(
+        b.x - cameraX - b.dx * 8,
+        b.y - cameraY - b.dy * 8
+      );
+      ctx.stroke();
       ctx.restore();
     }
-    function drawPlayers() {
-      let scale = isMobile ? 0.78 : 1;
-      ctx.save();
-      ctx.scale(scale, scale);
-      for (const id in playersHealth) {
-        const p = playersHealth[id];
-        if (!p.alive) continue;
-        const screenX = p.x - cameraX;
-        const screenY = p.y - cameraY;
-        ctx.beginPath();
-        ctx.fillStyle = (id === myId) ? 'lime' : (id.startsWith("BOT-") ? "#55c" : '#cfc');
-        ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = "bold 17px Arial";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#aad8ff";
-        ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 32, 6);
-      }
-      ctx.restore();
+  }
+
+  function drawHUD() {
+    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    const aliveCount = Object.values(players).filter(p => p.alive).length;
+    document.getElementById('hudAlive').textContent = `${tr.alive} : ${aliveCount}`;
+    document.getElementById('hudZombies').textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
+    document.getElementById('hudKills').textContent = `${tr.kills}: ${myKills}`;
+    document.getElementById('hudRound').textContent = `${tr.round}: ${currentRound}`;
+    document.getElementById('hudHP').textContent = `${tr.health}: ${playerHealth}`;
+  }
+
+  let currentRound = 1;
+  let map = null;
+
+  function gameTick() {
+    if (!players[myId]) return;
+    const p = players[myId];
+    cameraX = p.x - canvas.width / 2;
+    cameraY = p.y - canvas.height / 2;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawMap();
+    drawZombies();
+    drawPlayers();
+    drawBullets();
+    drawHUD();
+  }
+
+  let tickInterval = null;
+  function startGameLoop() {
+    if (tickInterval) clearInterval(tickInterval);
+    tickInterval = setInterval(gameTick, 1000 / 30);
+  }
+
+  function showDeathScreen(kills, round) {
+    isDead = true;
+    deathTitle.textContent = TRANSLATIONS[currentLang]?.youDied || "You Died";
+    deathStats.textContent = `${TRANSLATIONS[currentLang]?.kills || "Kills"}: ${kills} — ${TRANSLATIONS[currentLang]?.round || "Round"}: ${round}`;
+    document.getElementById('deathScreen').style.display = 'flex';
+  }
+
+  btnReplay.onclick = () => {
+    isDead = false;
+    document.getElementById('deathScreen').style.display = 'none';
+    socket.emit('leaveLobby');
+    location.reload();
+  };
+
+  lobbyJoin.onclick = () => {
+    if (lobbyJoined) return;
+    const pseudo = pseudoInput.value.trim();
+    if (!pseudo || !/^[A-Za-z0-9]{1,15}$/.test(pseudo)) {
+      alert(TRANSLATIONS[currentLang]?.pseudoInvalid || "Pseudo invalide");
+      return;
     }
+    myPseudo = pseudo;
+    socket.emit('setPseudoAndReady', pseudo);
+    lobbyJoined = true;
+    lobbyJoin.textContent = TRANSLATIONS[currentLang]?.waiting || "Waiting...";
+  };
 
-    function drawZombies() {
-      let scale = isMobile ? 0.78 : 1;
-      ctx.save();
-      ctx.scale(scale, scale);
-      for (const id in zombies) {
-        const z = zombies[id];
-        const screenX = z.x - cameraX;
-        const screenY = z.y - cameraY;
-        ctx.beginPath();
-        ctx.fillStyle = 'red';
-        ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp || 10);
-      }
-      ctx.restore();
+  // Socket events
+
+  socket.on('connect', () => {
+    myId = socket.id;
+  });
+
+  socket.on('lobbyUpdate', (data) => {
+    lobbyData = data;
+    updateLobbyTexts();
+    if (data.started) {
+      lobbyStarted = true;
+      document.getElementById('lobbyScreen').style.display = 'none';
     }
+  });
 
-    function drawBullets() {
-      let scale = isMobile ? 0.78 : 1;
-      ctx.save();
-      ctx.scale(scale, scale);
-      for (const id in bullets) {
-        const b = bullets[id];
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-        ctx.lineWidth = 3;
-        ctx.moveTo(b.x - cameraX, b.y - cameraY);
-        ctx.lineTo(
-          b.x - cameraX - b.dx * 8,
-          b.y - cameraY - b.dy * 8
-        );
-        ctx.stroke();
-        ctx.restore();
-      }
-      ctx.restore();
+  socket.on('gameStarted', (data) => {
+    players = data.players;
+    map = data.map;
+    currentRound = data.round || 1;
+    lobbyStarted = true;
+    document.getElementById('lobbyScreen').style.display = 'none';
+    playerHealth = players[myId]?.health || 100;
+    isDead = false;
+    setupJoysticks();
+    startGameLoop();
+  });
+
+  socket.on('playersHealthUpdate', (data) => {
+    players = data;
+    if (players[myId]) playerHealth = players[myId].health;
+    drawHUD();
+  });
+
+  socket.on('zombiesUpdate', (data) => {
+    zombies = data;
+  });
+
+  socket.on('bulletsUpdate', (data) => {
+    bullets = data;
+  });
+
+  socket.on('killsUpdate', (kills) => {
+    myKills = kills;
+  });
+
+  socket.on('youDied', (data) => {
+    showDeathScreen(data.kills, data.round);
+  });
+
+  socket.on('waveMessage', (msg) => {
+    waveMessage.textContent = msg;
+    waveMessage.style.opacity = '1';
+    setTimeout(() => {
+      waveMessage.style.opacity = '0';
+    }, 2500);
+  });
+
+  // Input with keyboard for PC players
+  let keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  function updatePCInputs() {
+    if (!lobbyStarted || isDead) return;
+    let dx = 0, dy = 0;
+    if (keys['w'] || keys['z']) dy -= 1;
+    if (keys['s']) dy += 1;
+    if (keys['a']) dx -= 1;
+    if (keys['d']) dx += 1;
+    let len = Math.sqrt(dx*dx + dy*dy);
+    if (len > 0) {
+      dx /= len; dy /= len;
     }
+    sendMoveInput({ x: dx, y: dy });
 
-    function drawHealthBar(x, y, current, max, width = 30, height = 5) {
-      const ratio = Math.max(0, Math.min(1, current / max));
-      ctx.fillStyle = '#111';
-      ctx.fillRect(x - width/2, y, width, height);
-      ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
-      ctx.fillRect(x - width/2, y, width * ratio, height);
-      ctx.strokeStyle = '#fff';
-      ctx.strokeRect(x - width/2, y, width, height);
+    // Aim with mouse position
+    if (mousePos && players[myId]) {
+      const p = players[myId];
+      const cx = p.x - cameraX;
+      const cy = p.y - cameraY;
+      let aimX = mousePos.x - cx;
+      let aimY = mousePos.y - cy;
+      let dist = Math.sqrt(aimX*aimX + aimY*aimY);
+      if (dist > 0) {
+        aimX /= dist; aimY /= dist;
+        sendShootInput({ x: aimX, y: aimY });
+      }
     }
+  }
 
-    // --- Ligne de visée ---
-    function drawAimLine() {
-      let scale = isMobile ? 0.78 : 1;
-      ctx.save();
-      ctx.scale(scale, scale);
-      // PC : affiche si mouseDown
-      // Mobile : affiche si joystickShoot actif
-      let show = false, dir = {x:0,y:0}, from = {x:0,y:0};
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) { ctx.restore(); return; }
-      let p = playersHealth[myId];
-      from = { x: p.x, y: p.y };
-      if (isMobile && joystickShootActive && (Math.abs(joystickShootDir.x) > 0.1 || Math.abs(joystickShootDir.y) > 0.1)) {
-        dir = joystickShootDir;
-        show = true;
-      } else if (!isMobile && mouseDown) {
-        dir = {
-          x: (cameraX + mousePos.x) - p.x,
-          y: (cameraY + mousePos.y) - p.y
-        };
-        let len = Math.sqrt(dir.x*dir.x+dir.y*dir.y);
-        if (len > 1) {
-          dir.x /= len; dir.y /= len; show = true;
-        }
-      }
-      if (show) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(from.x - cameraX, from.y - cameraY);
-        ctx.lineTo(from.x - cameraX + dir.x * 120, from.y - cameraY + dir.y * 120);
-        ctx.lineWidth = 2.2;
-        ctx.strokeStyle = "#4dfc8a";
-        ctx.globalAlpha = 0.7;
-        ctx.setLineDash([12, 7]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-      }
-      ctx.restore();
-    }
+  let mousePos = null;
+  canvas.addEventListener('mousemove', (e) => {
+    mousePos = { x: e.clientX, y: e.clientY };
+  });
+  canvas.addEventListener('mouseleave', () => {
+    mousePos = null;
+    sendShootInput({ x: 0, y: 0 });
+  });
 
-    // --- CAMERA ---
-    function updateCamera() {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let scale = isMobile ? 0.78 : 1;
-      let player = playersHealth[myId];
-      cameraX = player.x - canvas.width / 2 / scale;
-      cameraY = player.y - canvas.height / 2 / scale;
-      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width / scale));
-      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height / scale));
-    }
+  setInterval(updatePCInputs, 40);
 
-    // --- HUD ---
-    function drawHUD() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
-      hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
-      hudZombies.textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
-      hudKills.textContent = `${tr.kills}: ${myKills}`;
-      hudRound.textContent = `${tr.round}: ${currentRound}`;
-      hudHP.textContent = `${tr.health}: ${Math.round(playerHealth)}`;
-    }
-
-    // --- GAME LOOP ---
-    let shootBlocked = false;
-    let lastTime = 0;
-    function gameLoop(timestamp = 0) {
-      const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
-      lastTime = timestamp;
-
-      // --- INPUTS ---
-      let moveDir = { x: 0, y: 0 };
-      let shootDir = { x: 0, y: 0 };
-
-      if (isMobile) {
-        moveDir = joystickMoveDir;
-        shootDir = joystickShootDir;
-      } else {
-        if (keys['arrowup'] || keys['w']) moveDir.y -= 1;
-        if (keys['arrowdown'] || keys['s']) moveDir.y += 1;
-        if (keys['arrowleft'] || keys['a']) moveDir.x -= 1;
-        if (keys['arrowright'] || keys['d']) moveDir.x += 1;
-        // Mouse aiming
-        if (mouseDown && myId && playersHealth[myId]) {
-          let player = playersHealth[myId];
-          shootDir = {
-            x: (cameraX + mousePos.x) - player.x,
-            y: (cameraY + mousePos.y) - player.y
-          };
-        }
-      }
-
-      // --- ENVOI AU SERVEUR ---
-      if (myId && playersHealth[myId] && playersHealth[myId].alive) {
-        // Normalise le move pour vitesse max même sans pousser à fond (mobile)
-        if (isMobile && (Math.abs(moveDir.x) > 0.05 || Math.abs(moveDir.y) > 0.05)) {
-          let l = Math.sqrt(moveDir.x * moveDir.x + moveDir.y * moveDir.y);
-          if (l > 0.1) moveDir = { x: moveDir.x / l, y: moveDir.y / l };
-        }
-        socket.emit('playerInput', moveDir);
-        if (!shootBlocked && (Math.abs(shootDir.x) > 0.08 || Math.abs(shootDir.y) > 0.08)) {
-          // Mobile : normalise
-          if (isMobile) {
-            let l = Math.sqrt(shootDir.x * shootDir.x + shootDir.y * shootDir.y);
-            if (l > 0.1) shootDir = { x: shootDir.x / l, y: shootDir.y / l };
-          }
-          socket.emit('playerShoot', shootDir);
-          shootBlocked = true;
-          setTimeout(() => { shootBlocked = false; }, 500);
-        }
-      }
-
-      updateCamera();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawMap();
-      drawBullets();
-      drawZombies();
-      drawPlayers();
-      drawAimLine();
-      drawHUD();
-      if (!isDead) requestAnimationFrame(gameLoop);
-    }
-
-    // --- SOCKET EVENTS ---
-    socket.on('connect', () => { myId = socket.id; });
-
-    socket.on('lobbyUpdate', (data) => {
-      lobbyData = { ...data, players: {...data.players} };
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      if (data.started) {
-        lobbyScreen.style.display = 'none';
-        lobbyStarted = true;
-        return;
-      }
-      lobbyScreen.style.display = 'flex';
-      updateLobbyTexts();
-      lobbyJoin.disabled = lobbyJoined;
-      pseudoInput.disabled = lobbyJoined;
-      if (lobbyJoined) lobbyJoin.textContent = tr.waiting;
-      else lobbyJoin.textContent = tr.join;
-    });
-
-    lobbyJoin.onclick = () => {
-      let v = pseudoInput.value.trim();
-      if (!/^[A-Za-z0-9]{1,15}$/.test(v)) {
-        pseudoInput.style.background = "#fdd";
-        setTimeout(() => pseudoInput.style.background = "", 600);
-        return;
-      }
-      socket.emit('setPseudoAndReady', v);
-      myPseudo = v;
-      lobbyJoined = true;
-      lobbyJoin.disabled = true;
-      pseudoInput.disabled = true;
-      lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
-    };
-
-    pseudoInput.onkeydown = (e) => {
-      if (e.key === "Enter") lobbyJoin.click();
-    };
-
-    socket.on('pseudoInvalid', () => {
-      pseudoInput.style.background = "#fbb";
-      pseudoInput.disabled = false;
-      lobbyJoin.disabled = false;
-      lobbyJoined = false;
-      alert("Pseudo: seulement lettres/chiffres, max 15 !");
-    });
-
-    socket.on('gameStarted', (data) => {
-      map = data.map;
-      MAP_ROWS = map.length;
-      MAP_COLS = map[0].length;
-      playersHealth = data.players;
-      currentRound = data.round;
-      lobbyScreen.style.display = 'none';
-      isDead = false; playerHealth = 100; myKills = 0;
-      setTimeout(()=>{ gameLoop(); }, 400);
-      if (isMobile) showJoysticks();
-    });
-
-    socket.on('playersHealthUpdate', (players) => {
-      playersHealth = players;
-      const playerId = socket.id;
-      if (players[playerId]) {
-        playerHealth = players[playerId].health;
-      }
-    });
-
-    socket.on('zombiesUpdate', (z) => { zombies = z; });
-    socket.on('bulletsUpdate', (b) => { bullets = b; });
-    socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
-    socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
-    socket.on('healthUpdate', (health) => { playerHealth = health; drawHUD(); });
-    socket.on('playersHealthUpdate', (playersState) => {
-      for (const id in playersState) {
-        if (!playersHealth[id]) playersHealth[id] = {};
-        playersHealth[id].health = playersState[id].health;
-        playersHealth[id].alive = playersState[id].alive;
-        playersHealth[id].x = playersState[id].x;
-        playersHealth[id].y = playersState[id].y;
-        playersHealth[id].pseudo = playersState[id].pseudo || "Joueur";
-      }
-    });
-    socket.on('youDied', (data) => {
-      isDead = true; playerHealth = 0; showDeathScreen(data.kills, data.round);
-      if (isMobile) hideJoysticks();
-    });
-    socket.on('waveMessage', (msg) => {
-      waveMessage.textContent = msg;
-      waveMessage.style.opacity = '1';
-      setTimeout(() => { waveMessage.style.opacity = '0'; }, 2500);
-    });
-    setInterval(drawHUD, 150);
-    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 100);
-    updateUITexts(); drawHUD();
-
-    // Gestion touche 'P' pour tuer tous les zombies (uniquement si pseudo = 'Myg')
-    window.addEventListener('keydown', e => {
-      if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
-        socket.emit('killAllZombies');
-      }
-    });
-
-    function showDeathScreen(kills = myKills, round = currentRound) {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      deathStats.innerHTML = `${tr.zombiesKilled}: <b>${kills}</b><br>${tr.roundReached}: <b>${round}</b>`;
-      deathScreen.style.display = 'flex';
-    }
-    btnReplay.onclick = () => { location.reload(); };
-  </script>
+</script>
 </body>
 </html>
