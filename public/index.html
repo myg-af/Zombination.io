@@ -2,10 +2,15 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Zombination.io</title>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
-    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+    html, body {
+      margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white;
+      font-family: Arial, sans-serif;
+      touch-action: none !important;
+    }
+    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; touch-action: none !important;}
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
     #hudAlive { font-weight: bold; color: #fd7; }
     #deathScreen { display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(30,0,0,0.8); z-index: 3; justify-content: center; align-items: center; flex-direction: column; }
@@ -64,42 +69,44 @@
       z-index: 20;
       user-select: none;
     }
-
     /* ---- MOBILE CONTROLS ---- */
     #mobileControls {
       display: none;
       position: fixed;
       left: 0; top: 0; width: 100vw; height: 100vh; z-index: 99;
-      pointer-events: none; /* Important : change dynamiquement avec JS */
+      pointer-events: none; /* Important : change dynamiquement avec JS */
       user-select: none;
+      touch-action: none !important;
     }
     .joystickZone {
       position: absolute;
-      width: 220px; height: 220px;
+      width: 240px; height: 240px;
       background: rgba(70,70,70,0.13);
       border-radius: 50%;
       pointer-events: auto;
       opacity: 0.68;
+      touch-action: none !important;
     }
     #joystickMove {
-      left: 80px;
+      left: 48px;
       bottom: 28vh;
     }
     #joystickShoot {
-      right: 80px;
+      right: 48px;
       bottom: 28vh;
     }
     .joystickStick {
       position: absolute;
       left: 50%; top: 50%;
-      width: 112px; height: 112px;
-      margin-left: -56px; margin-top: -56px;
+      width: 132px; height: 132px;
+      margin-left: -66px; margin-top: -66px;
       background: rgba(140,255,120,0.43);
       border-radius: 50%;
       box-shadow: 0 0 24px #7f7  inset;
       border: 4px solid #fff8;
       pointer-events: none;
       transition: background 0.12s;
+      touch-action: none !important;
     }
     #joystickShoot .joystickStick {
       background: rgba(255,120,120,0.37);
@@ -154,11 +161,17 @@
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script>
+    // Détection mobile
     const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(navigator.userAgent);
 
+    // Bloquer le pinch-zoom (zoom à deux doigts)
     if (isMobile) {
       document.getElementById('mobileControls').style.display = 'block';
-      document.getElementById('mobileControls').style.pointerEvents = 'none'; // par défaut
+      document.getElementById('mobileControls').style.pointerEvents = 'none';
+      // Empêche le pinch-zoom/double-tap sur toute la page
+      document.addEventListener('touchmove', function(e) {
+        if (e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
     }
 
     const LANGS = [
@@ -174,28 +187,19 @@
       { code: 'kr', flag: 'kr.png', label: '한국어' }
     ];
 
-    function getDefaultLang() {
-      return "en";
-    }
-
+    function getDefaultLang() { return "en"; }
     let currentLang = getDefaultLang();
 
     let lobbyData = {
-      started: false,
-      count: 0,
-      max: 5,
-      timeLeft: 30,
-      players: {}
+      started: false, count: 0, max: 5, timeLeft: 30, players: {}
     };
-    let lobbyJoined = false;
-    let lobbyStarted = false;
+    let lobbyJoined = false, lobbyStarted = false;
 
     function initLobbyTexts() {
       updateLobbyTexts();
       pseudoInput.placeholder = TRANSLATIONS[currentLang].enterPseudo;
       lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
     }
-
     function updateLobbyTexts() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       lobbyPlayers.textContent = `${tr.playersInGame} : ${lobbyData.count}/${lobbyData.max}`;
@@ -203,7 +207,6 @@
       const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
       lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
     }
-
     function updateUITexts() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       document.getElementById('lobbyTitle').innerHTML = `<b>${tr.zombination}</b>`;
@@ -211,11 +214,8 @@
       lobbyJoin.textContent = lobbyJoined ? tr.waiting : tr.join;
       document.getElementById('deathTitle').textContent = tr.youDied;
       btnReplay.textContent = tr.replay;
-      if (!lobbyStarted) {
-        updateLobbyTexts();
-      }
+      if (!lobbyStarted) updateLobbyTexts();
     }
-
     const langSelectRow = document.getElementById('langSelectRow');
     function renderLangFlags() {
       langSelectRow.innerHTML = '';
@@ -237,6 +237,7 @@
       });
     }
 
+    // Sélection des éléments DOM
     const pseudoInput = document.getElementById('pseudoInput');
     const lobbyJoin = document.getElementById('lobbyJoin');
     const lobbyPlayers = document.getElementById('lobbyPlayers');
@@ -250,6 +251,7 @@
 
     const socket = io();
 
+    // Canvas et variables globales
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const hudAlive = document.getElementById('hudAlive');
@@ -258,24 +260,12 @@
     const hudRound = document.getElementById('hudRound');
     const hudHP = document.getElementById('hudHP');
     const waveMessage = document.getElementById('waveMessage');
-
     let currentRound = 1;
-    let playersHealth = {};
-    let zombies = {};
-    let bullets = {};
-
-    let myId = null;
-    let playerHealth = 100;
-    let isDead = false;
-    let myKills = 0;
-    let myPseudo = "";
+    let playersHealth = {}, zombies = {}, bullets = {};
+    let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 
     const PLAYER_SPEED_PER_SEC = 700;
-
-    const TILE_SIZE = 40;
-    const PLAYER_RADIUS = 10;
-    const ZOMBIE_RADIUS = 10;
-
+    const TILE_SIZE = 40, PLAYER_RADIUS = 10, ZOMBIE_RADIUS = 10;
     let map = [];
     let MAP_ROWS = 0, MAP_COLS = 0;
     let cameraX = 0, cameraY = 0;
@@ -296,13 +286,14 @@
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
+    // ... JOYSTICK, update, boucle, sockets dans la suite ...
     // JOYSTICK MOBILE LOGIC
     let joystickDirMove = {x:0, y:0}, joystickDirShoot = {x:0, y:0};
     let joystickActiveMove = false, joystickActiveShoot = false;
 
     function setupMobileJoysticks() {
       if (!isMobile) return;
-      // Move
+      // Move joystick
       const joyZoneMove = document.getElementById('joystickMove');
       const joyStickMove = document.getElementById('joystickStickMove');
       let moveTouchId = null;
@@ -323,11 +314,11 @@
             let dy = t.clientY - centerY;
             let len = Math.sqrt(dx*dx + dy*dy);
             if (len > 10) {
-              joystickDirMove.x = dx / len;
-              joystickDirMove.y = dy / len;
+              // Envoie toujours à vitesse max
+              joystickDirMove.x = dx / Math.abs(dx || 1);
+              joystickDirMove.y = dy / Math.abs(dy || 1);
             } else {
-              joystickDirMove.x = 0;
-              joystickDirMove.y = 0;
+              joystickDirMove.x = 0; joystickDirMove.y = 0;
             }
             let maxLen = zoneRect.width/2 - 24;
             if (len > maxLen) len = maxLen;
@@ -350,7 +341,7 @@
         }
       }, {passive:false});
 
-      // Shoot
+      // Shoot joystick
       const joyZoneShoot = document.getElementById('joystickShoot');
       const joyStickShoot = document.getElementById('joystickStickShoot');
       let shootTouchId = null;
@@ -371,11 +362,10 @@
             let dy = t.clientY - centerY;
             let len = Math.sqrt(dx*dx + dy*dy);
             if (len > 10) {
-              joystickDirShoot.x = dx / len;
-              joystickDirShoot.y = dy / len;
+              joystickDirShoot.x = dx / Math.abs(dx || 1);
+              joystickDirShoot.y = dy / Math.abs(dy || 1);
             } else {
-              joystickDirShoot.x = 0;
-              joystickDirShoot.y = 0;
+              joystickDirShoot.x = 0; joystickDirShoot.y = 0;
             }
             let maxLen = zoneRect.width/2 - 24;
             if (len > maxLen) len = maxLen;
@@ -400,7 +390,7 @@
     }
     setupMobileJoysticks();
 
-    // Nouvelle logique: tick mouvement au moins 30 fois/seconde pour égalité mobile/PC
+    // Nouvelle logique: tick mouvement au moins 32 fois/seconde pour égalité mobile/PC
     let lastMoveSent = 0;
     function update(deltaTime) {
       if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
@@ -420,9 +410,9 @@
         if (keys['arrowleft'] || keys['a']) { newX -= move; moved = true; }
         if (keys['arrowright'] || keys['d']) { newX += move; moved = true; }
       }
-      // Pour égalité : envoi régulier même si le FPS est bas
+      // Envoi toujours au moins à 32Hz
       let now = performance.now();
-      if ((moved && (now - lastMoveSent > 1000/32)) || (newX !== player.x || newY !== player.y)) {
+      if (now - lastMoveSent > 1000/32) {
         socket.emit('playerMovement', { x: newX, y: newY });
         lastMoveSent = now;
       }
