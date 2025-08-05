@@ -130,7 +130,7 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     game.players[sid] = {
       x: spawnX, y: spawnY,
       lastShot: 0, alive: true, health: 100, kills: 0, pseudo,
-      moveDir: {x: 0, y: 0} // ← Patch : direction du joueur
+      moveDir: {x: 0, y: 0}
     };
   }
 }
@@ -197,7 +197,7 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const PLAYER_SPEED_PER_SEC = 700; // PATCH : vitesse contrôlée côté serveur
+const PLAYER_SPEED_PER_SEC = 60; // PATCH ICI : vitesse joueur à 60 px/sec
 
 function broadcastLobby(game) {
   io.to('lobby' + game.id).emit('lobbyUpdate', {
@@ -272,7 +272,6 @@ function checkWaveEnd(game) {
     console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
 }
-
 function startSpawning(game) {
   if (game.spawnInterval) clearInterval(game.spawnInterval);
   game.spawningActive = true;
@@ -403,6 +402,7 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
   });
 });
+
 function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
@@ -415,7 +415,6 @@ function getPlayersHealthState(game) {
 const zombieAttackCooldown = 350;
 const lastZombieAttackPerGame = {};
 
-// PATCH : Boucle qui déplace les joueurs depuis le serveur
 function movePlayers(game, deltaTime) {
   for (const pid in game.players) {
     const p = game.players[pid];
@@ -575,7 +574,7 @@ function gameLoop() {
     if (!game.lobby.started) continue;
     const deltaTime = 1 / 30;
 
-    movePlayers(game, deltaTime); // PATCH: déplacement serveur
+    movePlayers(game, deltaTime);
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
