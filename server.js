@@ -55,7 +55,6 @@ function createNewGame() {
     map: null,
     spawnInterval: null,
     spawningActive: false,
-    isFinished: false,
   };
   game.map = createEmptyMap(MAP_ROWS, MAP_COLS);
   placeObstacles(game.map, OBSTACLE_COUNT);
@@ -194,7 +193,6 @@ function findPath(game, startX, startY, endX, endY) {
   }
   return null;
 }
-
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
@@ -260,7 +258,7 @@ function spawnZombies(game, count) {
     game.zombiesSpawnedThisWave++;
     spawnedCount++;
   }
-  // Suppression du log des zombies spawns ici (plus de console.log!)
+  // log supprimé volontairement (plus de log "spawned zombies")
 }
 
 function checkWaveEnd(game) {
@@ -270,7 +268,7 @@ function checkWaveEnd(game) {
     game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);  // <-- Important !
-    console.log(`Vague suivante ${game.currentRound}, total zombies à spawn: ${game.totalZombiesToSpawn}`);
+    console.log(`Starting wave ${game.currentRound}, total zombies to spawn: ${game.totalZombiesToSpawn}`);
   }
 }
 
@@ -292,13 +290,6 @@ function stopSpawning(game) {
   }
 }
 
-// --- NOUVEAU : LOG quand une partie est terminée ---
-function finishGame(game) {
-  if (game.isFinished) return;
-  game.isFinished = true;
-  console.log(`Partie terminée — manche atteinte : ${game.currentRound}`);
-}
-
 function launchGame(game, readyPlayersArr = null) {
   Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
@@ -307,7 +298,6 @@ function launchGame(game, readyPlayersArr = null) {
   game.totalZombiesToSpawn = 50;
   game.zombiesSpawnedThisWave = 0;
   game.spawningActive = false;
-  game.isFinished = false;
 
   if (readyPlayersArr === null) {
     readyPlayersArr = Object.entries(game.lobby.players).filter(([sid, p]) => p.ready);
@@ -323,9 +313,21 @@ function launchGame(game, readyPlayersArr = null) {
 
   io.to('lobby' + game.id).emit('gameStarted', { map: game.map, players: game.players, round: game.currentRound });
 
-  // LOG PARTIE LANCÉE
-  console.log(`Partie lancée (${pseudosArr.length} joueurs)`);
   startSpawning(game);
+
+  // Nouveau log lancement de partie
+  console.log(`[PARTIE LANCÉE] ID=${game.id}, Joueurs: ${pseudosArr.length}`);
+}
+
+function finishGame(game) {
+  // On appelle ça quand tous les joueurs sont morts
+  // Nouveau log fin de partie
+  console.log(`[PARTIE TERMINÉE] ID=${game.id}, Manche atteinte: ${game.currentRound}`);
+  // Option: reset lobby pour repartir automatiquement si tu veux, ou reset manuellement si besoin
+  // (ici on stoppe les spawns et "reset" la partie pour un nouveau lobby)
+  stopSpawning(game);
+  game.lobby.started = false;
+  game.lobby.players = {};
 }
 
 io.on('connection', socket => {
@@ -360,10 +362,6 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
     broadcastLobby(game);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-    // --- Vérifier si partie terminée (tous morts ou déconnexions) ---
-    if (game.lobby.started && Object.values(game.players).filter(p => p.alive).length === 0) {
-      finishGame(game);
-    }
   });
 
   socket.on('playerMovement', position => {
@@ -373,14 +371,8 @@ io.on('connection', socket => {
       const oldX = player.x, oldY = player.y;
       if (isCollision(game.map, position.x, position.y)) return;
       if (isDiagonalBlocked(game.map, oldX, oldY, position.x, position.y)) return;
-      // --- SUPPRESSION COLLISION ENTRE JOUEURS ---
-      // -> Plus de test collision joueurs ici (ils peuvent se superposer)
-      // for (const pid in game.players) {
-      //   if (pid !== socket.id && game.players[pid].alive) {
-      //     if (entitiesCollide(position.x, position.y, PLAYER_RADIUS, game.players[pid].x, game.players[pid].y, PLAYER_RADIUS)) return;
-      //   }
-      // }
-      // --- Toujours collision zombies ---
+      // Suppression collision joueur/joueur : on autorise tout
+      // (ne rien mettre ici)
       for (const zid in game.zombies) {
         const z = game.zombies[zid];
         if (entitiesCollide(position.x, position.y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS)) return;
@@ -423,10 +415,6 @@ io.on('connection', socket => {
     if (game.players[socket.id]) {
       game.players[socket.id].alive = false;
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-      // --- Vérifier si partie terminée (tous morts) ---
-      if (game.lobby.started && Object.values(game.players).filter(p => p.alive).length === 0) {
-        finishGame(game);
-      }
     }
   });
 
@@ -579,10 +567,18 @@ function moveBullets(game, deltaTime) {
   }
 }
 
+// --------------------
+// DELTA TIME CORRECTION (Railway/Production)
+// --------------------
+let lastLoopTime = Date.now();
 function gameLoop() {
+  const now = Date.now();
+  let deltaTime = (now - lastLoopTime) / 1000;
+  if (deltaTime > 0.25) deltaTime = 0.25;
+  lastLoopTime = now;
+
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
-    const deltaTime = 1 / 30;
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
