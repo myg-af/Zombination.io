@@ -70,8 +70,8 @@
     #mobileControls { display: none; position: fixed; left:0; top:0; width:100vw; height:100vh; pointer-events: none; z-index: 15;}
     .joystickZone.move {
       position: absolute;
-      top: 48px;
-      right: 32px;
+      bottom: 32px;
+      left: 32px;
       width: 72px;
       height: 72px;
       pointer-events: auto;
@@ -81,8 +81,8 @@
     }
     #btnShoot {
       position: absolute;
-      top: 55px;
-      left: 34px;
+      bottom: 36px;
+      right: 36px;
       width: 60px; height: 60px;
       background: linear-gradient(145deg,#ff5555 75%,#ffadad 100%);
       border-radius: 50%;
@@ -126,14 +126,14 @@
       transition: background 0.1s;
     }
     @media (max-width: 900px) {
-      .joystickZone.move { width: 54px; height: 54px; top: 24px; right: 11vw; }
-      #btnShoot { width: 38px; height: 38px; top: 20px; left: 8vw; }
+      .joystickZone.move { width: 54px; height: 54px; bottom: 22px; left: 7vw; }
+      #btnShoot { width: 38px; height: 38px; bottom: 16px; right: 7vw; }
       .joystickBase { width: 54px; height: 54px; border-radius: 27px;}
       .joystickStick { width: 20px; height: 20px; left: 15px; top: 15px;}
     }
     @media (max-width: 600px) {
-      .joystickZone.move { right: 4vw; }
-      #btnShoot { left: 3vw; }
+      .joystickZone.move { left: 3vw; }
+      #btnShoot { right: 3vw; }
     }
   </style>
 </head>
@@ -285,18 +285,32 @@
     window.addEventListener('mousedown', e => { mouseDown = e.button === 0; });
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => { mousePos = { x: e.clientX, y: e.clientY }; });
+
+    // ----------- DEZOOM MOBILE -----------
+    function detectMobile() {
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+    const isMobile = detectMobile();
+    let mobileZoomFactor = 1.0;
+    if (isMobile) mobileZoomFactor = 0.78; // Dézoome sur mobile !
+
     function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+
     function drawMap() {
       if (!map.length) return;
+      ctx.save();
+      if (isMobile) {
+        ctx.scale(mobileZoomFactor, mobileZoomFactor);
+      }
       const startCol = Math.floor(cameraX / TILE_SIZE);
       const startRow = Math.floor(cameraY / TILE_SIZE);
-      const visibleCols = Math.ceil(canvas.width / TILE_SIZE) + 2;
-      const visibleRows = Math.ceil(canvas.height / TILE_SIZE) + 2;
+      const visibleCols = Math.ceil(canvas.width / TILE_SIZE / (isMobile ? mobileZoomFactor : 1)) + 2;
+      const visibleRows = Math.ceil(canvas.height / TILE_SIZE / (isMobile ? mobileZoomFactor : 1)) + 2;
       for (let row = startRow; row < startRow + visibleRows; row++) {
         if (row < 0 || row >= MAP_ROWS) continue;
         for (let col = startCol; col < startCol + visibleCols; col++) {
@@ -312,8 +326,12 @@
           }
         }
       }
+      ctx.restore();
     }
+
     function drawPlayers() {
+      ctx.save();
+      if (isMobile) ctx.scale(mobileZoomFactor, mobileZoomFactor);
       for (const id in playersHealth) {
         const p = playersHealth[id];
         if (!p.alive) continue;
@@ -329,8 +347,12 @@
         ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
         drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 32, 6);
       }
+      ctx.restore();
     }
+
     function drawZombies() {
+      ctx.save();
+      if (isMobile) ctx.scale(mobileZoomFactor, mobileZoomFactor);
       for (const id in zombies) {
         const z = zombies[id];
         const screenX = z.x - cameraX;
@@ -341,8 +363,12 @@
         ctx.fill();
         drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp || 10);
       }
+      ctx.restore();
     }
+
     function drawBullets() {
+      ctx.save();
+      if (isMobile) ctx.scale(mobileZoomFactor, mobileZoomFactor);
       for (const id in bullets) {
         const b = bullets[id];
         ctx.save();
@@ -357,7 +383,9 @@
         ctx.stroke();
         ctx.restore();
       }
+      ctx.restore();
     }
+
     function drawHealthBar(x, y, current, max, width = 30, height = 5) {
       const ratio = Math.max(0, Math.min(1, current / max));
       ctx.fillStyle = '#111';
@@ -367,6 +395,7 @@
       ctx.strokeStyle = '#fff';
       ctx.strokeRect(x - width/2, y, width, height);
     }
+
     function update(deltaTime) {
       if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
       let player = playersHealth[myId];
@@ -384,8 +413,8 @@
         if (mouseDown) {
           if (!shootBlocked) {
             shootBlocked = true;
-            const mouseWorldX = cameraX + mousePos.x;
-            const mouseWorldY = cameraY + mousePos.y;
+            const mouseWorldX = cameraX + mousePos.x / (isMobile ? mobileZoomFactor : 1);
+            const mouseWorldY = cameraY + mousePos.y / (isMobile ? mobileZoomFactor : 1);
             socket.emit('shoot', {
               targetX: mouseWorldX,
               targetY: mouseWorldY
@@ -404,14 +433,16 @@
       }
     }
     let shootBlocked = false;
+
     function updateCamera() {
       if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
       let player = playersHealth[myId];
-      cameraX = player.x - canvas.width / 2;
-      cameraY = player.y - canvas.height / 2;
-      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
-      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
+      cameraX = player.x - canvas.width / 2 / (isMobile ? mobileZoomFactor : 1);
+      cameraY = player.y - canvas.height / 2 / (isMobile ? mobileZoomFactor : 1);
+      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width / (isMobile ? mobileZoomFactor : 1)));
+      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height / (isMobile ? mobileZoomFactor : 1)));
     }
+
     function drawHUD() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
@@ -505,8 +536,8 @@
       drawHUD();
     });
     socket.on('currentRound', (round) => {
-      currentRound = round;  // Bien mettre à jour ici la variable
-      drawHUD();             // Et redraw le HUD
+      currentRound = round;
+      drawHUD();
     });
     socket.on('healthUpdate', (health) => {
       playerHealth = health;
@@ -538,6 +569,7 @@
     setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 100);
     updateUITexts();
     drawHUD();
+
     // Gestion touche 'P' pour tuer tous les zombies (uniquement si pseudo = 'Myg')
     window.addEventListener('keydown', e => {
       if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
@@ -545,11 +577,7 @@
       }
     });
 
-    // ------- MOBILE DETECTION & CONTROLS -------
-    function detectMobile() {
-      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    }
-    const isMobile = detectMobile();
+    // ------- MOBILE CONTROLS -------
     // Variables pour mobile
     let joystickActive = false;
     let joystickStart = {x:0,y:0};
@@ -563,10 +591,8 @@
     if (isMobile) {
       mobileControls.style.display = "block";
       btnShoot.style.display = "flex";
-      // Désactive le scroll/zoom
       document.body.style.overscrollBehavior = "none";
       document.body.style.touchAction = "none";
-      // Empêche le scroll sur tout l'écran
       document.body.addEventListener('touchmove', function(e){e.preventDefault();}, {passive:false});
     }
     // Gestion joystick déplacement
@@ -582,10 +608,8 @@
         if (len > maxLen) {
           dx *= maxLen/len; dy *= maxLen/len;
         }
-        // Normalisé [-1,1]
         joystickDir.x = dx/maxLen;
         joystickDir.y = dy/maxLen;
-        // Stick UI
         joystickStick.style.left = (zoneRect.width/2 + dx - joystickStick.offsetWidth/2) + "px";
         joystickStick.style.top = (zoneRect.height/2 + dy - joystickStick.offsetHeight/2) + "px";
       }
@@ -604,7 +628,6 @@
       joystickZone.addEventListener('touchend', e => {
         joystickActive = false;
         joystickDir.x = joystickDir.y = 0;
-        // Remet le stick au centre
         joystickStick.style.left = (zoneRect.width/2 - joystickStick.offsetWidth/2) + "px";
         joystickStick.style.top = (zoneRect.height/2 - joystickStick.offsetHeight/2) + "px";
       });
@@ -613,12 +636,10 @@
         e.preventDefault();
         if (!shootBlocked && myId && playersHealth[myId]) {
           shootBlocked = true;
-          // Tire tout droit vers l'avant (selon la dernière direction bougée, ou haut si immobile)
           let px = playersHealth[myId].x;
           let py = playersHealth[myId].y;
           let dirX = joystickDir.x, dirY = joystickDir.y;
-          if (dirX===0 && dirY===0) { dirY = -1; } // Haut par défaut
-          // Vise loin
+          if (dirX===0 && dirY===0) { dirY = -1; }
           const mouseWorldX = px + dirX * 200;
           const mouseWorldY = py + dirY * 200;
           socket.emit('shoot', { targetX: mouseWorldX, targetY: mouseWorldY });
