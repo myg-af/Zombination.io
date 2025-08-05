@@ -362,6 +362,15 @@
       return /^\[BOT\d+\]$/.test(pseudo);
     }
 
+function updateCamera() {
+  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  let player = playersHealth[myId];
+  cameraX = player.x - canvas.width / 2;
+  cameraY = player.y - canvas.height / 2;
+  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
+  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
+}
+
     // ----------- PATCH HUD (PLAYER ALIVE / BOT ALIVE) -----------
     function drawHUD() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
