@@ -480,15 +480,10 @@ function movePlayers(game, deltaTime) {
 
 function moveBots(game, deltaTime) {
   const now = Date.now();
-  let botsCount = 0;
-  let zombiesCount = Object.keys(game.zombies).length;
-  console.log(`[moveBots] Bots count: ${Object.keys(game.players).filter(id => game.players[id].isBot).length}, Zombies count: ${zombiesCount}`);
 
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
-	const speed = 60;
-    botsCount++;
-    console.log(`[moveBots] Bot ${botId} at (${bot.x.toFixed(1)}, ${bot.y.toFixed(1)}) is alive.`);
+    const speed = 60;
 
     // Trouver le zombie le plus proche
     let closestZombie = null;
@@ -504,7 +499,6 @@ function moveBots(game, deltaTime) {
     }
 
     if (!closestZombie) {
-      console.log(`[moveBots] Bot ${botId} ne trouve aucun zombie.`);
       bot.moveDir = { x: 0, y: 0 };
       bot.targetId = null;
       continue;
@@ -521,7 +515,6 @@ function moveBots(game, deltaTime) {
         const ix = bot.x + (dx * s / steps);
         const iy = bot.y + (dy * s / steps);
         if (isCollision(game.map, ix, iy)) {
-          console.log(`[moveBots] Bot ${botId} n'a pas de ligne de vue (obstacle).`);
           return false;
         }
       }
@@ -530,61 +523,47 @@ function moveBots(game, deltaTime) {
 
     const shootingRange = 250;
 
-if (dist <= shootingRange && canShoot()) {
-  console.log(`[moveBots] Bot ${botId} tire sur le zombie à distance ${dist.toFixed(1)}.`);
-  // Reculer si possible avec vitesse réduite et deltaTime
-  const backSpeedFactor = 0.5; // recul à 50% de la vitesse normale
-  const backMoveDist = speed * backSpeedFactor * deltaTime;
+    if (dist <= shootingRange && canShoot()) {
+		const backMoveDist = speed * deltaTime;
 
-  const backDir = { x: -dx / dist, y: -dy / dist };
-  const backX = bot.x + backDir.x * backMoveDist;
-  const backY = bot.y + backDir.y * backMoveDist;
+      const backDir = { x: -dx / dist, y: -dy / dist };
+      const backX = bot.x + backDir.x * backMoveDist;
+      const backY = bot.y + backDir.y * backMoveDist;
 
-  let canRecede = !isCollision(game.map, backX, backY);
-  if (canRecede) {
-    console.log(`[moveBots] Bot ${botId} recule.`);
-    bot.x = backX;
-    bot.y = backY;
+      if (!isCollision(game.map, backX, backY)) {
+        bot.x = backX;
+        bot.y = backY;
       }
 
       if (now - bot.lastShot > SHOOT_INTERVAL) {
         bot.lastShot = now;
         const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-        const normDx = dx / dist;
-        const normDy = dy / dist;
         game.bullets[bulletId] = {
           id: bulletId,
           owner: botId,
           x: bot.x,
           y: bot.y,
-          dx: normDx,
-          dy: normDy,
-          createdAt: now
+          dx: dx / dist,
+          dy: dy / dist,
+          createdAt: now,
         };
-        console.log(`[moveBots] Bot ${botId} a tiré un projectile.`);
       }
       bot.moveDir = { x: 0, y: 0 };
     } else {
-      console.log(`[moveBots] Bot ${botId} se déplace vers le zombie.`);
       let canGoDirect = true;
-      let steps = Math.ceil(dist / 6);
+      const steps = Math.ceil(dist / 6);
       for (let s = 1; s < steps; s++) {
-        let tx = bot.x + (dx) * (s / steps);
-        let ty = bot.y + (dy) * (s / steps);
+        const tx = bot.x + (dx) * (s / steps);
+        const ty = bot.y + (dy) * (s / steps);
         if (isCollision(game.map, tx, ty)) {
           canGoDirect = false;
-          console.log(`[moveBots] Bot ${botId} ne peut pas aller directement, obstacle détecté.`);
           break;
         }
       }
-      const speed = 60;
       let nx = bot.x, ny = bot.y;
-      if (canGoDirect) {
-        if (dist > 1) {
-          nx += (dx / dist) * speed * deltaTime;
-          ny += (dy / dist) * speed * deltaTime;
-          console.log(`[moveBots] Bot ${botId} avance directement.`);
-        }
+      if (canGoDirect && dist > 1) {
+        nx += (dx / dist) * speed * deltaTime;
+        ny += (dy / dist) * speed * deltaTime;
       } else {
         const path = findPath(game, bot.x, bot.y, closestZombie.x, closestZombie.y);
         if (path && path.length > 1) {
@@ -597,23 +576,18 @@ if (dist <= shootingRange && canShoot()) {
           if (ndist > 1) {
             nx += (ndx / ndist) * speed * deltaTime;
             ny += (ndy / ndist) * speed * deltaTime;
-            console.log(`[moveBots] Bot ${botId} suit un chemin.`);
           }
-        } else {
-          console.log(`[moveBots] Bot ${botId} n'a pas de chemin pour contourner.`);
         }
       }
       if (!isCollision(game.map, nx, ny)) {
         bot.x = nx;
         bot.y = ny;
-        console.log(`[moveBots] Bot ${botId} nouvelle position: (${bot.x.toFixed(1)}, ${bot.y.toFixed(1)})`);
       }
       bot.moveDir = { x: 0, y: 0 };
     }
   }
 }
 
- 
 function moveZombies(game, deltaTime) {
   const now = Date.now();
   const zombieList = Object.entries(game.zombies);
