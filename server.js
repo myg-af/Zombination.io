@@ -10,6 +10,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
+
 const gameMapModule = require('./game/gameMap');
 
 const app = express();
@@ -29,10 +30,9 @@ const {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_PLAYERS = 8;
+const MAX_PLAYERS = 5;
 const LOBBY_TIME = 30 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 150;
-const BOT_COUNT = 2; // Le nombre de bots à ajouter par partie
 
 let activeGames = [];
 let nextGameId = 1;
@@ -47,7 +47,6 @@ function createNewGame() {
       timer: null,
     },
     players: {},
-    bots: {},
     zombies: {},
     bullets: {},
     currentRound: 1,
@@ -103,21 +102,13 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   return { x: spawnX, y: spawnY, hp: hp, lastAttack: 0, speed: speed };
 }
 
-// PATCH: Fonction pour générer un pseudo BOT
-function getBotPseudo(i) {
-  return `[BOT${i}]`;
-}
-
-// PATCH: Spawner les joueurs ET les bots
-function spawnPlayersAndBotsNearCenter(game, pseudosArr, socketsArr, botCount) {
+function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
   const centerY = (MAP_ROWS / 2) * TILE_SIZE;
-  const allCount = pseudosArr.length + botCount;
-  const angleStep = (2 * Math.PI) / Math.max(1, allCount);
-  const radius = 60 + allCount * 8;
+  const angleStep = (2 * Math.PI) / Math.max(1, pseudosArr.length);
+  const radius = 60 + pseudosArr.length * 8;
   const usedPos = [];
 
-  // joueurs humains
   for (let i = 0; i < pseudosArr.length; i++) {
     let angle = i * angleStep;
     let tries = 0, found = false, spawnX, spawnY;
@@ -142,36 +133,7 @@ function spawnPlayersAndBotsNearCenter(game, pseudosArr, socketsArr, botCount) {
       moveDir: {x: 0, y: 0}
     };
   }
-
-  // bots
-  for (let i = 1; i <= botCount; i++) {
-    let angle = (pseudosArr.length + i - 1) * angleStep;
-    let tries = 0, found = false, spawnX, spawnY;
-    while (!found && tries < 30) {
-      spawnX = Math.floor(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * 12);
-      spawnY = Math.floor(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * 12);
-
-      if (!isCollision(game.map, spawnX, spawnY) && !usedPos.some(
-        pos => Math.hypot(pos.x - spawnX, pos.y - spawnY) < 2 * PLAYER_RADIUS + 4
-      )) {
-        found = true;
-        usedPos.push({ x: spawnX, y: spawnY });
-      }
-      tries++;
-      angle += Math.PI / 9;
-    }
-    const pseudo = getBotPseudo(i);
-    const id = `BOT${i}`;
-    game.players[id] = {
-      x: spawnX, y: spawnY,
-      lastShot: 0, alive: true, health: 100, kills: 0, pseudo,
-      moveDir: {x: 0, y: 0},
-      isBot: true
-    };
-    game.bots[id] = true;
-  }
 }
-
 function findPath(game, startX, startY, endX, endY) {
   const openSet = [];
   const closedSet = new Set();
@@ -235,7 +197,7 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const PLAYER_SPEED_PER_SEC = 60;
+const PLAYER_SPEED_PER_SEC = 60; // PATCH ICI : vitesse joueur à 60 px/sec
 
 function broadcastLobby(game) {
   io.to('lobby' + game.id).emit('lobbyUpdate', {
@@ -306,7 +268,7 @@ function checkWaveEnd(game) {
     game.zombiesSpawnedThisWave = 0;
     game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
-    io.to('lobby' + game.id).emit('currentRound', game.currentRound);
+    io.to('lobby' + game.id).emit('currentRound', game.currentRound);  // <-- Important !
     console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
 }
@@ -332,7 +294,6 @@ function launchGame(game, readyPlayersArr = null) {
   Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
-  Object.keys(game.bots).forEach(id => delete game.bots[id]);
   game.currentRound = 1;
   game.totalZombiesToSpawn = 50;
   game.zombiesSpawnedThisWave = 0;
@@ -344,16 +305,16 @@ function launchGame(game, readyPlayersArr = null) {
   let pseudosArr = [];
   let socketsArr = [];
   for (const [sid, player] of readyPlayersArr) {
-    let pseudo = player.pseudo || 'Joueur';
+    const pseudo = player.pseudo || 'Joueur';
     pseudosArr.push(pseudo);
     socketsArr.push(sid);
   }
-  spawnPlayersAndBotsNearCenter(game, pseudosArr, socketsArr, BOT_COUNT);
+  spawnPlayersNearCenter(game, pseudosArr, socketsArr);
 
   io.to('lobby' + game.id).emit('gameStarted', { map: game.map, players: game.players, round: game.currentRound });
 
   // Log nouvelle partie
-  console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) + ${BOT_COUNT} bot(s) !`);
+  console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
   startSpawning(game);
 }
 
@@ -372,9 +333,7 @@ io.on('connection', socket => {
 
   socket.on('setPseudoAndReady', (pseudo) => {
     pseudo = (pseudo || '').trim().substring(0, 15);
-    if (!/^[a-zA-Z0-9]+$/.test(pseudo)) {
-      pseudo = 'Joueur';
-    }
+    if (!pseudo) pseudo = 'Joueur';
     game.lobby.players[socket.id] = { pseudo, ready: true };
     broadcastLobby(game);
     startLobbyTimer(game);
@@ -393,9 +352,11 @@ io.on('connection', socket => {
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
   });
 
+  // PATCH: On ne gère plus 'playerMovement', mais 'moveDir'
   socket.on('moveDir', (dir) => {
     const player = game.players[socket.id];
     if (!game.lobby.started || !player || !player.alive) return;
+    // dir.x et dir.y entre -1 et 1
     player.moveDir = dir;
   });
 
@@ -433,6 +394,7 @@ io.on('connection', socket => {
     }
   });
 
+  // Commande temporaire : tuer tous les zombies (uniquement si pseudo = 'Myg')
   socket.on('killAllZombies', () => {
     const player = game.players[socket.id];
     if (!player || player.pseudo !== 'Myg') return;
@@ -445,7 +407,7 @@ function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
     const p = game.players[id];
-    obj[id] = { health: p.health, alive: p.alive, x: p.x, y: p.y, pseudo: p.pseudo, isBot: p.isBot || false };
+    obj[id] = { health: p.health, alive: p.alive, x: p.x, y: p.y, pseudo: p.pseudo };
   }
   return obj;
 }
@@ -464,69 +426,12 @@ function movePlayers(game, deltaTime) {
       let dx = p.moveDir.x / len * move;
       let dy = p.moveDir.y / len * move;
       let nx = p.x + dx, ny = p.y + dy;
+      // PAS DE COLLISION ENTRE JOUEURS
       if (!isCollision(game.map, nx, ny)) {
         p.x = nx;
         p.y = ny;
       }
     }
-  }
-}
-
-function moveBots(game, deltaTime) {
-  for (const pid in game.bots) {
-    const p = game.players[pid];
-    if (!p || !p.alive) continue;
-
-    // Recherche du zombie le plus proche
-    let closestZombie = null, closestDist = Infinity, zx = 0, zy = 0;
-    for (const zid in game.zombies) {
-      const z = game.zombies[zid];
-      const dx = z.x - p.x, dy = z.y - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) {
-        closestZombie = z;
-        closestDist = dist;
-        zx = z.x; zy = z.y;
-      }
-    }
-    let move = {x:0, y:0};
-
-    if (closestZombie) {
-      let dirToZombie = { x: zx - p.x, y: zy - p.y };
-      let len = Math.sqrt(dirToZombie.x * dirToZombie.x + dirToZombie.y * dirToZombie.y);
-
-      // S'il est trop proche du zombie, recule
-      if (len < 80) {
-        move.x = -dirToZombie.x;
-        move.y = -dirToZombie.y;
-      }
-      // Sinon avance vers le zombie
-      else if (len > 100) {
-        move.x = dirToZombie.x;
-        move.y = dirToZombie.y;
-      }
-      // Sinon reste en place (tir)
-      // Direction du shoot
-      let now = Date.now();
-      if (now - p.lastShot >= SHOOT_INTERVAL) {
-        p.lastShot = now;
-        let dx = dirToZombie.x, dy = dirToZombie.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist >= 1) {
-          const bulletId = `${pid}_${now}_${Math.floor(Math.random() * 100000)}`;
-          game.bullets[bulletId] = {
-            id: bulletId,
-            owner: pid,
-            x: p.x,
-            y: p.y,
-            dx: dx / dist,
-            dy: dy / dist,
-            createdAt: now
-          };
-        }
-      }
-    }
-    p.moveDir = move;
   }
 }
 
@@ -609,6 +514,7 @@ function moveZombies(game, deltaTime) {
   for (const [id, pos] of Object.entries(nextPos)) {
     let collide = false;
     if (isCollision(game.map, pos.x, pos.y)) continue;
+    // PAS DE COLLISION ENTRE JOUEURS (plus de vérif ici !)
     if (!collide) {
       game.zombies[id].x = pos.x;
       game.zombies[id].y = pos.y;
@@ -647,13 +553,16 @@ function moveBullets(game, deltaTime) {
   }
 }
 
+// PATCH: log de fin de partie
 function checkGameEnd(game) {
   const allDead = Object.values(game.players).filter(p=>p.alive).length === 0;
   if (allDead && game.lobby.started) {
     console.log(`---- Partie terminée, vague atteinte : ${game.currentRound}`);
     game.lobby.started = false;
     stopSpawning(game);
+    // Optionnel: reset lobby ?
     setTimeout(() => {
+      // Reset la partie pour lobby
       game.lobby.players = {};
       broadcastLobby(game);
     }, 3000);
@@ -666,13 +575,13 @@ function gameLoop() {
     const deltaTime = 1 / 30;
 
     movePlayers(game, deltaTime);
-    moveBots(game, deltaTime); // --- PATCH: Bots
     moveZombies(game, deltaTime);
     moveBullets(game, deltaTime);
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
     io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+
     checkGameEnd(game);
   }
   setTimeout(gameLoop, 1000 / 30);
