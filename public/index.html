@@ -179,6 +179,10 @@
       });
     }
     const pseudoInput = document.getElementById('pseudoInput');
+	pseudoInput.addEventListener('input', function() {
+	  this.value = this.value.replace(/[^a-zA-Z0-9]/g, '');
+	});
+
     const lobbyJoin = document.getElementById('lobbyJoin');
     const lobbyPlayers = document.getElementById('lobbyPlayers');
     const lobbyTimer = document.getElementById('lobbyTimer');
@@ -403,7 +407,7 @@
         ctx.fillStyle = 'red';
         ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
         ctx.fill();
-        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp || 10);
+        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.hp > 10 ? z.hp : 10);
       }
     }
     function drawBullets() {
@@ -422,15 +426,17 @@
         ctx.restore();
       }
     }
-    function drawHealthBar(x, y, current, max, width = 30, height = 5) {
-      const ratio = Math.max(0, Math.min(1, current / max));
-      ctx.fillStyle = '#111';
-      ctx.fillRect(x - width/2, y, width, height);
-      ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
-      ctx.fillRect(x - width/2, y, width * ratio, height);
-      ctx.strokeStyle = '#fff';
-      ctx.strokeRect(x - width/2, y, width, height);
-    }
+	function drawHealthBar(x, y, current, max, width = 30, height = 5) {
+	  // On adapte la largeur max (entre 30 et 70 px, par exemple)
+	  let w = Math.max(30, Math.min(70, 30 + (max - 10) * 0.7));
+	  const ratio = Math.max(0, Math.min(1, current / max));
+	  ctx.fillStyle = '#111';
+	  ctx.fillRect(x - w/2, y, w, height);
+	  ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
+	  ctx.fillRect(x - w/2, y, w * ratio, height);
+	  ctx.strokeStyle = '#fff';
+	  ctx.strokeRect(x - w/2, y, w, height);
+	}
 
     // ---- TRAIT DE VISÉE PATCH ----
     function drawAimLine() {

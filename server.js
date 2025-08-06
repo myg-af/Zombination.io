@@ -30,8 +30,8 @@ const {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_PLAYERS = 5;
-const LOBBY_TIME = 30 * 1000; // 30 sec
+const MAX_PLAYERS = 8;
+const LOBBY_TIME = 5 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 150;
 
 let activeGames = [];
@@ -99,7 +99,7 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
     tries++;
     if (tries > 50) break;
   } while (isCollision(game.map, spawnX, spawnY));
-  return { x: spawnX, y: spawnY, hp: hp, lastAttack: 0, speed: speed };
+  return { x: spawnX, y: spawnY, hp: hp, maxHp: hp, lastAttack: 0, speed: speed };
 }
 
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
@@ -331,13 +331,14 @@ io.on('connection', socket => {
     started: game.lobby.started,
   });
 
-  socket.on('setPseudoAndReady', (pseudo) => {
-    pseudo = (pseudo || '').trim().substring(0, 15);
-    if (!pseudo) pseudo = 'Joueur';
-    game.lobby.players[socket.id] = { pseudo, ready: true };
-    broadcastLobby(game);
-    startLobbyTimer(game);
-  });
+socket.on('setPseudoAndReady', (pseudo) => {
+  pseudo = (pseudo || '').trim().substring(0, 15);
+  pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
+  if (!pseudo) pseudo = 'Joueur';
+  game.lobby.players[socket.id] = { pseudo, ready: true };
+  broadcastLobby(game);
+  startLobbyTimer(game);
+});
 
   socket.on('leaveLobby', () => {
     delete game.lobby.players[socket.id];
