@@ -341,6 +341,8 @@ function launchGame(game, readyPlayersArr = null) {
 		isBot: true,
 		targetId: null,
 		shootCooldown: 0,
+		wanderDir: { x: 0, y: 0 },
+		wanderChangeTime: 0,
 	  };
 	  pseudosArr.push(botName);
 	  socketsArr.push(botId);
@@ -484,26 +486,47 @@ function moveBots(game, deltaTime) {
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
     const speed = 60;
+	  // --- DÉTECTION DES ZOMBIES PROCHE ---
+	  let closestZombie = null;
+	  let closestDist = Infinity;
+	  for (const [zid, z] of Object.entries(game.zombies)) {
+		const dx = z.x - bot.x;
+		const dy = z.y - bot.y;
+		const dist = Math.sqrt(dx*dx + dy*dy);
+		if (dist < closestDist) {
+		  closestDist = dist;
+		  closestZombie = z;
+		}
+	  }
 
-    // Trouver le zombie le plus proche
-    let closestZombie = null;
-    let closestDist = Infinity;
-    for (const [zid, z] of Object.entries(game.zombies)) {
-      const dx = z.x - bot.x;
-      const dy = z.y - bot.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestZombie = z;
-      }
-    }
-
-    if (!closestZombie) {
-      bot.moveDir = { x: 0, y: 0 };
-      bot.targetId = null;
-      continue;
-    }
-    bot.targetId = closestZombie;
+	  // Si AUCUN zombie dans le rayon de détection, on erre !
+	  const ZOMBIE_DETECTION_RADIUS = 320; // Modifiable facilement
+	  if (!closestZombie || closestDist > ZOMBIE_DETECTION_RADIUS) {
+		// --- ERRANCE ALÉATOIRE ---
+		const now = Date.now();
+		// On change de direction toutes les 0.8 à 2 secondes environ (aléatoire)
+		if (!bot.wanderDir || now > bot.wanderChangeTime) {
+		  // Nouvelle direction aléatoire
+		  const angle = Math.random() * 2 * Math.PI;
+		  bot.wanderDir = { x: Math.cos(angle), y: Math.sin(angle) };
+		  bot.wanderChangeTime = now + 800 + Math.random()*1200;
+		}
+		// Déplacement
+		let moveDist = speed * deltaTime * 0.7; // Les bots errent un peu moins vite
+		let nx = bot.x + bot.wanderDir.x * moveDist;
+		let ny = bot.y + bot.wanderDir.y * moveDist;
+		// Évite de sortir de la map ou de foncer dans un mur
+		if (!isCollision(game.map, nx, ny)) {
+		  bot.x = nx;
+		  bot.y = ny;
+		} else {
+		  // Si collision : change de direction au prochain tick
+		  bot.wanderChangeTime = 0;
+		}
+		// Garde l'ancienne logique IA désactivée tant qu'on erre
+		bot.moveDir = { x: 0, y: 0 };
+		continue; // On saute le reste de l'IA, on patrouille seulement
+	  }
 
     const dx = closestZombie.x - bot.x;
     const dy = closestZombie.y - bot.y;
