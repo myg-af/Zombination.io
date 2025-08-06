@@ -356,6 +356,10 @@
       });
     }
     if (isMobileDevice) window.addEventListener('load', setupJoysticks);
+	if (isMobileDevice) {
+		window.addEventListener('resize', setupJoysticks);
+		window.addEventListener('orientationchange', setupJoysticks);
+	}
     // --- FIN PATCH JOYSTICK ---
 
     // ... (restant du code: map, players, zombies, bullets, HUD, death screen, etc.)
@@ -395,7 +399,7 @@
         ctx.textAlign = "center";
         ctx.fillStyle = "#aad8ff";
         ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 32, 6);
+        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100);
       }
     }
     function drawZombies() {

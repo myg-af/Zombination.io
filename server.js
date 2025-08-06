@@ -419,6 +419,7 @@ const lastZombieAttackPerGame = {};
 function movePlayers(game, deltaTime) {
   for (const pid in game.players) {
     const p = game.players[pid];
+	if (!p) continue;
     if (!p.alive) continue;
     if (!p.moveDir) p.moveDir = {x:0, y:0};
     let len = Math.sqrt(p.moveDir.x*p.moveDir.x + p.moveDir.y*p.moveDir.y);
@@ -441,6 +442,7 @@ function moveZombies(game, deltaTime) {
   const zombieList = Object.entries(game.zombies);
   const nextPos = {};
   for (const [id, z] of zombieList) {
+	if (!z) continue;
     let closestPlayer = null, closestDist = Infinity, closestPid = null;
     for (const pid in game.players) {
       const p = game.players[pid];
@@ -513,6 +515,7 @@ function moveZombies(game, deltaTime) {
     nextPos[id] = { x: nx, y: ny };
   }
   for (const [id, pos] of Object.entries(nextPos)) {
+	if (!game.zombies[id]) continue;
     let collide = false;
     if (isCollision(game.map, pos.x, pos.y)) continue;
     // PAS DE COLLISION ENTRE JOUEURS (plus de vérif ici !)
@@ -571,19 +574,23 @@ function checkGameEnd(game) {
 }
 
 function gameLoop() {
-  for (const game of activeGames) {
-    if (!game.lobby.started) continue;
-    const deltaTime = 1 / 30;
+  try {
+    for (const game of activeGames) {
+      if (!game.lobby.started) continue;
+      const deltaTime = 1 / 30;
 
-    movePlayers(game, deltaTime);
-    moveZombies(game, deltaTime);
-    moveBullets(game, deltaTime);
-    io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
-    io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
-    io.to('lobby' + game.id).emit('currentRound', game.currentRound);
-    io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+      movePlayers(game, deltaTime);
+      moveZombies(game, deltaTime);
+      moveBullets(game, deltaTime);
+      io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+      io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
+      io.to('lobby' + game.id).emit('currentRound', game.currentRound);
+      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
 
-    checkGameEnd(game);
+      checkGameEnd(game);
+    }
+  } catch (err) {
+    console.error("Erreur dans la boucle principale gameLoop :", err);
   }
   setTimeout(gameLoop, 1000 / 30);
 }
