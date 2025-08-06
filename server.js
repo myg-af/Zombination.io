@@ -320,8 +320,9 @@ function launchGame(game, readyPlayersArr = null) {
   console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
   startSpawning(game);
 }
-
 io.on('connection', socket => {
+  socket.on('clientPing', () => {});
+
   console.log('[CONNECT]', socket.id, socket.handshake.headers['user-agent']);
   const game = getAvailableLobby();
   socketToGame[socket.id] = game.id;

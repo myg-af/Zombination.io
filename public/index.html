@@ -194,6 +194,11 @@
 
     // --- JEU ---
     const socket = io();
+	setInterval(() => {
+	  if (socket && socket.connected) {
+		socket.emit('clientPing');
+	  }
+	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const hudAlive = document.getElementById('hudAlive');
@@ -387,23 +392,24 @@
         }
       }
     }
-    function drawPlayers() {
-      for (const id in playersHealth) {
-        const p = playersHealth[id];
-        if (!p.alive) continue;
-        const screenX = p.x - cameraX;
-        const screenY = p.y - cameraY;
-        ctx.beginPath();
-        ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
-        ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = "bold 17px Arial";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#aad8ff";
-        ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 10);
-      }
-    }
+	function drawPlayers() {
+	  for (const id in playersHealth) {
+		const p = playersHealth[id];
+		if (!p.alive) continue;
+		const screenX = p.x - cameraX;
+		const screenY = p.y - cameraY;
+		ctx.beginPath();
+		ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
+		ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.font = "bold 17px Arial";
+		ctx.textAlign = "center";
+		ctx.fillStyle = "#aad8ff";
+		ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
+		// <-- largeur fixe 30 pour joueur
+		drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 30);
+	  }
+	}
     function drawZombies() {
       for (const id in zombies) {
         const z = zombies[id];
@@ -413,7 +419,7 @@
         ctx.fillStyle = 'red';
         ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
         ctx.fill();
-        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.hp > 10 ? z.hp : 10);
+        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
       }
     }
     function drawBullets() {
@@ -432,58 +438,65 @@
         ctx.restore();
       }
     }
-	function drawHealthBar(x, y, current, max, width = 30, height = 5) {
-	  // On adapte la largeur max (entre 30 et 70 px, par exemple)
-	  let w = Math.max(30, Math.min(70, 30 + (max - 10) * 0.7));
+	function drawHealthBar(x, y, current, max, width = null, height = 5) {
+	  let w;
+	  if (width !== null) {
+		w = width;  // largeur fixée explicitement
+	  } else {
+		// largeur variable pour zombies, par exemple
+		w = Math.max(30, Math.min(70, 30 + (max - 10) * 0.7));
+	  }
 	  const ratio = Math.max(0, Math.min(1, current / max));
 	  ctx.fillStyle = '#111';
-	  ctx.fillRect(x - w/2, y, w, height);
+	  ctx.fillRect(x - w / 2, y, w, height);
 	  ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
-	  ctx.fillRect(x - w/2, y, w * ratio, height);
+	  ctx.fillRect(x - w / 2, y, w * ratio, height);
 	  ctx.strokeStyle = '#fff';
-	  ctx.strokeRect(x - w/2, y, w, height);
+	  ctx.strokeRect(x - w / 2, y, w, height);
 	}
 
     // ---- TRAIT DE VISÉE PATCH ----
-    function drawAimLine() {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      const player = playersHealth[myId];
-      let dir = {x: 1, y: 0};
-      let show = false;
+	function drawAimLine() {
+	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+	  const player = playersHealth[myId];
+	  let dir = {x: 1, y: 0};
+	  let show = false;
 
-      if (isMobileDevice) {
-        let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-        if (len > 18) {
-          dir = { x: aimJoyVal.x/len, y: aimJoyVal.y/len };
-          show = true;
-        }
-      } else {
-        let dx = (cameraX + mousePos.x) - player.x;
-        let dy = (cameraY + mousePos.y) - player.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        if (mouseDown || dist > 35) {
-          dir = aimDir;
-          show = true;
-        }
-      }
-      if (!show) return;
+	  if (isMobileDevice) {
+		let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+		if (len > 18) {
+		  dir = { x: aimJoyVal.x/len, y: aimJoyVal.y/len };
+		  show = true;  // garde l'affichage normal sur mobile
+		}
+	  } else {
+		if (mouseDown) {  // sur PC, afficher **uniquement** quand on tire
+		  let dx = (cameraX + mousePos.x) - player.x;
+		  let dy = (cameraY + mousePos.y) - player.y;
+		  let dist = Math.sqrt(dx*dx + dy*dy);
+		  if (dist > 3) {
+			dir = { x: dx / dist, y: dy / dist };
+			show = true;
+		  }
+		}
+	  }
 
-      // TRAIT : plus long, plus fin
-      const length = 220;
-      const screenX = player.x - cameraX;
-      const screenY = player.y - cameraY;
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(screenX, screenY);
-      ctx.lineTo(screenX + dir.x * length, screenY + dir.y * length);
-      ctx.strokeStyle = 'rgba(255,255,0,0.66)';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = 'yellow';
-      ctx.shadowBlur = 7;
-      ctx.stroke();
-      ctx.restore();
-    }
+	  if (!show) return;
 
+	  const length = 440; // double taille de la barre (au lieu de 220)
+	  const screenX = player.x - cameraX;
+	  const screenY = player.y - cameraY;
+
+	  ctx.save();
+	  ctx.beginPath();
+	  ctx.moveTo(screenX, screenY);
+	  ctx.lineTo(screenX + dir.x * length, screenY + dir.y * length);
+	  ctx.strokeStyle = 'rgba(255,255,0,0.66)';
+	  ctx.lineWidth = 2;
+	  ctx.shadowColor = 'yellow';
+	  ctx.shadowBlur = 7;
+	  ctx.stroke();
+	  ctx.restore();
+	}
     // ... reste de la logique du jeu
     function update(deltaTime) {
       if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
