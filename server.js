@@ -33,7 +33,7 @@ const {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_PLAYERS = 8;
+const MAX_PLAYERS = 10;
 const LOBBY_TIME = 5 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 150;
 
@@ -482,52 +482,93 @@ function movePlayers(game, deltaTime) {
 
 function moveBots(game, deltaTime) {
   const now = Date.now();
+  const speed = 60;
+  const ZOMBIE_DETECTION_RADIUS = 400;
 
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
-    const speed = 60;
-	  // --- DÉTECTION DES ZOMBIES PROCHE ---
-	  let closestZombie = null;
-	  let closestDist = Infinity;
-	  for (const [zid, z] of Object.entries(game.zombies)) {
-		const dx = z.x - bot.x;
-		const dy = z.y - bot.y;
-		const dist = Math.sqrt(dx*dx + dy*dy);
-		if (dist < closestDist) {
-		  closestDist = dist;
-		  closestZombie = z;
-		}
-	  }
 
-	  // Si AUCUN zombie dans le rayon de détection, on erre !
-	  const ZOMBIE_DETECTION_RADIUS = 320; // Modifiable facilement
-	  if (!closestZombie || closestDist > ZOMBIE_DETECTION_RADIUS) {
-		// --- ERRANCE ALÉATOIRE ---
-		const now = Date.now();
-		// On change de direction toutes les 0.8 à 2 secondes environ (aléatoire)
-		if (!bot.wanderDir || now > bot.wanderChangeTime) {
-		  // Nouvelle direction aléatoire
-		  const angle = Math.random() * 2 * Math.PI;
-		  bot.wanderDir = { x: Math.cos(angle), y: Math.sin(angle) };
-		  bot.wanderChangeTime = now + 800 + Math.random()*1200;
-		}
-		// Déplacement
-		let moveDist = speed * deltaTime * 0.7; // Les bots errent un peu moins vite
-		let nx = bot.x + bot.wanderDir.x * moveDist;
-		let ny = bot.y + bot.wanderDir.y * moveDist;
-		// Évite de sortir de la map ou de foncer dans un mur
-		if (!isCollision(game.map, nx, ny)) {
-		  bot.x = nx;
-		  bot.y = ny;
-		} else {
-		  // Si collision : change de direction au prochain tick
-		  bot.wanderChangeTime = 0;
-		}
-		// Garde l'ancienne logique IA désactivée tant qu'on erre
-		bot.moveDir = { x: 0, y: 0 };
-		continue; // On saute le reste de l'IA, on patrouille seulement
-	  }
+    // 1. Recherche zombie le plus proche
+    let closestZombie = null, closestDist = Infinity;
+    for (const z of Object.values(game.zombies)) {
+      const dx = z.x - bot.x, dy = z.y - bot.y, dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < closestDist) { closestDist = dist; closestZombie = z; }
+    }
 
+    // 2. PATROUILLE / ERRANCE avec PATHFINDING
+    if (!closestZombie || closestDist > ZOMBIE_DETECTION_RADIUS) {
+      // On pick un point atteignable sur la map, et on y va par pathfinding
+      if (!bot.wanderTarget || !bot.wanderPath || bot.wanderPath.length < 2 ||
+        (Math.abs(bot.x-bot.wanderTarget.x) < 12 && Math.abs(bot.y-bot.wanderTarget.y) < 12)) {
+
+        if (!bot.wanderTarget || Math.random() < 0.20) {
+          let wx, wy, tries = 0, path = null;
+          do {
+            wx = (Math.random() * (MAP_COLS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
+            wy = (Math.random() * (MAP_ROWS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
+            path = findPath(game, bot.x, bot.y, wx, wy);
+            tries++;
+          } while ((isCollision(game.map, wx, wy) || !path || path.length < 2) && tries < 30);
+          if (path && path.length >= 2) {
+            bot.wanderTarget = { x: wx, y: wy };
+            bot.wanderPath = path;
+            bot.wanderDir = null;
+          } else {
+            bot.wanderTarget = null;
+            bot.wanderPath = null;
+          }
+        } else {
+          // Direction random fallback si vraiment pas de path
+          const angle = Math.random() * 2 * Math.PI;
+          bot.wanderDir = { x: Math.cos(angle), y: Math.sin(angle) };
+          bot.wanderChangeTime = Date.now() + 800 + Math.random()*1200;
+          bot.wanderTarget = null;
+          bot.wanderPath = null;
+        }
+      }
+
+      // Suivre le path (si présent)
+      if (bot.wanderTarget && bot.wanderPath && bot.wanderPath.length > 1) {
+        const nextNode = bot.wanderPath[1];
+        const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
+        const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
+        let dx = targetX - bot.x, dy = targetY - bot.y, dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist > 8) {
+          let moveDist = speed * deltaTime * 0.7;
+          let nx = bot.x + dx / dist * moveDist;
+          let ny = bot.y + dy / dist * moveDist;
+          if (!isCollision(game.map, nx, ny)) {
+            bot.x = nx; bot.y = ny;
+            // Arrivé au node ? Passe au suivant
+            if (Math.abs(bot.x - targetX) < 4 && Math.abs(bot.y - targetY) < 4) {
+              bot.wanderPath.shift();
+            }
+          } else {
+            // Coincé, reset errance au prochain tick
+            bot.wanderTarget = null;
+            bot.wanderPath = null;
+          }
+        } else {
+          // Arrivé à la cible, reset
+          bot.wanderTarget = null;
+          bot.wanderPath = null;
+        }
+      } else if (bot.wanderDir) {
+        // Fallback direction random classique
+        let moveDist = speed * deltaTime * 0.7;
+        let nx = bot.x + bot.wanderDir.x * moveDist;
+        let ny = bot.y + bot.wanderDir.y * moveDist;
+        if (!isCollision(game.map, nx, ny)) {
+          bot.x = nx; bot.y = ny;
+        } else {
+          bot.wanderChangeTime = 0;
+        }
+      }
+      bot.moveDir = { x: 0, y: 0 };
+      continue; // PAS de chasse ce tick
+    }
+
+    // === Zombie repéré, comportement normal ===
     const dx = closestZombie.x - bot.x;
     const dy = closestZombie.y - bot.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
@@ -547,8 +588,7 @@ function moveBots(game, deltaTime) {
     const shootingRange = 250;
 
     if (dist <= shootingRange && canShoot()) {
-		const backMoveDist = speed * deltaTime;
-
+      const backMoveDist = speed * deltaTime;
       const backDir = { x: -dx / dist, y: -dy / dist };
       const backX = bot.x + backDir.x * backMoveDist;
       const backY = bot.y + backDir.y * backMoveDist;
@@ -556,6 +596,24 @@ function moveBots(game, deltaTime) {
       if (!isCollision(game.map, backX, backY)) {
         bot.x = backX;
         bot.y = backY;
+      } else {
+        // Pathfinding pour reculer si bloqué
+        const awayLength = 100;
+        const px = bot.x + backDir.x * awayLength;
+        const py = bot.y + backDir.y * awayLength;
+        const pathBack = findPath(game, bot.x, bot.y, px, py);
+        if (pathBack && pathBack.length > 1) {
+          const nextNode = pathBack[1];
+          const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
+          const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
+          const ndx = targetX - bot.x;
+          const ndy = targetY - bot.y;
+          const ndist = Math.sqrt(ndx * ndx + ndy * ndy);
+          if (ndist > 1) {
+            bot.x += (ndx / ndist) * backMoveDist;
+            bot.y += (ndy / ndist) * backMoveDist;
+          }
+        }
       }
 
       if (now - bot.lastShot > SHOOT_INTERVAL) {
@@ -573,6 +631,7 @@ function moveBots(game, deltaTime) {
       }
       bot.moveDir = { x: 0, y: 0 };
     } else {
+      // Approche du zombie : direct ou pathfinding
       let canGoDirect = true;
       const steps = Math.ceil(dist / 6);
       for (let s = 1; s < steps; s++) {
@@ -610,6 +669,7 @@ function moveBots(game, deltaTime) {
     }
   }
 }
+
 
 function moveZombies(game, deltaTime) {
   const now = Date.now();
