@@ -664,7 +664,7 @@
     });
 
     setInterval(drawHUD, 150);
-    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 100);
+    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
 
     updateUITexts();
     drawHUD();

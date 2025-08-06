@@ -15,7 +15,10 @@ const gameMapModule = require('./game/gameMap');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  pingInterval: 10000, // laisse 10s
+  pingTimeout: 60000   // passe à 60s (au lieu de 30s par défaut)
+});
 
 const {
   MAP_ROWS,
