@@ -282,11 +282,13 @@
       if (!isMobileDevice) return;
       if (moveJoy && moveJoy.joyDiv) moveJoy.joyDiv.remove();
       if (aimJoy && aimJoy.joyDiv) aimJoy.joyDiv.remove();
-      const padding = 36;
-      const joySize = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
-      moveJoy = createJoystick(document.body, padding, window.innerHeight - joySize - padding*2.1, "moveJoy");
-      aimJoy = createJoystick(document.body, window.innerWidth - joySize - padding, window.innerHeight - joySize - padding*2.1, "aimJoy");
-      let moveTouchId = null;
+		const padding = 36;
+		const joySize = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
+		let joyY = window.innerHeight - joySize - padding;
+		if (joyY < padding) joyY = padding;
+		moveJoy = createJoystick(document.body, padding, joyY, "moveJoy");
+		aimJoy = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");     
+	  let moveTouchId = null;
       moveJoy.joyDiv.addEventListener('touchstart', function(e) { moveTouchId = e.changedTouches[0].identifier; });
       moveJoy.joyDiv.addEventListener('touchmove', function(e) {
         if (moveTouchId == null) return;
@@ -399,7 +401,7 @@
         ctx.textAlign = "center";
         ctx.fillStyle = "#aad8ff";
         ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100);
+        drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 10);
       }
     }
     function drawZombies() {
