@@ -319,6 +319,7 @@ function launchGame(game, readyPlayersArr = null) {
 }
 
 io.on('connection', socket => {
+  console.log('[CONNECT]', socket.id, socket.handshake.headers['user-agent']);
   const game = getAvailableLobby();
   socketToGame[socket.id] = game.id;
   socket.join('lobby' + game.id);
@@ -345,13 +346,16 @@ socket.on('setPseudoAndReady', (pseudo) => {
     broadcastLobby(game);
   });
 
-  socket.on('disconnect', () => {
-    delete game.lobby.players[socket.id];
-    delete game.players[socket.id];
-    io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
-    broadcastLobby(game);
-    io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-  });
+socket.on('disconnect', () => {
+  // <-- ICI ton log
+  console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
+
+  delete game.lobby.players[socket.id];
+  delete game.players[socket.id];
+  io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
+  broadcastLobby(game);
+  io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+});
 
   // PATCH: On ne gère plus 'playerMovement', mais 'moveDir'
   socket.on('moveDir', (dir) => {
