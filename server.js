@@ -34,7 +34,7 @@ const {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_PLAYERS = 50;
+const MAX_PLAYERS = 10;
 const LOBBY_TIME = 5 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 200;
 
