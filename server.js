@@ -1,3 +1,4 @@
+// Ceci est le fichier server.js :
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
 });
@@ -135,26 +136,19 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     // *** IMPORTANT : récupérer l'ancien joueur pour conserver isBot ***
     const existingPlayer = game.players[sid];
 
-	game.players[sid] = {
-	  x: spawnX,
-	  y: spawnY,
-	  lastShot: 0,
-	  alive: true,
-	  health: 100,
-	  kills: 0,
-	  pseudo,
-	  moveDir: { x: 0, y: 0 },
-	  isBot: existingPlayer ? existingPlayer.isBot : false,
-	  money: existingPlayer && typeof existingPlayer.money === 'number' ? existingPlayer.money : 0,  // <- AJOUTE ÇA
-	  upgrades: existingPlayer && existingPlayer.upgrades ? existingPlayer.upgrades : {  // <- ET ÇA
-		maxHp: 0,
-		speed: 0,
-		regen: 0,
-		damage: 0,
-		goldBonus: 0
-	  },
-	};
-}
+    game.players[sid] = {
+      x: spawnX,
+      y: spawnY,
+      lastShot: 0,
+      alive: true,
+      health: 100,
+      kills: 0,
+      pseudo,
+      moveDir: { x: 0, y: 0 },
+      isBot: existingPlayer ? existingPlayer.isBot : false,  // <-- Conserve isBot !
+	  money: 10,
+    };
+  }
 }
 function findPath(game, startX, startY, endX, endY) {
   const openSet = [];
@@ -351,15 +345,6 @@ function launchGame(game, readyPlayersArr = null) {
 		shootCooldown: 0,
 		wanderDir: { x: 0, y: 0 },
 		wanderChangeTime: 0,
-		money: 0,
-		money: 0, // <- nouvelle propriété
-		upgrades: {
-			maxHp: 0,
-			speed: 0,
-			regen: 0,
-			damage: 0,
-			goldBonus: 0
-		}
 	  };
 	  pseudosArr.push(botName);
 	  socketsArr.push(botId);
@@ -462,44 +447,6 @@ socket.on('disconnect', () => {
     game.zombies = {};
     io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
   });
-	 socket.on('buyUpgrade', (upgradeKey) => {
-	  // Vérif jeu + joueur + partie démarrée
-	  const player = game.players[socket.id];
-	  if (!player || !game.lobby.started) return;
-	  if (!player.upgrades) player.upgrades = { maxHp:0, speed:0, regen:0, damage:0, goldBonus:0 };
-	  // --- PRIX (doit matcher le client !) ---
-	  const level = player.upgrades[upgradeKey] || 0;
-	  let price = 10;
-	  if (level === 1) price = 25;
-	  else if (level === 2) price = 50;
-	  else if (level === 3) price = 75;
-	  else if (level === 4) price = 100;
-	  else if (level === 5) price = 125;
-	  else if (level > 5) price = 125 + 25 * (level - 5);
-
-	  if (typeof player.money !== 'number' || player.money < price) return; // Pas assez
-
-	  player.money -= price;
-	  player.upgrades[upgradeKey] = level + 1;
-
-	  // Effets immédiats
-	  if (upgradeKey === 'maxHp') {
-		player.maxHp = Math.round((player.maxHp || 100) * 1.1);
-		player.health = Math.max(player.health, player.maxHp);
-	  }
-	  // Ajoute ici les autres effets directs (speed, regen…) si besoin
-
-	  // Renvoie l’état au joueur !
-	  io.to(socket.id).emit('upgradeBought', {
-		upgrades: player.upgrades,
-		money: player.money,
-		maxHp: player.maxHp,
-		// ajoute ce que tu veux renvoyer (ex: regen, etc)
-	  });
-	  // Mets à jour le HUD de tous
-	  io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-	});
-
 });
 
 function getPlayersHealthState(game) {
@@ -512,7 +459,7 @@ function getPlayersHealthState(game) {
       x: p.x,
       y: p.y,
       pseudo: p.pseudo,
-      money: typeof p.money === 'number' ? p.money : 0 // <-- NOUVEAU
+      money: p.money, // <-- AJOUTE CETTE LIGNE
     };
   }
   return obj;
@@ -835,31 +782,28 @@ function moveBullets(game, deltaTime) {
       delete game.bullets[id];
       continue;
     }
-	for (const zid in game.zombies) {
-	  const z = game.zombies[zid];
-	  if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
-		z.hp -= BULLET_DAMAGE;
+    for (const zid in game.zombies) {
+      const z = game.zombies[zid];
+      if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
+        z.hp -= BULLET_DAMAGE;
 		if (z.hp <= 0) {
 		  if (game.players[bullet.owner]) {
-			// --- AJOUT ARGENT ---
-			const moneyGained = Math.floor(10 + Math.random() * 11); // 10 à 20 inclus
-			game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyGained;
 			game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
 			io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
 
-			// --- NOUVEAU : ENVOIE AU JOUEUR LE GAIN SUR CE ZOMBIE ---
-			io.to(bullet.owner).emit('moneyPopup', {
-			  x: z.x,
-			  y: z.y,
-			  amount: moneyGained
-			});
+			// Ajout de l’argent
+			const moneyEarned = Math.floor(Math.random() * 11) + 10; // 10 à 20 inclus
+			game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
+
+			// Envoie l’event pour affichage +$ au client qui a tué
+			io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
 		  }
 		  delete game.zombies[zid];
 		}
-		delete game.bullets[id];
-		break;
-	  }
-	}
+        delete game.bullets[id];
+        break;
+      }
+    }
   }
 }
 
