@@ -34,7 +34,7 @@ const {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MAX_PLAYERS = 10;
+const MAX_PLAYERS = 50;
 const LOBBY_TIME = 5 * 1000; // 30 sec
 const MAX_ACTIVE_ZOMBIES = 200;
 
@@ -136,18 +136,22 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     // *** IMPORTANT : récupérer l'ancien joueur pour conserver isBot ***
     const existingPlayer = game.players[sid];
 
-    game.players[sid] = {
-      x: spawnX,
-      y: spawnY,
-      lastShot: 0,
-      alive: true,
-      health: 100,
-      kills: 0,
-      pseudo,
-      moveDir: { x: 0, y: 0 },
-      isBot: existingPlayer ? existingPlayer.isBot : false,  // <-- Conserve isBot !
+	game.players[sid] = {
+	  x: spawnX,
+	  y: spawnY,
+	  lastShot: 0,
+	  alive: true,
+	  health: 100,
+	  kills: 0,
+	  pseudo,
+	  moveDir: { x: 0, y: 0 },
+	  isBot: existingPlayer ? existingPlayer.isBot : false,  // <-- Conserve isBot !
 	  money: 10,
-    };
+	  upgrades: { maxHp: 0, speed: 0, regen: 0, damage: 0, goldGain: 0 } // <--- AJOUTE ICI
+	};
+	const stats = getPlayerStats(game.players[sid]);
+	game.players[sid].maxHealth = stats.maxHp;
+	game.players[sid].health = stats.maxHp;
   }
 }
 function findPath(game, startX, startY, endX, endY) {
@@ -398,13 +402,55 @@ socket.on('disconnect', () => {
   io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
 });
 
-  // PATCH: On ne gère plus 'playerMovement', mais 'moveDir'
   socket.on('moveDir', (dir) => {
     const player = game.players[socket.id];
     if (!game.lobby.started || !player || !player.alive) return;
     // dir.x et dir.y entre -1 et 1
     player.moveDir = dir;
   });
+
+	socket.on('upgradeUpdate', ({ myUpgrades: newUpgs, myMoney: newMoney }) => {
+	  myUpgrades = newUpgs;
+	  myMoney = newMoney;
+	  renderShopUpgrades();
+	  drawHUD();
+	});
+	
+	socket.on('upgradeBuy', ({ upgId }) => {
+	  const gameId = socketToGame[socket.id];
+	  const game = activeGames.find(g => g.id === gameId);
+	  if (!game) return;
+	  const player = game.players[socket.id];
+	  if (!player) return;
+
+	  // PATCH: upgrades doit exister !
+	  if (!player.upgrades) player.upgrades = { maxHp:0, speed:0, regen:0, damage:0, goldGain:0 };
+
+	  const lvl = player.upgrades[upgId] || 0;
+	  let price = 10;
+	  if (lvl === 1) price = 25;
+	  else if (lvl === 2) price = 50;
+	  else if (lvl >= 3) price = 50 + 25 * (lvl-2);
+
+	  if (player.money >= price && lvl < 7) {
+		player.money -= price;
+		player.upgrades[upgId] = lvl + 1;
+
+		if (upgId === "maxHp") {
+		  // On augmente le maxHp, et on garde le % de vie actuel
+		  const oldMaxHp = player.maxHealth || 100;
+		  const oldRatio = player.health / oldMaxHp;
+		  const stats = getPlayerStats(player);
+		  player.maxHealth = stats.maxHp;
+		  player.health = Math.max(1, Math.round(player.maxHealth * oldRatio));
+		}
+
+		socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+
+
+	  }
+	});
+
 
   socket.on('shoot', (data) => {
     if (!game.lobby.started) return;
@@ -449,6 +495,25 @@ socket.on('disconnect', () => {
   });
 });
 
+	function getPlayerStats(player) {
+	  const u = player.upgrades || {};
+	  // Valeurs de base à modifier si tu changes dans le shop
+	  const base = {
+		maxHp: 100,
+		speed: 60,
+		regen: 0,
+		damage: 20,
+		goldGain: 10,
+	  };
+	  return {
+		maxHp: Math.round(base.maxHp * Math.pow(1.1, u.maxHp || 0)),
+		speed: +(base.speed * Math.pow(1.1, u.speed || 0)).toFixed(1),
+		regen: +(base.regen + 0.25 * (u.regen || 0)).toFixed(2),
+		damage: Math.round(base.damage * Math.pow(1.1, u.damage || 0)),
+		goldGain: Math.round(base.goldGain * Math.pow(1.1, u.goldGain || 0)),
+	  };
+}
+
 function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
@@ -459,7 +524,8 @@ function getPlayersHealthState(game) {
       x: p.x,
       y: p.y,
       pseudo: p.pseudo,
-      money: p.money, // <-- AJOUTE CETTE LIGNE
+      money: p.money,
+	  maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
     };
   }
   return obj;
@@ -471,16 +537,16 @@ const lastZombieAttackPerGame = {};
 function movePlayers(game, deltaTime) {
   for (const pid in game.players) {
     const p = game.players[pid];
-	if (!p) continue;
+    if (!p) continue;
     if (!p.alive) continue;
     if (!p.moveDir) p.moveDir = {x:0, y:0};
     let len = Math.sqrt(p.moveDir.x*p.moveDir.x + p.moveDir.y*p.moveDir.y);
     if (len > 0) {
-      let move = PLAYER_SPEED_PER_SEC * deltaTime;
+      let stats = getPlayerStats(p);
+      let move = stats.speed * deltaTime; // <-- Utilise la stat du joueur !
       let dx = p.moveDir.x / len * move;
       let dy = p.moveDir.y / len * move;
       let nx = p.x + dx, ny = p.y + dy;
-      // PAS DE COLLISION ENTRE JOUEURS
       if (!isCollision(game.map, nx, ny)) {
         p.x = nx;
         p.y = ny;
@@ -491,11 +557,11 @@ function movePlayers(game, deltaTime) {
 
 function moveBots(game, deltaTime) {
   const now = Date.now();
-  const speed = 60;
   const ZOMBIE_DETECTION_RADIUS = 400;
-
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
+    let stats = getPlayerStats(bot);
+    const speed = stats.speed;
 
     // 1. Recherche zombie le plus proche
     let closestZombie = null, closestDist = Infinity;
@@ -774,6 +840,8 @@ function moveBullets(game, deltaTime) {
     const bullet = game.bullets[id];
     bullet.x += bullet.dx * BULLET_SPEED * deltaTime;
     bullet.y += bullet.dy * BULLET_SPEED * deltaTime;
+
+    // Supprimer la balle si elle sort de la map ou touche un obstacle
     if (
       bullet.x < 0 || bullet.x > MAP_COLS * TILE_SIZE ||
       bullet.y < 0 || bullet.y > MAP_ROWS * TILE_SIZE ||
@@ -782,26 +850,34 @@ function moveBullets(game, deltaTime) {
       delete game.bullets[id];
       continue;
     }
+
     for (const zid in game.zombies) {
       const z = game.zombies[zid];
       if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
-        z.hp -= BULLET_DAMAGE;
-		if (z.hp <= 0) {
-		  if (game.players[bullet.owner]) {
-			game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
-			io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+        // Calcul des dégâts selon les upgrades du joueur
+        const stats = getPlayerStats(game.players[bullet.owner] || {});
+        let bulletDamage = stats.damage;
+        z.hp -= bulletDamage;
 
-			// Ajout de l’argent
-			const moneyEarned = Math.floor(Math.random() * 11) + 10; // 10 à 20 inclus
-			game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
+        if (z.hp <= 0) {
+          // Comptabilise le kill
+          if (game.players[bullet.owner]) {
+            game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
+            io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
 
-			// Envoie l’event pour affichage +$ au client qui a tué
-			io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
-		  }
-		  delete game.zombies[zid];
-		}
+            // Calcul du gain d’argent avec goldGain
+            let baseMoney = Math.floor(Math.random() * 11) + 10; // 10 à 20 inclus
+            let moneyEarned = Math.round(baseMoney * (stats.goldGain / 10));
+            game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
+
+            // Envoie l’event pour affichage +$ au client qui a tué
+            io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
+          }
+          delete game.zombies[zid];
+        }
+
         delete game.bullets[id];
-        break;
+        break; // Pas besoin de vérifier les autres zombies pour cette balle
       }
     }
   }
@@ -838,6 +914,16 @@ function gameLoop() {
       io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
       io.to('lobby' + game.id).emit('currentRound', game.currentRound);
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+
+	for (const pid in game.players) {
+	  const p = game.players[pid];
+	  if (!p || !p.alive) continue;
+	  const stats = getPlayerStats(p);
+	  if (stats.regen > 0 && p.health < p.maxHealth) {
+		p.health = Math.min(p.maxHealth, p.health + stats.regen * (1/30));
+		io.to(pid).emit('healthUpdate', p.health);
+	  }
+	}
 
       checkGameEnd(game);
     }

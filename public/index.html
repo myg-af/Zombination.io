@@ -87,6 +87,18 @@
       pointer-events: auto;
       user-select: none;
     }
+	#shopModal {
+	  animation: shopPopIn 0.22s;
+	  backdrop-filter: blur(0.5px);
+	}
+	#shopModal:focus-within { outline: 2px solid #4dfc82; }
+	#shopModal::-webkit-scrollbar { width: 6px; }
+	#shopModal::-webkit-scrollbar-thumb { background: #2a5; border-radius: 4px; }
+	@keyframes shopPopIn {
+	  0% { opacity: 0; transform: translateY(80px) scale(0.97);}
+	  100% { opacity: 1; transform: none; }
+	}
+	#shopClose:hover { color: #ff6464; transform: scale(1.13); }
   </style>
 </head>
 <body>
@@ -118,6 +130,21 @@
       <div id="langSelectRow"></div>
     </div>
   </div>
+	 <button id="shopBtn" title="Boutique" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;">
+	  <img src="/icons/cart.svg" alt="Shop" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);" />
+	  SHOP
+	</button>
+	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; z-index:25; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
+	  <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
+	  <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+		<img src="/icons/cart.svg" alt="Shop" style="width:30px; filter:brightness(1.2); vertical-align:middle;">
+		<span>SHOP</span>
+	  </div>
+	  <div id="shopUpgrades">
+		<!-- Ici viendront les lignes d’améliorations à l’étape suivante -->
+		<div style="color:#fff6; font-size:17px; margin-top:18px;">Boutique à venir : <i>Affichage des améliorations ici à l’étape 3</i></div>
+	  </div>
+	</div>
   <div id="versionBox">Version 1.0.0 par Myg</div>
   <div id="waveMessage"></div>
   <script src="/translations.js"></script>
@@ -209,6 +236,69 @@
     const hudHP = document.getElementById('hudHP');
 	const hudMoney = document.getElementById('hudMoney');
 	let myMoney = 10;
+	// --- UPGRADES CONFIG ---
+	const UPGRADES = [
+	  {
+		id: "maxHp",    // identifiant interne
+		label: "+10% Vie max",
+		desc: "Augmente les PV max.",
+		icon: "/icons/heart.svg",
+		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+		baseValue: 100,
+		statLabel: "PV max",
+		format: v => v + " PV"
+	  },
+	  {
+		id: "speed",
+		label: "+10% Vitesse",
+		desc: "Déplace-toi plus vite.",
+		icon: "/icons/speed.svg",
+		getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
+		baseValue: 60,
+		statLabel: "Vitesse",
+		format: v => v + " px/s"
+	  },
+	  {
+		id: "regen",
+		label: "+0.25 PV/s regen",
+		desc: "Régénère tes PV chaque seconde.",
+		icon: "/icons/regen.svg",
+		getValue: (base, level) => +(base + 0.25 * level).toFixed(2),
+		baseValue: 0,
+		statLabel: "Régén.",
+		format: v => v + " PV/s"
+	  },
+	  {
+		id: "damage",
+		label: "+10% Dégâts",
+		desc: "Tire plus fort.",
+		icon: "/icons/bullet.svg",
+		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+		baseValue: 20,
+		statLabel: "Dégâts",
+		format: v => v
+	  },
+	  {
+		id: "goldGain",
+		label: "+10% d'or gagné",
+		desc: "Gagne plus d’or sur les zombies.",
+		icon: "/icons/gold.svg",
+		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+		baseValue: 5,
+		statLabel: "$/zombie",
+		format: v => "$" + v
+	  }
+	];
+
+	// Niveau des upgrades du joueur local (simulé pour l’instant)
+	let myUpgrades = {
+	  maxHp: 0,
+	  speed: 0,
+	  regen: 0,
+	  damage: 0,
+	  goldGain: 0
+	};
+
     const waveMessage = document.getElementById('waveMessage');
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
@@ -725,6 +815,65 @@
 
     setInterval(drawHUD, 150);
     setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
+
+	// --- SHOP BTN LOGIC ---
+	const shopBtn = document.getElementById('shopBtn');
+	const shopModal = document.getElementById('shopModal');
+	const shopClose = document.getElementById('shopClose');
+
+	// --- RENDER SHOP UPGRADES ---
+	function renderShopUpgrades() {
+	  const el = document.getElementById('shopUpgrades');
+	  el.innerHTML = "";
+	  UPGRADES.forEach(upg => {
+		const lvl = myUpgrades[upg.id] || 0;
+		const value = upg.getValue(upg.baseValue, lvl);
+		const nextValue = upg.getValue(upg.baseValue, lvl+1);
+		let price = 10;
+		if (lvl === 1) price = 25;
+		else if (lvl === 2) price = 50;
+		else if (lvl >= 3) price = 50 + 25 * (lvl-2);
+		const disabled = myMoney < price || lvl >= 7;
+		el.innerHTML += `
+		  <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
+			<img src="${upg.icon}" alt="" style="width:34px; height:34px; filter:drop-shadow(0 3px 6px #0005)">
+			<div style="flex:1;">
+			  <div style="font-size:18px;"><b>${upg.label}</b></div>
+			  <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
+			  <div style="font-size:15px; color:#bcffa8;">
+				${upg.statLabel} : <b>${upg.format(value)}</b>
+				<span style="color:#8f8; font-size:14px; margin-left:7px;">${lvl<7?"→ "+upg.format(nextValue):""}</span>
+			  </div>
+			</div>
+			<button style="font-size:16px; background:#393; color:#fff; border:none; border-radius:7px; padding:7px 18px; box-shadow:0 2px 8px #0004; cursor:pointer; opacity:${disabled?"0.5":"1"}; margin-left:8px;" data-upgid="${upg.id}" ${disabled?'disabled':''}>
+			  +1<br>$${price}
+			</button>
+		  </div>
+		`;
+	  });
+
+	el.querySelectorAll('button[data-upgid]').forEach(btn => {
+	  const upgId = btn.getAttribute('data-upgid');
+	  btn.onclick = () => {
+		socket.emit('upgradeBuy', { upgId }); // demande d'achat
+		// Optionnel : tu peux désactiver le bouton le temps d'attendre la réponse serveur, pour éviter le spam.
+	  };
+	});
+	}
+
+	shopBtn.onclick = () => {
+	  renderShopUpgrades();
+	  shopModal.style.display = 'block';
+	};
+
+	shopClose.onclick = () => {
+	  shopModal.style.display = 'none';
+	};
+
+	// (optionnel, fermer si on clique dehors la fenêtre)
+	shopModal.addEventListener('mousedown', function(e) {
+	  if (e.target === shopModal) shopModal.style.display = 'none';
+	});
 
     updateUITexts();
     drawHUD();
