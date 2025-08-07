@@ -8,6 +8,7 @@
     #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
     #hudAlive { font-weight: bold; color: #fd7; }
+	#hudMoney { font-weight: bold; color: #fc0; margin-top: 2px; }
     #deathScreen { display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(30,0,0,0.8); z-index: 3; justify-content: center; align-items: center; flex-direction: column; }
     #deathScreenInner { background: #181818; border-radius: 20px; padding: 35px 45px; color: #fff; box-shadow: 0 6px 30px #000c; text-align: center; min-width: 320px; }
     #deathScreen h2 { margin: 0 0 15px 0; color: #fc2c3c; }
@@ -23,6 +24,7 @@
     #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
+	
 
     /* --- LANG SELECT --- */
     #langSelectRow {
@@ -92,6 +94,7 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <div id="hudStats">
+	<div id="hudMoney"></div>
     <div id="hudAlive"></div>
     <div id="hudZombies"></div>
     <div id="hudKills"></div>
@@ -117,8 +120,71 @@
       <div id="langSelectRow"></div>
     </div>
   </div>
+	  <button id="shopBtn" style="
+	  position: fixed;
+	  right: 20px;
+	  bottom: 54px;
+	  background: #272;
+	  color: #fff;
+	  border: none;
+	  border-radius: 12px;
+	  padding: 12px 26px 12px 19px;
+	  font-size: 22px;
+	  font-weight: bold;
+	  cursor: pointer;
+	  display: flex;
+	  align-items: center;
+	  gap: 10px;
+	  z-index: 40;
+	  box-shadow: 0 3px 14px #0006;
+	">
+	  <span style="font-size:26px;line-height:1;display:flex;align-items:center">
+		🛒
+	  </span>
+	  <span>SHOP</span>
+	</button>
   <div id="versionBox">Version 1.0.0 par Myg</div>
   <div id="waveMessage"></div>
+	 <div id="shopModal" style="
+	  display: none;
+	  position: fixed;
+	  left: 0; top: 0; width: 100vw; height: 100vh;
+	  background: rgba(30,40,20,0.82);
+	  z-index: 100;
+	  justify-content: center;
+	  align-items: center;
+	">
+	  <div style="
+		background: #202a23;
+		border-radius: 18px;
+		min-width: 380px;
+		min-height: 250px;
+		box-shadow: 0 8px 44px #000d;
+		padding: 35px 36px 30px 36px;
+		position: relative;
+		color: #fff;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	  ">
+		<div style="font-size: 28px; font-weight: bold; margin-bottom: 12px;">SHOP</div>
+		<div id="shopUpgradesContainer">
+		  <!-- Les améliorations seront ici -->
+		</div>
+		<button id="closeShopBtn" style="
+		  position: absolute;
+		  top: 15px; right: 18px;
+		  background: none;
+		  color: #fff;
+		  font-size: 22px;
+		  border: none;
+		  cursor: pointer;
+		  padding: 2px 8px;
+		  border-radius: 6px;
+		  transition: background 0.13s;
+		">&times;</button>
+	  </div>
+	</div>
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script>
@@ -207,8 +273,11 @@
     const hudRound = document.getElementById('hudRound');
     const hudHP = document.getElementById('hudHP');
     const waveMessage = document.getElementById('waveMessage');
+	const hudMoney = document.getElementById('hudMoney');
+	let myMoney = 0;
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
+	let moneyPopups = [];
 
     // Détection mobile
     function isMobile() { return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent); }
@@ -556,15 +625,39 @@
       cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
     }
 
-    function drawHUD() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
-      hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
-      hudZombies.textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
-      hudKills.textContent = `${tr.kills}: ${myKills}`;
-      hudRound.textContent = `${tr.round}: ${currentRound}`;
-      hudHP.textContent = `${tr.health}: ${Math.round(playerHealth)}`;
-    }
+	function drawHUD() {
+	  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+	  const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
+	  hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
+	  hudMoney.textContent = `$ : ${myMoney}`; // <- Ajout ici
+	  hudZombies.textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
+	  hudKills.textContent = `${tr.kills}: ${myKills}`;
+	  hudRound.textContent = `${tr.round}: ${currentRound}`;
+	  hudHP.textContent = `${tr.health}: ${Math.round(playerHealth)}`;
+	}
+
+	function drawMoneyPopups() {
+	  const now = Date.now();
+	  // Affiche les popups max 850ms
+	  moneyPopups = moneyPopups.filter(popup => now - popup.time < 850);
+	  for (const popup of moneyPopups) {
+		// Animation : le popup monte doucement et s’efface progressivement
+		const t = (now - popup.time) / 850;
+		const screenX = popup.x - cameraX;
+		const screenY = popup.y - cameraY - 18 - t * 26; // monte de 26px environ
+
+		ctx.save();
+		ctx.globalAlpha = 1 - t;
+		ctx.font = 'bold 21px Arial';
+		ctx.fillStyle = '#fc0';
+		ctx.strokeStyle = '#fff';
+		ctx.lineWidth = 2;
+		ctx.textAlign = 'center';
+		ctx.strokeText('+' + popup.amount + '$', screenX, screenY);
+		ctx.fillText('+' + popup.amount + '$', screenX, screenY);
+		ctx.restore();
+	  }
+	}
 
     function showDeathScreen(kills = myKills, round = currentRound) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
@@ -584,6 +677,7 @@
       drawBullets();
       drawZombies();
       drawPlayers();
+	  drawMoneyPopups();
       drawAimLine();
       drawHUD();
       if (!isDead) requestAnimationFrame(gameLoop);
@@ -653,16 +747,28 @@
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
     socket.on('healthUpdate', (health) => { playerHealth = health; drawHUD(); });
-    socket.on('playersHealthUpdate', (playersState) => {
-      for (const id in playersState) {
-        if (!playersHealth[id]) playersHealth[id] = {};
-        playersHealth[id].health = playersState[id].health;
-        playersHealth[id].alive = playersState[id].alive;
-        playersHealth[id].x = playersState[id].x;
-        playersHealth[id].y = playersState[id].y;
-        playersHealth[id].pseudo = playersState[id].pseudo || "Joueur";
-      }
-    });
+	socket.on('moneyPopup', (data) => {
+	  // data : { x, y, amount }
+	  moneyPopups.push({
+		x: data.x,
+		y: data.y,
+		amount: data.amount,
+		time: Date.now()
+	  });
+	});
+	socket.on('playersHealthUpdate', (playersState) => {
+	  for (const id in playersState) {
+		if (!playersHealth[id]) playersHealth[id] = {};
+		playersHealth[id].health = playersState[id].health;
+		playersHealth[id].alive = playersState[id].alive;
+		playersHealth[id].x = playersState[id].x;
+		playersHealth[id].y = playersState[id].y;
+		playersHealth[id].pseudo = playersState[id].pseudo || "Joueur";
+		if (id === myId && typeof playersState[id].money === 'number') {
+		  myMoney = playersState[id].money;
+		}
+	  }
+	});
 
     socket.on('youDied', (data) => {
       isDead = true;
@@ -687,6 +793,134 @@
         socket.emit('killAllZombies');
       }
     });
+	
+	// --- SHOP UI ---
+	const shopBtn = document.getElementById('shopBtn');
+	console.log('shopBtn:', shopBtn);
+	const shopModal = document.getElementById('shopModal');
+	const closeShopBtn = document.getElementById('closeShopBtn');
+
+// ---- SHOP SYSTEM (affichage des upgrades) ----
+	const shopUpgrades = [
+	  {
+		key: 'maxHp',
+		label: "Vie Max",
+		desc: "Augmente vos PV max de 10% à chaque niveau",
+		getValue: (lvl, base = 100) => Math.round(base * Math.pow(1.1, lvl)),
+		unit: "PV"
+	  },
+	  {
+		key: 'speed',
+		label: "Vitesse",
+		desc: "Augmente la vitesse de déplacement de 10% par niveau",
+		getValue: (lvl, base = 60) => (base * Math.pow(1.1, lvl)).toFixed(1),
+		unit: ""
+	  },
+	  {
+		key: 'regen',
+		label: "Régén PV/s",
+		desc: "Augmente la régénération de 0.25 PV/s par niveau",
+		getValue: (lvl, base = 0) => (base + 0.25 * lvl).toFixed(2),
+		unit: "PV/s"
+	  },
+	  {
+		key: 'damage',
+		label: "Dégâts",
+		desc: "Augmente les dégâts de 10% par niveau",
+		getValue: (lvl, base = 10) => (base * Math.pow(1.1, lvl)).toFixed(1),
+		unit: ""
+	  },
+	  {
+		key: 'goldBonus',
+		label: "Or sur zombies",
+		desc: "Augmente de 10% l'or obtenu sur chaque zombie",
+		getValue: (lvl, base = 10) => {
+		  // Plage de gains min-max
+		  let min = Math.round(base * Math.pow(1.1, lvl));
+		  let max = Math.round((base+10) * Math.pow(1.1, lvl));
+		  return `${min} - ${max}`;
+		},
+		unit: "$"
+	  }
+	];
+
+	// Simuler des niveaux pour la démo (dans la vraie logique ce sera par joueur)
+	let upgradesState = {
+	  maxHp: 0,
+	  speed: 0,
+	  regen: 0,
+	  damage: 0,
+	  goldBonus: 0
+	};
+
+	function getShopPrice(level) {
+	  // 1:10$, 2:25$, 3:50$, 4:75$, 5:100$, 6:125$, puis +25 à chaque fois
+	  if (level === 0) return 10;
+	  if (level === 1) return 25;
+	  if (level === 2) return 50;
+	  if (level === 3) return 75;
+	  if (level === 4) return 100;
+	  if (level === 5) return 125;
+	  return 125 + 25 * (level - 5);
+	}
+	const upgradesMaxLevel = 12;
+	function renderShopUpgrades() {
+	  const cont = document.getElementById('shopUpgradesContainer');
+	  cont.innerHTML = "";
+	  shopUpgrades.forEach(upg => {
+		const lvl = upgradesState[upg.key] || 0;
+		const price = getShopPrice(lvl);
+		const atMax = lvl >= upgradesMaxLevel;
+		const notEnough = myMoney < price;
+
+		const row = document.createElement("div");
+		row.style.cssText = "display:flex;align-items:center;justify-content:space-between;background:#263a2a;margin-bottom:12px;padding:13px 18px 12px 15px;border-radius:12px;box-shadow:0 2px 10px #0003;gap:10px;min-width:260px;";
+		row.innerHTML = `
+		  <div style="text-align:left;">
+			<div style="font-size:20px;font-weight:bold">${upg.label} <span style="font-size:15px;color:#bff;font-weight:normal;">(Niv. ${lvl+1})</span></div>
+			<div style="color:#cfc;font-size:15px;">${upg.desc}</div>
+			<div style="font-size:15px;color:#fc0;font-weight:bold;margin-top:3px;">
+			  ➜ ${upg.getValue(lvl)} ${upg.unit}
+			</div>
+		  </div>
+		  <div style="display:flex;flex-direction:column;align-items:flex-end;">
+			<button class="shopBuyBtn" 
+			  data-key="${upg.key}"
+			  style="font-size:17px;background:${atMax ? "#555" : (notEnough ? "#666" : "#393")};color:#fff;border:none;padding:7px 19px;border-radius:7px;font-weight:bold;box-shadow:0 2px 8px #0004;opacity:${(notEnough||atMax)?'0.5':'1.0'};cursor:${(notEnough||atMax)?'not-allowed':'pointer'};" 
+			  ${notEnough || atMax ? 'disabled' : ''}>
+			  ${atMax ? 'MAX' : 'Acheter'}<br><span style="font-size:14px;">${price}$</span>
+			</button>
+		  </div>
+		`;
+		cont.appendChild(row);
+	  });
+
+	  // Ajoute le click event (hors du forEach pour éviter doublons)
+	  cont.querySelectorAll('.shopBuyBtn').forEach(btn => {
+		btn.onclick = function () {
+		  const key = this.getAttribute('data-key');
+		  if (!key) return;
+		  if (this.disabled) return;
+		  socket.emit('buyUpgrade', key);
+		  // Feedback immédiat
+		  this.disabled = true;
+		  this.style.opacity = "0.7";
+		  this.innerHTML = "Achat...";
+		};
+	  });
+	}
+	renderShopUpgrades();
+
+	shopBtn.onclick = () => {
+	  console.log("Bouton SHOP cliqué");
+	  shopModal.style.display = 'flex';
+	};
+	closeShopBtn.onclick = () => {
+	  shopModal.style.display = 'none';
+	};
+	shopModal.onclick = (e) => {
+	  if (e.target === shopModal) shopModal.style.display = 'none';
+	};
   </script>
 </body>
 </html>

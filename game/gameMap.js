@@ -1,6 +1,6 @@
 const MAP_ROWS = 50;
 const MAP_COLS = 50;
-const OBSTACLE_COUNT = 270; // ← moins d'obstacles pour plus d'espaces ouverts !
+const OBSTACLE_COUNT = 200; // ← moins d'obstacles pour plus d'espaces ouverts !
 const TILE_SIZE = 40;
 
 // Flood fill pour marquer les cases accessibles
