@@ -99,6 +99,14 @@
 	  100% { opacity: 1; transform: none; }
 	}
 	#shopClose:hover { color: #ff6464; transform: scale(1.13); }
+	.bought-flash {
+	  animation: flashBtn 0.22s;
+	}
+	@keyframes flashBtn {
+	  0% { box-shadow: 0 0 0px #67fa62, 0 0 0px #fff; background: #34c24c;}
+	  55% { box-shadow: 0 0 11px #67fa62, 0 0 22px #fff9;}
+	  100% { box-shadow: 0 0 0px #67fa62, 0 0 0px #fff; }
+	}
   </style>
 </head>
 <body>
@@ -274,20 +282,24 @@
 		desc: "Tire plus fort.",
 		icon: "/icons/bullet.svg",
 		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-		baseValue: 20,
+		baseValue: 5,
 		statLabel: "Dégâts",
 		format: v => v
 	  },
-	  {
-		id: "goldGain",
-		label: "+10% d'or gagné",
-		desc: "Gagne plus d’or sur les zombies.",
-		icon: "/icons/gold.svg",
-		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-		baseValue: 5,
-		statLabel: "$/zombie",
-		format: v => "$" + v
-	  }
+		{
+		  id: "goldGain",
+		  label: "+10% d'or gagné",
+		  desc: "Gagne plus d’or sur les zombies.",
+		  icon: "/icons/gold.svg",
+		  getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+		  baseValue: 10, // car goldGain commence à 10 côté serveur !
+		  statLabel: "$/zombie",
+		  format: (v) => {
+			const min = Math.round(10 * (v / 10));
+			const max = Math.round(20 * (v / 10));
+			return `$${min}–${max}`;
+		  }
+		}
 	];
 
 	// Niveau des upgrades du joueur local (simulé pour l’instant)
@@ -317,8 +329,19 @@
     let mouseDown = false, mousePos = { x: 0, y: 0 };
     let aimDir = { x: 1, y: 0 }; // direction de visée par défaut (droite)
 
-    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+	window.addEventListener('keydown', e => {
+	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+		e.preventDefault(); // évite le scroll de la page !
+	  }
+	  keys[e.key.toLowerCase()] = true;
+	});
+	window.addEventListener('keyup', e => {
+	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+		e.preventDefault();
+	  }
+	  keys[e.key.toLowerCase()] = false;
+	});
+	
     window.addEventListener('mousedown', e => { mouseDown = e.button === 0; });
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
@@ -501,7 +524,13 @@
 		ctx.fillStyle = "#aad8ff";
 		ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
 		// <-- largeur fixe 30 pour joueur
-		drawHealthBar(screenX, screenY - PLAYER_RADIUS - 13, p.health, 100, 30);
+		drawHealthBar(
+		  screenX,
+		  screenY - PLAYER_RADIUS - 13,
+		  p.health,
+		  p.maxHealth || 100,
+		  30
+		);
 	  }
 	}
     function drawZombies() {
@@ -685,7 +714,10 @@
 	  hudZombies.textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
 	  hudKills.textContent = `${tr.kills}: ${myKills}`;
 	  hudRound.textContent = `${tr.round}: ${currentRound}`;
-	  hudHP.textContent = `${tr.health}: ${Math.round(playerHealth)}`;
+		const me = playersHealth[myId];
+		hudHP.textContent = me && me.maxHealth
+		  ? `${tr.health}: ${Math.round(me.health)} / ${me.maxHealth}`
+		  : `${tr.health}: ${Math.round(me ? me.health : 0)}`;
 	}
 
 
@@ -768,25 +800,27 @@
     socket.on('bulletsUpdate', (b) => { bullets = b; });
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
-    socket.on('healthUpdate', (health) => { playerHealth = health; drawHUD(); });
 
 	socket.on('playersHealthUpdate', (players) => {
 	  // Met à jour toutes les infos reçues pour tous les joueurs
-	  for (const id in players) {
-		if (!playersHealth[id]) playersHealth[id] = {};
-		playersHealth[id].health = players[id].health;
-		playersHealth[id].alive = players[id].alive;
-		playersHealth[id].x = players[id].x;
-		playersHealth[id].y = players[id].y;
-		playersHealth[id].pseudo = players[id].pseudo || "Joueur";
-		playersHealth[id].money = players[id].money || 0;
-	  }
+	for (const id in players) {
+	  if (!playersHealth[id]) playersHealth[id] = {};
+	  playersHealth[id].health = players[id].health;
+	  playersHealth[id].alive = players[id].alive;
+	  playersHealth[id].x = players[id].x;
+	  playersHealth[id].y = players[id].y;
+	  playersHealth[id].pseudo = players[id].pseudo || "Joueur";
+	  playersHealth[id].money = players[id].money || 0;
+	  playersHealth[id].maxHealth = players[id].maxHealth || 100;  // <--- AJOUTE CETTE LIGNE
+	}
+
 	  // Mets à jour les variables du joueur local
-	  const me = players[socket.id];
-	  if (me) {
-		playerHealth = me.health;
-		myMoney = me.money || 0;
-	  }
+	const me = players[socket.id];
+	if (me) {
+	  playerHealth = me.health;
+	  myMoney = me.money || 0;
+	  playersHealth[myId].maxHealth = me.maxHealth || 100; // <--- aussi ici pour être sûr
+	}
 	});
 
     socket.on('youDied', (data) => {
@@ -813,6 +847,26 @@
       setTimeout(() => { waveMessage.style.opacity = '0'; }, 2500);
     });
 
+	socket.on('upgradeBought', ({ upgId, newLevel, newMoney }) => {
+	  if (!upgId) return;
+	  myUpgrades[upgId] = newLevel;
+	  myMoney = newMoney;
+	  renderShopUpgrades();
+	  drawHUD();
+
+	  // Trouve le bouton correspondant et applique l'animation
+	  setTimeout(() => {
+		const btn = document.querySelector(`#shopUpgrades button[data-upgid="${upgId}"]`);
+		if (btn) {
+		  btn.classList.remove('bought-flash'); // Si jamais déjà présente
+		  // Force reflow pour relancer l'anim même si le bouton venait d'être upgradé
+		  void btn.offsetWidth;
+		  btn.classList.add('bought-flash');
+		  setTimeout(() => btn.classList.remove('bought-flash'), 280);
+		}
+	  }, 60); // petit délai pour que le bouton existe après le render
+	});
+
     setInterval(drawHUD, 150);
     setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
 
@@ -833,10 +887,11 @@
 		if (lvl === 1) price = 25;
 		else if (lvl === 2) price = 50;
 		else if (lvl >= 3) price = 50 + 25 * (lvl-2);
-		const disabled = myMoney < price || lvl >= 7;
+		const disabled = myMoney < price;
+		
 		el.innerHTML += `
 		  <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
-			<img src="${upg.icon}" alt="" style="width:34px; height:34px; filter:drop-shadow(0 3px 6px #0005)">
+			<!-- SUPPRIMER L'IMAGE ICI -->
 			<div style="flex:1;">
 			  <div style="font-size:18px;"><b>${upg.label}</b></div>
 			  <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
@@ -845,7 +900,37 @@
 				<span style="color:#8f8; font-size:14px; margin-left:7px;">${lvl<7?"→ "+upg.format(nextValue):""}</span>
 			  </div>
 			</div>
-			<button style="font-size:16px; background:#393; color:#fff; border:none; border-radius:7px; padding:7px 18px; box-shadow:0 2px 8px #0004; cursor:pointer; opacity:${disabled?"0.5":"1"}; margin-left:8px;" data-upgid="${upg.id}" ${disabled?'disabled':''}>
+			<div style="
+			  background:#282;
+			  color:#fff;
+			  font-weight:bold;
+			  border-radius:7px;
+			  font-size:15px;
+			  min-width:30px;
+			  text-align:center;
+			  padding:2px 0 1px 0;
+			  margin-right:10px;
+			  box-shadow:0 1.5px 6px #0007;
+			  border:2px solid #232;
+			  ">
+			  <span style="font-size:15px;">${lvl}</span>
+			</div>
+			<button 
+			  style="
+				font-size:16px; 
+				background:${disabled ? '#444' : '#393'}; 
+				color:#fff; 
+				border:none; 
+				border-radius:7px; 
+				padding:7px 18px; 
+				box-shadow:0 2px 8px #0004; 
+				cursor:${disabled ? 'not-allowed' : 'pointer'}; 
+				opacity:${disabled ? '0.5' : '1'}; 
+				margin-left:8px;
+				transition: background 0.16s;
+			  " 
+			  data-upgid="${upg.id}" 
+			  ${disabled?'disabled':''}>
 			  +1<br>$${price}
 			</button>
 		  </div>
@@ -881,6 +966,9 @@
     window.addEventListener('keydown', e => {
       if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
         socket.emit('killAllZombies');
+      }
+      if (e.key.toLowerCase() === 'o' && myPseudo === 'Myg') {
+        socket.emit('giveMillion');
       }
     });
   </script>

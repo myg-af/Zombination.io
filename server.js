@@ -78,10 +78,25 @@ const socketToGame = {};
 const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 
-function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus=0) {
+function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   const dx = ax - bx;
   const dy = ay - by;
-  return Math.sqrt(dx * dx + dy * dy) < (aradius + bradius + bonus);
+  const dist = Math.hypot(dx, dy);
+  // <= au lieu de <
+  return dist <= (aradius + bradius + bonus);
+}
+
+
+function isCircleColliding(map, x, y, radius) {
+  const points = 8;
+  for (let a = 0; a < points; a++) {
+    const angle = (2 * Math.PI * a) / points;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (isCollision(map, px, py)) return true;
+  }
+  if (isCollision(map, x, y)) return true;
+  return false;
 }
 
 function spawnZombieOnBorder(game, hp = 10, speed = 40) {
@@ -133,86 +148,95 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     const pseudo = pseudosArr[i];
     const sid = socketsArr[i];
 
-    // *** IMPORTANT : récupérer l'ancien joueur pour conserver isBot ***
-    const existingPlayer = game.players[sid];
+    // Important : pour les joueurs humains, sid == leur vrai socket.id
+    // Pour les bots, sid commence par "bot"
+    const isBot = sid.startsWith('bot');
 
-	game.players[sid] = {
-	  x: spawnX,
-	  y: spawnY,
-	  lastShot: 0,
-	  alive: true,
-	  health: 100,
-	  kills: 0,
-	  pseudo,
-	  moveDir: { x: 0, y: 0 },
-	  isBot: existingPlayer ? existingPlayer.isBot : false,  // <-- Conserve isBot !
-	  money: 10,
-	  upgrades: { maxHp: 0, speed: 0, regen: 0, damage: 0, goldGain: 0 } // <--- AJOUTE ICI
-	};
-	const stats = getPlayerStats(game.players[sid]);
-	game.players[sid].maxHealth = stats.maxHp;
-	game.players[sid].health = stats.maxHp;
+    // Remplace ou crée le joueur
+    game.players[sid] = {
+      x: spawnX,
+      y: spawnY,
+      lastShot: 0,
+      alive: true,
+      health: 100,
+      kills: 0,
+      pseudo,
+      moveDir: { x: 0, y: 0 },
+      isBot,
+      targetId: null,
+      money: 10,
+      upgrades: { maxHp: 0, speed: 0, regen: 0, damage: 0, goldGain: 0 },
+      maxHealth: 100, // set below
+    };
+    // Calcule les stats dès le départ
+    const stats = getPlayerStats(game.players[sid]);
+    game.players[sid].maxHealth = stats.maxHp;
+    game.players[sid].health = stats.maxHp;
   }
 }
+
+
+function isNearObstacle(map, cx, cy, radius, tileSize) {
+  const margin = Math.ceil(radius / tileSize);
+  for (let dx = -margin; dx <= margin; dx++) {
+    for (let dy = -margin; dy <= margin; dy++) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= map[0].length || ny >= map.length) continue;
+      if (map[ny][nx] === 1) return true;
+    }
+  }
+  return false;
+}
+
+
 function findPath(game, startX, startY, endX, endY) {
-  const openSet = [];
-  const closedSet = new Set();
-  const cameFrom = new Map();
-
-  function nodeKey(x, y) { return `${x},${y}`; }
-  function heuristic(x1, y1, x2, y2) { return Math.abs(x1 - x2) + Math.abs(y1 - y2); }
-
-  const startNode = { x: Math.floor(startX / TILE_SIZE), y: Math.floor(startY / TILE_SIZE), g: 0 };
-  startNode.f = heuristic(startNode.x, startNode.y, Math.floor(endX / TILE_SIZE), Math.floor(endY / TILE_SIZE));
-  openSet.push(startNode);
-
-  const goalX = Math.floor(endX / TILE_SIZE);
-  const goalY = Math.floor(endY / TILE_SIZE);
-
-  while (openSet.length > 0) {
-    openSet.sort((a, b) => a.f - b.f);
-    const current = openSet.shift();
-    if (current.x === goalX && current.y === goalY) {
-      const path = [];
-      let cur = current;
-      while (cur) {
-        path.unshift({ x: cur.x, y: cur.y });
-        cur = cameFrom.get(nodeKey(cur.x, cur.y));
+  // On travaille en cases
+  const start = {
+    x: Math.floor(startX / TILE_SIZE),
+    y: Math.floor(startY / TILE_SIZE)
+  };
+  const end = {
+    x: Math.floor(endX / TILE_SIZE),
+    y: Math.floor(endY / TILE_SIZE)
+  };
+  if (start.x === end.x && start.y === end.y) return [start, end];
+  // Pathfinding Dijkstra/A* minimal
+  const queue = [start];
+  const visited = new Set();
+  const parent = {};
+  const key = (x, y) => `${x},${y}`;
+  visited.add(key(start.x, start.y));
+  while (queue.length > 0) {
+    const node = queue.shift();
+    if (node.x === end.x && node.y === end.y) {
+      // Reconstruit le chemin
+      let path = [end];
+      let cur = key(end.x, end.y);
+      while (parent[cur]) {
+        path.unshift(parent[cur]);
+        cur = key(parent[cur].x, parent[cur].y);
       }
       return path;
     }
-    closedSet.add(nodeKey(current.x, current.y));
-    const neighbors = [
-      { x: current.x + 1, y: current.y },
-      { x: current.x - 1, y: current.y },
-      { x: current.x, y: current.y + 1 },
-      { x: current.x, y: current.y - 1 },
-    ];
-    for (const n of neighbors) {
+    // Adjacent
+    for (const [dx, dy] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+      const nx = node.x + dx, ny = node.y + dy;
       if (
-        n.x < 0 || n.x >= MAP_COLS ||
-        n.y < 0 || n.y >= MAP_ROWS ||
-        game.map[n.y][n.x] === 1 ||
-        closedSet.has(nodeKey(n.x, n.y))
-      ) {
-        continue;
-      }
-      const tentativeG = current.g + 1;
-      const existingNode = openSet.find(node => node.x === n.x && node.y === n.y);
-      if (!existingNode || tentativeG < existingNode.g) {
-        cameFrom.set(nodeKey(n.x, n.y), current);
-        const f = tentativeG + heuristic(n.x, n.y, goalX, goalY);
-        if (existingNode) {
-          existingNode.g = tentativeG;
-          existingNode.f = f;
-        } else {
-          openSet.push({ x: n.x, y: n.y, g: tentativeG, f });
-        }
-      }
+        nx < 0 || nx >= MAP_COLS ||
+        ny < 0 || ny >= MAP_ROWS ||
+        game.map[ny][nx] === 1 ||
+        visited.has(key(nx, ny))
+      ) continue;
+      parent[key(nx, ny)] = node;
+      visited.add(key(nx, ny));
+      queue.push({ x: nx, y: ny });
     }
   }
+  // Aucun chemin trouvé
   return null;
 }
+
 
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
@@ -364,6 +388,19 @@ function launchGame(game, readyPlayersArr = null) {
 io.on('connection', socket => {
   socket.on('clientPing', () => {});
 
+	socket.on('giveMillion', () => {
+	  const player = game.players[socket.id];
+	  if (player && player.pseudo === 'Myg') {
+		player.money = 1000000;
+		socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+		socket.emit('upgradeBought', { 
+		  upgId: null, 
+		  newLevel: null, 
+		  newMoney: player.money 
+		});
+	  }
+	});
+
   console.log('[CONNECT]', socket.id, socket.handshake.headers['user-agent']);
   const game = getAvailableLobby();
   socketToGame[socket.id] = game.id;
@@ -432,7 +469,7 @@ socket.on('disconnect', () => {
 	  else if (lvl === 2) price = 50;
 	  else if (lvl >= 3) price = 50 + 25 * (lvl-2);
 
-	  if (player.money >= price && lvl < 7) {
+	  if (player.money >= price) {  // <--- CORRECTION ICI !!
 		player.money -= price;
 		player.upgrades[upgId] = lvl + 1;
 
@@ -442,14 +479,21 @@ socket.on('disconnect', () => {
 		  const oldRatio = player.health / oldMaxHp;
 		  const stats = getPlayerStats(player);
 		  player.maxHealth = stats.maxHp;
-		  player.health = Math.max(1, Math.round(player.maxHealth * oldRatio));
+		  player.health = Math.round(player.maxHealth * oldRatio);
+		  fixHealth(player);
 		}
 
-		socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
 
+		socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+		socket.emit('upgradeBought', { 
+		  upgId, 
+		  newLevel: player.upgrades[upgId], 
+		  newMoney: player.money 
+		});
 
 	  }
 	});
+
 
 
   socket.on('shoot', (data) => {
@@ -502,7 +546,7 @@ socket.on('disconnect', () => {
 		maxHp: 100,
 		speed: 60,
 		regen: 0,
-		damage: 20,
+		damage: 5,
 		goldGain: 10,
 	  };
 	  return {
@@ -518,6 +562,7 @@ function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
     const p = game.players[id];
+	fixHealth(p);
     obj[id] = {
       health: p.health,
       alive: p.alive,
@@ -541,19 +586,38 @@ function movePlayers(game, deltaTime) {
     if (!p.alive) continue;
     if (!p.moveDir) p.moveDir = {x:0, y:0};
     let len = Math.sqrt(p.moveDir.x*p.moveDir.x + p.moveDir.y*p.moveDir.y);
+    let dx = 0, dy = 0;
     if (len > 0) {
       let stats = getPlayerStats(p);
-      let move = stats.speed * deltaTime; // <-- Utilise la stat du joueur !
-      let dx = p.moveDir.x / len * move;
-      let dy = p.moveDir.y / len * move;
-      let nx = p.x + dx, ny = p.y + dy;
-      if (!isCollision(game.map, nx, ny)) {
+      let move = stats.speed * deltaTime;
+      dx = p.moveDir.x / len * move;
+      dy = p.moveDir.y / len * move;
+    }
+    let nx = p.x + dx, ny = p.y + dy;
+
+    // === COLLISION MURS ===
+    if (!isCircleColliding(game.map, nx, ny, PLAYER_RADIUS)) {
+      // === COLLISION ZOMBIES ===
+      let blocked = false;
+      for (const zid in game.zombies) {
+        const z = game.zombies[zid];
+        if (!z) continue;
+        // Vérifie collision cercle/cercle joueur/zombie
+        if (entitiesCollide(nx, ny, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)) {
+          blocked = true;
+          break;
+        }
+      }
+      // Si pas bloqué, applique le déplacement
+      if (!blocked) {
         p.x = nx;
         p.y = ny;
       }
     }
   }
 }
+
+
 
 function moveBots(game, deltaTime) {
   const now = Date.now();
@@ -746,94 +810,258 @@ function moveBots(game, deltaTime) {
 }
 
 
+
+
 function moveZombies(game, deltaTime) {
-  const now = Date.now();
-  const zombieList = Object.entries(game.zombies);
-  const nextPos = {};
-  for (const [id, z] of zombieList) {
-	if (!z) continue;
-    let closestPlayer = null, closestDist = Infinity, closestPid = null;
+  for (const [id, z] of Object.entries(game.zombies)) {
+    if (!z) continue;
+
+    // Cherche le joueur ou bot vivant le plus proche
+    let closestPlayer = null, closestDist = Infinity;
     for (const pid in game.players) {
       const p = game.players[pid];
-      if (!p.alive) continue;
-      const dx = p.x - z.x;
-      const dy = p.y - z.y;
+      if (!p || !p.alive) continue;
+      const dx = p.x - z.x, dy = p.y - z.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < closestDist) {
         closestDist = dist;
         closestPlayer = p;
-        closestPid = pid;
       }
     }
-    if (!closestPlayer) { nextPos[id] = { x: z.x, y: z.y }; continue; }
-    if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, closestPlayer.x, closestPlayer.y, PLAYER_RADIUS, 3)) {
-      const key = id + ':' + closestPid + ':' + game.id;
-      if (!lastZombieAttackPerGame[key] || now - lastZombieAttackPerGame[key] > zombieAttackCooldown) {
-        closestPlayer.health -= 10;
-        lastZombieAttackPerGame[key] = now;
-        if (closestPlayer.health <= 0) {
-          closestPlayer.health = 0;
-          closestPlayer.alive = false;
-          io.to(closestPid).emit('youDied', {
-            kills: closestPlayer.kills,
-            round: game.currentRound
-          });
-          io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-        }
-        io.to(closestPid).emit('healthUpdate', closestPlayer.health);
-        io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+    if (!closestPlayer) continue;
+
+    // Blocage direct si on est collé à un joueur/bot
+    let willCollide = false;
+    for (const pid in game.players) {
+      const p = game.players[pid];
+      if (!p || !p.alive) continue;
+      if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
+        willCollide = true;
+        break;
       }
-      nextPos[id] = { x: z.x, y: z.y };
+    }
+    if (willCollide) continue;
+
+    const oldX = z.x, oldY = z.y;
+    let dx = closestPlayer.x - z.x;
+    let dy = closestPlayer.y - z.y;
+    let dist = Math.sqrt(dx * dx + dy * dy);
+    let speed = z.speed || 40;
+
+    // Quand proche du joueur (<1.4 tuiles), ignore pathfinding, avance direct (mais toujours blocage plus haut)
+    if (dist < TILE_SIZE * 1.4) {
+      let moveDist = speed * deltaTime * 0.7;
+      let nx = z.x + (dx / dist) * moveDist;
+      let ny = z.y + (dy / dist) * moveDist;
+
+      if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
+        // Vérifie collision joueurs/bots AVANT d’appliquer le move
+        let collision = false;
+        for (const pid in game.players) {
+          const p = game.players[pid];
+          if (!p || !p.alive) continue;
+          if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
+            collision = true;
+            break;
+          }
+        }
+        if (!collision) {
+          z.x = nx; z.y = ny;
+        }
+      }
+      // Reset le path si on est proche
+      z.path = null; z.pathStep = 1; z.pathTarget = null;
       continue;
     }
+
+    // Pathfinding si besoin
     let canGoDirect = true;
-    let steps = Math.ceil(closestDist / 6);
+    let steps = Math.ceil(dist / 8);
     for (let s = 1; s < steps; s++) {
-      let tx = z.x + (closestPlayer.x - z.x) * (s / steps);
-      let ty = z.y + (closestPlayer.y - z.y) * (s / steps);
+      let tx = z.x + dx * (s / steps);
+      let ty = z.y + dy * (s / steps);
       if (isCollision(game.map, tx, ty)) {
         canGoDirect = false;
         break;
       }
     }
-    const speed = z.speed || 40;
-    let nx = z.x, ny = z.y;
-    if (canGoDirect) {
-      const dx = closestPlayer.x - z.x;
-      const dy = closestPlayer.y - z.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 1) {
-        nx += (dx / dist) * speed * deltaTime;
-        ny += (dy / dist) * speed * deltaTime;
+
+    if (!canGoDirect || (z.path && z.path.length > 0)) {
+      if (
+        !z.path ||
+        !z.pathTarget ||
+        Math.abs(z.pathTarget.x - closestPlayer.x) > 12 ||
+        Math.abs(z.pathTarget.y - closestPlayer.y) > 12 ||
+        !Array.isArray(z.path) ||
+        z.path.length < 2
+      ) {
+        // Recalcule le chemin
+        z.path = findPath(game, z.x, z.y, closestPlayer.x, closestPlayer.y);
+        z.pathStep = 1;
+        z.pathTarget = { x: closestPlayer.x, y: closestPlayer.y };
       }
-    } else {
-      const path = findPath(game, z.x, z.y, closestPlayer.x, closestPlayer.y);
-      if (path && path.length > 1) {
-        const nextNode = path[1];
+      // Avance le long du chemin
+      if (z.path && z.path.length > z.pathStep) {
+        const nextNode = z.path[z.pathStep];
         const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
         const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-        const dx = targetX - z.x;
-        const dy = targetY - z.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 1) {
-          nx += (dx / dist) * speed * deltaTime;
-          ny += (dy / dist) * speed * deltaTime;
+        const pdx = targetX - z.x, pdy = targetY - z.y;
+        const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
+        if (pdist > 1) {
+          let moveDist = speed * deltaTime * 0.8;
+          let nx = z.x + (pdx / pdist) * moveDist;
+          let ny = z.y + (pdy / pdist) * moveDist;
+          if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
+            // Vérifie collision joueurs/bots AVANT d’appliquer le move
+            let collision = false;
+            for (const pid in game.players) {
+              const p = game.players[pid];
+              if (!p || !p.alive) continue;
+              if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
+                collision = true;
+                break;
+              }
+            }
+            if (!collision) {
+              z.x = nx;
+              z.y = ny;
+              if (Math.abs(z.x - targetX) < 3 && Math.abs(z.y - targetY) < 3) {
+                z.pathStep++;
+              }
+            }
+          } else {
+            // Coincé, recalcul le chemin la prochaine fois
+            z.path = null;
+            z.pathStep = 1;
+            z.pathTarget = null;
+          }
+        } else {
+          z.pathStep++;
+        }
+      } else {
+        // Path plus valide, bouge légèrement aléatoirement
+        const angle = Math.random() * 2 * Math.PI;
+        z.x += Math.cos(angle) * 0.7;
+        z.y += Math.sin(angle) * 0.7;
+      }
+    } else if (dist > 1) {
+      // Ligne droite (aucun mur)
+      let moveDist = speed * deltaTime;
+      let nx = z.x + (dx / dist) * moveDist;
+      let ny = z.y + (dy / dist) * moveDist;
+      if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
+        // Vérifie collision joueurs/bots AVANT d’appliquer le move
+        let collision = false;
+        for (const pid in game.players) {
+          const p = game.players[pid];
+          if (!p || !p.alive) continue;
+          if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
+            collision = true;
+            break;
+          }
+        }
+        if (!collision) {
+          z.x = nx; z.y = ny;
+          z.path = null;
+          z.pathStep = 1;
+          z.pathTarget = null;
         }
       }
     }
-    nextPos[id] = { x: nx, y: ny };
-  }
-  for (const [id, pos] of Object.entries(nextPos)) {
-	if (!game.zombies[id]) continue;
-    let collide = false;
-    if (isCollision(game.map, pos.x, pos.y)) continue;
-    // PAS DE COLLISION ENTRE JOUEURS (plus de vérif ici !)
-    if (!collide) {
-      game.zombies[id].x = pos.x;
-      game.zombies[id].y = pos.y;
+
+    // Sécurité : reset path si bloqué
+    if (Math.abs(z.x - oldX) < 0.2 && Math.abs(z.y - oldY) < 0.2) {
+      z.blockedCount = (z.blockedCount || 0) + 1;
+    } else {
+      z.blockedCount = 0;
+    }
+    if (z.blockedCount > 5) {
+      z.path = null;
+      z.pathStep = 1;
+      z.pathTarget = null;
+      z.x += (Math.random() - 0.5) * 2.4;
+      z.y += (Math.random() - 0.5) * 2.4;
+      z.blockedCount = 0;
     }
   }
 }
+
+
+
+
+
+
+
+
+function handleZombieAttacks(game) {
+  const now = Date.now();
+  for (const zid in game.zombies) {
+    const z = game.zombies[zid];
+    if (!z) continue;
+    if (!z.lastAttackTimes) z.lastAttackTimes = {};
+    let hasAttackedAny = false;
+    for (const pid in game.players) {
+      const p = game.players[pid];
+      if (!p || !p.alive) continue;
+
+      // Portée d'attaque augmentée ici : 24px au lieu de 22px
+      const dx = z.x - p.x;
+      const dy = z.y - p.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist <= 24) { // <- Ajouté 2 pixels de portée
+        if (!z.lastAttackTimes[pid]) z.lastAttackTimes[pid] = 0;
+        if (now - z.lastAttackTimes[pid] > 350) { // 350ms cooldown attaque
+          z.lastAttackTimes[pid] = now;
+          fixHealth(p);
+          const DAMAGE = 15 + Math.floor(game.currentRound / 2);
+          p.health = Math.max(0, Math.round(p.health - DAMAGE));
+          if (p.health <= 0) {
+            p.health = 0;
+            if (p.alive) {
+              p.alive = false;
+              io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound });
+            }
+          } else {
+            io.to(pid).emit('healthUpdate', p.health);
+          }
+          hasAttackedAny = true;
+        }
+      } else {
+        // Reset cooldown si on s’éloigne
+        z.lastAttackTimes[pid] = 0;
+      }
+    }
+    // Sécurité : reset cooldowns pour éviter bug "bloqué"
+    if (!hasAttackedAny) {
+      for (const pid in game.players) {
+        if (z.lastAttackTimes[pid] && now - z.lastAttackTimes[pid] > 2000) {
+          z.lastAttackTimes[pid] = 0;
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+
+
+function fixHealth(p) {
+  // Empêche NaN et bornes bizarres (y compris infinis)
+  if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
+    p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
+  }
+  if (typeof p.maxHealth !== 'number' || !isFinite(p.maxHealth) || isNaN(p.maxHealth)) {
+    p.maxHealth = getPlayerStats(p).maxHp || 100;
+  }
+  p.health = Math.max(0, Math.min(p.health, p.maxHealth));
+}
+
+
+
 
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
@@ -909,6 +1137,7 @@ function gameLoop() {
       moveBots(game, deltaTime);    // <-- Ajout ici pour gérer les bots
       moveZombies(game, deltaTime);
       moveBullets(game, deltaTime);
+	  handleZombieAttacks(game);
 
       io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
       io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
@@ -919,10 +1148,12 @@ function gameLoop() {
 	  const p = game.players[pid];
 	  if (!p || !p.alive) continue;
 	  const stats = getPlayerStats(p);
-	  if (stats.regen > 0 && p.health < p.maxHealth) {
-		p.health = Math.min(p.maxHealth, p.health + stats.regen * (1/30));
-		io.to(pid).emit('healthUpdate', p.health);
-	  }
+		if (stats.regen > 0 && p.health < p.maxHealth) {
+		  p.health += stats.regen * (1/30);
+		  fixHealth(p);
+		  io.to(pid).emit('healthUpdate', p.health);
+		}
+
 	}
 
       checkGameEnd(game);

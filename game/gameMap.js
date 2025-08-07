@@ -1,3 +1,5 @@
+// Ceci est le fichier gameMap.js :
+
 const MAP_ROWS = 50;
 const MAP_COLS = 50;
 const OBSTACLE_COUNT = 200; // ← moins d'obstacles pour plus d'espaces ouverts !
