@@ -90,7 +90,9 @@
 	#shopModal {
 	  animation: shopPopIn 0.22s;
 	  backdrop-filter: blur(0.5px);
+	  -webkit-overflow-scrolling: touch; /* ← Ajout ici */
 	}
+
 	#shopModal:focus-within { outline: 2px solid #4dfc82; }
 	#shopModal::-webkit-scrollbar { width: 6px; }
 	#shopModal::-webkit-scrollbar-thumb { background: #2a5; border-radius: 4px; }
@@ -440,27 +442,24 @@ function positionShopUI() {
   const isPortrait = window.matchMedia("(orientation: portrait)").matches;
   const joyRect = aimJoy.joyDiv.getBoundingClientRect();
 
-	// ----- Adapter la taille du shop pour qu'il tienne à l'écran -----
 	if (shopModalEl) {
-	  // Espace dispo au-dessus du joystick droit
 	  const gap = isPortrait ? 28 : 12;
 	  const availableHeightAboveJoystick = Math.max(0, joyRect.top - gap);
-
-	  // Marge visuelle
 	  const margin = 10;
 
-	  // Hauteur max = min(dispo au-dessus du joystick, hauteur viewport - marges)
 	  const maxH = Math.max(180, Math.min(availableHeightAboveJoystick - margin, window.innerHeight - 2*margin));
 	  shopModalEl.style.maxHeight = maxH + "px";
 	  shopModalEl.style.overflowY = "auto";
 
-	  // Option : limiter un peu la largeur en paysage
 	  if (!isPortrait) {
 		shopModalEl.style.minWidth = "300px";
 		shopModalEl.style.maxWidth = Math.min(360, window.innerWidth - 20) + "px";
 	  }
 
-	  // Recalage vertical du panneau (au-dessus du joystick)
+	  // 👉 ancrage horizontal à droite du joystick
+	  shopModalEl.style.right = (window.innerWidth - joyRect.right + 14) + "px";
+
+	  // recalage vertical au-dessus du joystick
 	  let computedBottom = (window.innerHeight - joyRect.top) + gap;
 	  const minBottom = 8;
 	  const maxBottom = window.innerHeight - 120;
@@ -468,6 +467,7 @@ function positionShopUI() {
 	  if (computedBottom > maxBottom) computedBottom = maxBottom;
 	  shopModalEl.style.bottom = computedBottom + "px";
 	}
+
 
   // --- Bouton SHOP au-dessus du joystick droit ---
   const btnGap = 20; // espace entre bouton et joystick
