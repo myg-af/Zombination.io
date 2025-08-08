@@ -126,6 +126,12 @@
     <div id="hudRound"></div>
     <div id="hudHP"></div>
   </div>
+	<!-- DEBUG JOYSTICKS (mobile) -->
+	<div id="joyDebug" style="display:none; position:fixed; left:10px; bottom:150px; background:#0009; padding:8px 10px; border-radius:8px; font-size:14px; z-index:10050;">
+	  <div><b>Move</b>: <span id="dbgMove">0, 0</span></div>
+	  <div><b>Aim</b>: <span id="dbgAim">0, 0</span></div>
+	</div>
+
   <div id="deathScreen">
     <div id="deathScreenInner">
       <h2 id="deathTitle"></h2>
@@ -234,6 +240,7 @@
     const deathTitle = document.getElementById('deathTitle');
     const deathStats = document.getElementById('deathStats');
     const btnReplay = document.getElementById('btnReplay');
+	const deathScreen = document.getElementById('deathScreen');
     renderLangFlags(); initLobbyTexts();
 
     // --- JEU ---
@@ -335,6 +342,33 @@
     // Détection mobile
     function isMobile() { return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent); }
     const isMobileDevice = isMobile();
+	const HAS_POINTER = ('PointerEvent' in window);
+		
+	// --- DEBUG HUD JOYSTICKS ---
+	const joyDebugBox = document.getElementById('joyDebug');
+	const dbgMoveSpan = document.getElementById('dbgMove');
+	const dbgAimSpan  = document.getElementById('dbgAim');
+
+	// Affiche le HUD uniquement sur mobile
+	if (isMobileDevice && joyDebugBox && dbgMoveSpan && dbgAimSpan) {
+	  joyDebugBox.style.display = 'block';
+
+	  function fmt(v) {
+		// arrondit à 2 décimales pour lecture
+		const x = (Math.abs(v.x) < 0.001) ? 0 : v.x;
+		const y = (Math.abs(v.y) < 0.001) ? 0 : v.y;
+		return `${x.toFixed(2)}, ${y.toFixed(2)}`;
+	  }
+
+	  function updateJoyDebug() {
+		dbgMoveSpan.textContent = fmt(moveJoyVal);
+		dbgAimSpan.textContent  = fmt(aimJoyVal);
+	  }
+
+	  // rafraîchit le panneau 5x/s
+	  setInterval(updateJoyDebug, 200);
+	}
+
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
 	function updateRenderScale() {
@@ -373,7 +407,10 @@
 	  keys[e.key.toLowerCase()] = false;
 	});
 	
-    window.addEventListener('mousedown', e => { mouseDown = e.button === 0; });
+	window.addEventListener('mousedown', e => { 
+	  if (shopModal.style.display === 'block') return; // empêche le tir si la boutique est ouverte
+	  mouseDown = e.button === 0; 
+	});
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
       mousePos = { x: e.clientX, y: e.clientY };
@@ -437,7 +474,6 @@
       return { joyDiv, base, stick, size };
     }
 
-// === Handlers de joystick ===
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
   const radius = size / 2;
@@ -450,7 +486,7 @@ function addJoystickHandlers(joy, which) {
     const max = radius - stickRadius;
     const len = Math.hypot(dx, dy);
 
-    // clamp visuel du stick
+    // clamp visuel
     let nx = dx, ny = dy;
     if (len > max && len > 0) {
       nx = dx * (max / len);
@@ -461,9 +497,8 @@ function addJoystickHandlers(joy, which) {
     joy.stick.style.left = (center.x - stickRadius + nx) + "px";
     joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
 
-    // vecteur normalisé [-1..1] pour la logique
+    // vecteur normalisé [-1..1]
     const out = (max > 0) ? { x: nx / max, y: ny / max } : { x: 0, y: 0 };
-
     if (which === "move") moveJoyVal = out;
     else aimJoyVal = out;
   }
@@ -479,13 +514,9 @@ function addJoystickHandlers(joy, which) {
   }
 
   function onDown(e) {
-    // accepte tap sur base, stick *ou* le container
     if (activeId !== null) return;
     activeId = e.pointerId;
-
-    // capture sur le conteneur (plus fiable si le doigt quitte la zone)
     joy.joyDiv.setPointerCapture(activeId);
-
     const p = localCoords(e.clientX, e.clientY);
     setVec(p.x - center.x, p.y - center.y);
     e.preventDefault();
@@ -505,19 +536,104 @@ function addJoystickHandlers(joy, which) {
     e.preventDefault();
   }
 
-  // ✅ on écoute le down sur TOUTE la zone (container + base + stick)
+  // down sur toute la zone
   joy.joyDiv.addEventListener('pointerdown', onDown, { passive: false });
   joy.base.addEventListener('pointerdown', onDown, { passive: false });
   joy.stick.addEventListener('pointerdown', onDown, { passive: false });
 
-  // ✅ moves/up globaux (doigt qui sort du cercle)
+  // move/up globaux
   window.addEventListener('pointermove', onMove, { passive: false });
   window.addEventListener('pointerup', onUp, { passive: false });
   window.addEventListener('pointercancel', onUp, { passive: false });
 
-  // démarrage centré
   reset();
 }
+
+
+	function addJoystickTouchHandlers(joy, which) {
+	  const size = joy.size;
+	  const radius = size / 2;
+	  const stickRadius = (size * 0.52) / 2;
+	  const center = { x: radius, y: radius };
+
+	  let active = false;
+	  let lastId = null;
+
+	  function setVec(dx, dy) {
+		const max = radius - stickRadius;
+		const len = Math.hypot(dx, dy);
+		let nx = dx, ny = dy;
+		if (len > max && len > 0) {
+		  nx = dx * (max / len);
+		  ny = dy * (max / len);
+		}
+		joy.stick.style.left = (center.x - stickRadius + nx) + "px";
+		joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
+		const out = (max > 0) ? { x: nx / max, y: ny / max } : { x: 0, y: 0 };
+		if (which === "move") moveJoyVal = out;
+		else aimJoyVal = out;
+	  }
+
+	  function reset() {
+		active = false;
+		lastId = null;
+		setVec(0, 0);
+	  }
+
+	  function localCoords(clientX, clientY) {
+		const r = joy.joyDiv.getBoundingClientRect();
+		return { x: clientX - r.left, y: clientY - r.top };
+	  }
+
+	  function onStart(e) {
+		if (active) return;
+		const t = e.changedTouches ? e.changedTouches[0] : null;
+		if (!t) return;
+		active = true;
+		lastId = t.identifier;
+		const p = localCoords(t.clientX, t.clientY);
+		setVec(p.x - center.x, p.y - center.y);
+		e.preventDefault();
+	  }
+
+	  function onMove(e) {
+		if (!active) return;
+		const touches = e.changedTouches;
+		for (let i = 0; i < touches.length; i++) {
+		  const t = touches[i];
+		  if (t.identifier !== lastId) continue;
+		  const p = localCoords(t.clientX, t.clientY);
+		  setVec(p.x - center.x, p.y - center.y);
+		  e.preventDefault();
+		  break;
+		}
+	  }
+
+	  function onEnd(e) {
+		if (!active) return;
+		const touches = e.changedTouches;
+		for (let i = 0; i < touches.length; i++) {
+		  const t = touches[i];
+		  if (t.identifier !== lastId) continue;
+		  reset();
+		  e.preventDefault();
+		  break;
+		}
+	  }
+
+	  // down sur toute la zone
+	  joy.joyDiv.addEventListener('touchstart', onStart, { passive: false });
+	  joy.base.addEventListener('touchstart', onStart, { passive: false });
+	  joy.stick.addEventListener('touchstart', onStart, { passive: false });
+
+	  // move/up globaux
+	  window.addEventListener('touchmove', onMove, { passive: false });
+	  window.addEventListener('touchend', onEnd, { passive: false });
+	  window.addEventListener('touchcancel', onEnd, { passive: false });
+
+	  reset();
+	}
+
 
 
 
@@ -536,13 +652,20 @@ function setupJoysticks() {
   // Crée les deux joysticks
   moveJoy = createJoystick(document.body, padding, joyY, "moveJoy");
   aimJoy  = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");
-  
-	addJoystickHandlers(moveJoy, "move");
-	addJoystickHandlers(aimJoy, "aim");
 
-  // IMPORTANT : repositionner le bouton + le panneau shop après création/rotation
+  // 👉 branchement selon le support
+  if (HAS_POINTER) {
+    addJoystickHandlers(moveJoy, "move");
+    addJoystickHandlers(aimJoy,  "aim");
+  } else {
+    addJoystickTouchHandlers(moveJoy, "move");
+    addJoystickTouchHandlers(aimJoy,  "aim");
+  }
+
+  // Repositionne l’UI shop
   positionShopUI();
 }
+
 
 function positionShopUI() {
   if (!isMobileDevice) return;
