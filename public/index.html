@@ -101,16 +101,37 @@
 	#shopModal:focus-within { outline: 2px solid #4dfc82; }
 	#shopModal::-webkit-scrollbar { width: 6px; }
 	#shopModal::-webkit-scrollbar-thumb { background: #2a5; border-radius: 4px; }
-	/* Étape 1 — Contraintes plein écran pour mobile */
+
+	/* Étape 1 — structure interne du panneau (scroll propre) */
+	#shopModal {
+	  display: flex;
+	  flex-direction: column;
+	}
+
+	#shopUpgrades {
+	  overflow-y: auto;
+	  /* prend toute la hauteur restante du panneau */
+	  max-height: 100%;
+	}
+
+
+	/* Étape 1 — Contraintes plein écran pour mobile (corrigé) */
 	@media (hover: none) and (pointer: coarse) {
 	  #shopModal {
 		box-sizing: border-box;
-		max-width: calc(100vw - 20px) !important;
-		max-height: calc(100vh - 20px) !important;
+		/* largeur qui tient sur l'écran */
+		width: auto;
+		max-width: min(92vw, 420px) !important;
+
+		/* hauteur qui tient toujours dans l'écran (UI mobile incluse) */
+		max-height: calc(100dvh - 24px) !important;
+
 		overflow-y: auto;
 		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
 	  }
-}
+	}
+
 	@keyframes shopPopIn {
 	  0% { opacity: 0; transform: translateY(80px) scale(0.97);}
 	  100% { opacity: 1; transform: none; }
