@@ -82,12 +82,12 @@
       user-select: none;
     }
     /* Ajout des joysticks mobile */
-    .joystick-container {
-      position: fixed;
-      z-index: 50;
-      touch-action: none;
-      pointer-events: none;
-    }
+	.joystick-container {
+	  position: fixed;
+	  z-index: 10000;
+	  touch-action: none;
+	  pointer-events: auto; /* <-- IMPORTANT : le conteneur doit capter les events */
+	}
     .joystick-base, .joystick-stick {
       pointer-events: auto;
       user-select: none;
@@ -97,7 +97,7 @@
 	  backdrop-filter: blur(0.5px);
 	  -webkit-overflow-scrolling: touch; /* ← Ajout ici */
 	}
-
+	#shopModal { z-index: 10010 !important; }
 	#shopModal:focus-within { outline: 2px solid #4dfc82; }
 	#shopModal::-webkit-scrollbar { width: 6px; }
 	#shopModal::-webkit-scrollbar-thumb { background: #2a5; border-radius: 4px; }
@@ -149,7 +149,7 @@
 	  <img src="/icons/cart.svg" alt="Shop" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);" />
 	  SHOP
 	</button>
-	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; z-index:25; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
+	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
 	  <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 	  <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
 		<img src="/icons/cart.svg" alt="Shop" style="width:30px; filter:brightness(1.2); vertical-align:middle;">
@@ -322,6 +322,7 @@
     const waveMessage = document.getElementById('waveMessage');
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
+	let shootBlocked = false;
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
 
 	function curve(v) {
@@ -337,9 +338,15 @@
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
 	function updateRenderScale() {
-	  const isLandscape = isMobileDevice && window.matchMedia('(orientation: landscape)').matches;
-	  renderScale = isLandscape ? 0.62 : 1; // encore + large (essaie 0.60 si tu veux ultra-large)
+	  if (!isMobileDevice) {
+		renderScale = 1;
+		return;
+	  }
+	  const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+	  // x2 en paysage => 0.5 ; x3 en portrait => ~0.333
+	  renderScale = isLandscape ? 0.5 : 1/3;
 	}
+
 
 	updateRenderScale();
     const PLAYER_SPEED_PER_SEC = 60;
@@ -372,10 +379,10 @@
       mousePos = { x: e.clientX, y: e.clientY };
       if (!isMobileDevice && myId && playersHealth[myId]) {
         const player = playersHealth[myId];
-        aimDir = {
-          x: (cameraX + mousePos.x) - player.x,
-          y: (cameraY + mousePos.y) - player.y
-        };
+		aimDir = {
+		  x: (cameraX + mousePos.x / renderScale) - player.x,
+		  y: (cameraY + mousePos.y / renderScale) - player.y
+		};
         let len = Math.hypot(aimDir.x, aimDir.y);
         if (len > 0) {
           aimDir.x /= len;
@@ -390,17 +397,22 @@
     // JOYSTICK PATCH MOBILE
     let moveJoy = null, aimJoy = null;
 	let moveJoyVal = {x:0, y:0}, aimJoyVal = {x:0, y:0}; // valeurs normalisées [-1..1]
-    function createJoystick(container, baseX, baseY, id) {
-      const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
-      const joyDiv = document.createElement('div');
-      joyDiv.className = 'joystick-container';
-      joyDiv.style.left = baseX + 'px';
-      joyDiv.style.top = baseY + 'px';
-      joyDiv.style.width = size + 'px';
-      joyDiv.style.height = size + 'px';
-      joyDiv.id = id;
-      joyDiv.style.pointerEvents = 'none';
-      document.body.appendChild(joyDiv);
+	
+	function createJoystick(container, baseX, baseY, id) {
+	  const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
+	  const joyDiv = document.createElement('div');
+	  joyDiv.className = 'joystick-container';
+		joyDiv.style.zIndex = '10000';
+		joyDiv.style.touchAction = 'none';  // fix iOS/Safari
+		joyDiv.style.pointerEvents = 'auto';
+	  joyDiv.style.left = baseX + 'px';
+	  joyDiv.style.top = baseY + 'px';
+	  joyDiv.style.width = size + 'px';
+	  joyDiv.style.height = size + 'px';
+	  joyDiv.id = id;
+	  // (ne rien mettre ici pour pointerEvents)
+	  document.body.appendChild(joyDiv);
+	  
       const base = document.createElement('div');
       base.className = 'joystick-base';
       base.style.width = size + 'px';
@@ -564,7 +576,7 @@ function positionShopUI() {
   // --- Bouton SHOP au-dessus du joystick droit ---
   const btnGap = 20; // espace entre bouton et joystick
   shopBtnEl.style.position = "fixed";
-  shopBtnEl.style.zIndex = "60";
+  shopBtnEl.style.zIndex = "10020";
   shopBtnEl.style.right  = (window.innerWidth - joyRect.right) + "px";
   shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + btnGap + "px";
 
@@ -572,29 +584,35 @@ function positionShopUI() {
 }
 
 
-function drawMap() {
-  if (!map.length) return;
-  const startCol = Math.floor(cameraX / TILE_SIZE);
-  const startRow = Math.floor(cameraY / TILE_SIZE);
-  const visibleCols = Math.ceil(canvas.width / TILE_SIZE) + 2;
-  const visibleRows = Math.ceil(canvas.height / TILE_SIZE) + 2;
+	function drawMap() {
+	  if (!map.length) return;
 
-  for (let row = startRow; row < startRow + visibleRows; row++) {
-    if (row < 0 || row >= MAP_ROWS) continue;
-    for (let col = startCol; col < startCol + visibleCols; col++) {
-      if (col < 0 || col >= MAP_COLS) continue;
-      if (map[row][col] === 1) {
-        ctx.fillStyle = '#363636';
-        ctx.fillRect(
-          col * TILE_SIZE - cameraX,
-          row * TILE_SIZE - cameraY,
-          TILE_SIZE,
-          TILE_SIZE
-        );
-      }
-    }
-  }
-}
+	  // ✅ tenir compte du zoom
+	  const viewW = canvas.width / renderScale;
+	  const viewH = canvas.height / renderScale;
+
+	  const startCol = Math.floor(cameraX / TILE_SIZE);
+	  const startRow = Math.floor(cameraY / TILE_SIZE);
+	  const visibleCols = Math.ceil(viewW / TILE_SIZE) + 2;
+	  const visibleRows = Math.ceil(viewH / TILE_SIZE) + 2;
+
+	  for (let row = startRow; row < startRow + visibleRows; row++) {
+		if (row < 0 || row >= MAP_ROWS) continue;
+		for (let col = startCol; col < startCol + visibleCols; col++) {
+		  if (col < 0 || col >= MAP_COLS) continue;
+		  if (map[row][col] === 1) {
+			ctx.fillStyle = '#363636';
+			ctx.fillRect(
+			  col * TILE_SIZE - cameraX,
+			  row * TILE_SIZE - cameraY,
+			  TILE_SIZE,
+			  TILE_SIZE
+			);
+		  }
+		}
+	  }
+	}
+
 
 	function drawPlayers() {
 	  for (const id in playersHealth) {
@@ -692,24 +710,23 @@ function drawMap() {
 	  ctx.strokeRect(x - w / 2, y, w, height);
 	}
 
-    // ---- TRAIT DE VISÉE PATCH ----
 	function drawAimLine() {
 	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 	  const player = playersHealth[myId];
 	  let dir = {x: 1, y: 0};
 	  let show = false;
 
-		if (isMobileDevice) {
-		  let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-		  if (len > 0.06) { // deadzone faible cohérente avec update()
-			dir = { x: aimJoyVal.x/len, y: aimJoyVal.y/len };
-			show = true;
-		  }
+	  if (isMobileDevice) {
+		let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+		if (len > 0.06) {
+		  dir = { x: aimJoyVal.x/len, y: aimJoyVal.y/len };
+		  show = true;
 		}
-		else {
-		if (mouseDown) {  // sur PC, afficher **uniquement** quand on tire
-		  let dx = (cameraX + mousePos.x) - player.x;
-		  let dy = (cameraY + mousePos.y) - player.y;
+	  } else {
+		if (mouseDown) {
+		  // ✅ corrige avec / renderScale
+		  let dx = (cameraX + mousePos.x / renderScale) - player.x;
+		  let dy = (cameraY + mousePos.y / renderScale) - player.y;
 		  let dist = Math.sqrt(dx*dx + dy*dy);
 		  if (dist > 3) {
 			dir = { x: dx / dist, y: dy / dist };
@@ -720,7 +737,7 @@ function drawMap() {
 
 	  if (!show) return;
 
-	  const length = 440; // double taille de la barre (au lieu de 220)
+	  const length = 440;
 	  const screenX = player.x - cameraX;
 	  const screenY = player.y - cameraY;
 
@@ -735,6 +752,8 @@ function drawMap() {
 	  ctx.stroke();
 	  ctx.restore();
 	}
+
+
 	
 	function update(deltaTime) {
 	  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
@@ -747,17 +766,15 @@ function drawMap() {
 		if (keys['arrowdown'] || keys['s']) move.y += 1;
 		if (keys['arrowleft'] || keys['a']) move.x -= 1;
 		if (keys['arrowright'] || keys['d']) move.x += 1;
-	} else {
-	  const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
-	  if (len > 0.06) {
-		let mx = moveJoyVal.x / (len || 1);
-		let my = moveJoyVal.y / (len || 1);
-		// applique la courbe pour plus de peps au centre
-		move.x = curve(mx);
-		move.y = curve(my);
+	  } else {
+		const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
+		if (len > 0.06) {
+		  let mx = moveJoyVal.x / (len || 1);
+		  let my = moveJoyVal.y / (len || 1);
+		  move.x = curve(mx);
+		  move.y = curve(my);
+		}
 	  }
-}
-
 
 	  socket.emit('moveDir', move);
 
@@ -766,28 +783,28 @@ function drawMap() {
 	  let shootDir = { x:1, y:0 };
 
 	  if (!isMobileDevice) {
-		let dx = (cameraX + mousePos.x) - player.x;
-		let dy = (cameraY + mousePos.y) - player.y;
+		// ✅ corrige avec / renderScale
+		let dx = (cameraX + mousePos.x / renderScale) - player.x;
+		let dy = (cameraY + mousePos.y / renderScale) - player.y;
 		let len = Math.hypot(dx, dy);
 		if (len > 3) shootDir = { x: dx/len, y: dy/len };
 		shooting = mouseDown;
-	} else {
-	  const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-	  if (len > 0.06) {
-		let ax = aimJoyVal.x / (len || 1);
-		let ay = aimJoyVal.y / (len || 1);
-		ax = curve(ax);
-		ay = curve(ay);
-		shootDir = { x: ax, y: ay };
-		shooting = true;
+	  } else {
+		const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+		if (len > 0.06) {
+		  let ax = aimJoyVal.x / (len || 1);
+		  let ay = aimJoyVal.y / (len || 1);
+		  ax = curve(ax);
+		  ay = curve(ay);
+		  shootDir = { x: ax, y: ay };
+		  shooting = true;
+		}
 	  }
-	}
 
-	if (shooting) {
-	  const n = Math.hypot(shootDir.x, shootDir.y);
-	  if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
-	}
-
+	  if (shooting) {
+		const n = Math.hypot(shootDir.x, shootDir.y);
+		if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
+	  }
 
 	  if (shooting && !shootBlocked) {
 		shootBlocked = true;
@@ -795,38 +812,32 @@ function drawMap() {
 		  targetX: player.x + shootDir.x * 120,
 		  targetY: player.y + shootDir.y * 120
 		});
-		setTimeout(() => { shootBlocked = false; }, 300); // cadence un peu plus rapide
+		setTimeout(() => { shootBlocked = false; }, 300);
 	  }
 	}
 
+if (isMobileDevice) {
+  canvas.addEventListener('pointerdown', (e) => {
+    // On tire seulement si on tape sur la moitié droite
+    if (e.clientX <= window.innerWidth * 0.5) return;
+    if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
-    let shootBlocked = false;
+    const p = playersHealth[myId];
+    const dx = (cameraX + e.clientX / renderScale) - p.x;
+    const dy = (cameraY + e.clientY / renderScale) - p.y;
+    const d  = Math.hypot(dx, dy);
+    const dir = d > 4 ? { x: dx / d, y: dy / d } : lastAimDir;
 
-	if (isMobileDevice) {
-	  canvas.addEventListener('pointerdown', (e) => {
-		const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-		// On ne tire que si on tape sur la moitié droite de l'écran
-		if (e.clientX <= window.innerWidth * 0.5) return;
-		if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-
-		const p = playersHealth[myId];
-		let dx = (cameraX + e.clientX) - p.x;
-		let dy = (cameraY + e.clientY) - p.y;
-		const d = Math.hypot(dx, dy);
-
-		// Si on tape presque sur le joueur, on utilise la dernière direction connue
-		const dir = d > 4 ? { x: dx / d, y: dy / d } : lastAimDir;
-
-		if (!shootBlocked) {
-		  shootBlocked = true;
-		  socket.emit('shoot', {
-			targetX: p.x + dir.x * 120,
-			targetY: p.y + dir.y * 120
-		  });
-		  setTimeout(() => { shootBlocked = false; }, 300);
-		}
-	  }, { passive: true });
-	}
+    if (!shootBlocked) {
+      shootBlocked = true;
+      socket.emit('shoot', {
+        targetX: p.x + dir.x * 120,
+        targetY: p.y + dir.y * 120
+      });
+      setTimeout(() => { shootBlocked = false; }, 300);
+    }
+  }, { passive: true });
+}
 
 
 	function updateCamera() {
