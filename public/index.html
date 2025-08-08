@@ -2,15 +2,14 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Zombination.io</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
     #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
 	#gameCanvas { touch-action: none; }
 	.joystick-base, .joystick-stick { touch-action: none; }
-	html, body { overscroll-behavior: none; }
-
-	/* Bloque le “pull to refresh” et le rebond */
 	html, body { overscroll-behavior: none; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
     #hudAlive { font-weight: bold; color: #fd7; }
@@ -325,6 +324,13 @@
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
 
+	function curve(v) {
+	  // 0.55 = plus sensible au centre (augmente si tu trouves encore trop mou)
+	  const e = 0.55;
+	  const s = Math.sign(v);
+	  return s * Math.pow(Math.abs(v), e);
+	}
+
     // Détection mobile
     function isMobile() { return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent); }
     const isMobileDevice = isMobile();
@@ -345,7 +351,8 @@
     const keys = {};
     let mouseDown = false, mousePos = { x: 0, y: 0 };
     let aimDir = { x: 1, y: 0 }; // direction de visée par défaut (droite)
-
+	let lastAimDir = { x: 1, y: 0 };
+	
 	window.addEventListener('keydown', e => {
 	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
 		e.preventDefault(); // évite le scroll de la page !
@@ -740,13 +747,17 @@ function drawMap() {
 		if (keys['arrowdown'] || keys['s']) move.y += 1;
 		if (keys['arrowleft'] || keys['a']) move.x -= 1;
 		if (keys['arrowright'] || keys['d']) move.x += 1;
-	  } else {
-		const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
-		if (len > 0.06) {  // deadzone très faible → plus sensible
-		  move.x = moveJoyVal.x / (len || 1);
-		  move.y = moveJoyVal.y / (len || 1);
-		}
+	} else {
+	  const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
+	  if (len > 0.06) {
+		let mx = moveJoyVal.x / (len || 1);
+		let my = moveJoyVal.y / (len || 1);
+		// applique la courbe pour plus de peps au centre
+		move.x = curve(mx);
+		move.y = curve(my);
 	  }
+}
+
 
 	  socket.emit('moveDir', move);
 
@@ -760,13 +771,23 @@ function drawMap() {
 		let len = Math.hypot(dx, dy);
 		if (len > 3) shootDir = { x: dx/len, y: dy/len };
 		shooting = mouseDown;
-	  } else {
-		const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-		if (len > 0.06) { // même deadzone faible
-		  shootDir = { x: aimJoyVal.x / (len || 1), y: aimJoyVal.y / (len || 1) };
-		  shooting = true; // dès qu’on pousse un peu, on tire
-		}
+	} else {
+	  const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+	  if (len > 0.06) {
+		let ax = aimJoyVal.x / (len || 1);
+		let ay = aimJoyVal.y / (len || 1);
+		ax = curve(ax);
+		ay = curve(ay);
+		shootDir = { x: ax, y: ay };
+		shooting = true;
 	  }
+	}
+
+	if (shooting) {
+	  const n = Math.hypot(shootDir.x, shootDir.y);
+	  if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
+	}
+
 
 	  if (shooting && !shootBlocked) {
 		shootBlocked = true;
@@ -780,6 +801,34 @@ function drawMap() {
 
 
     let shootBlocked = false;
+
+	if (isMobileDevice) {
+	  canvas.addEventListener('pointerdown', (e) => {
+		const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+		if (!isLandscape) return;
+		// On ne tire que si on tape sur la moitié droite de l'écran
+		if (e.clientX <= window.innerWidth * 0.5) return;
+		if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+
+		const p = playersHealth[myId];
+		let dx = (cameraX + e.clientX) - p.x;
+		let dy = (cameraY + e.clientY) - p.y;
+		const d = Math.hypot(dx, dy);
+
+		// Si on tape presque sur le joueur, on utilise la dernière direction connue
+		const dir = d > 4 ? { x: dx / d, y: dy / d } : lastAimDir;
+
+		if (!shootBlocked) {
+		  shootBlocked = true;
+		  socket.emit('shoot', {
+			targetX: p.x + dir.x * 120,
+			targetY: p.y + dir.y * 120
+		  });
+		  setTimeout(() => { shootBlocked = false; }, 300);
+		}
+	  }, { passive: true });
+	}
+
 
 	function updateCamera() {
 	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
