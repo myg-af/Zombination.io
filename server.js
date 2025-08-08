@@ -125,34 +125,69 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
   const centerY = (MAP_ROWS / 2) * TILE_SIZE;
+
   const angleStep = (2 * Math.PI) / Math.max(1, pseudosArr.length);
-  const radius = 60 + pseudosArr.length * 8;
+  const baseRadius = 80; // un peu plus large que 60
   const usedPos = [];
 
-  for (let i = 0; i < pseudosArr.length; i++) {
-    let angle = i * angleStep;
-    let tries = 0, found = false, spawnX, spawnY;
-    while (!found && tries < 30) {
-      spawnX = Math.floor(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * 12);
-      spawnY = Math.floor(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * 12);
-
-      if (!isCollision(game.map, spawnX, spawnY) && !usedPos.some(
-        pos => Math.hypot(pos.x - spawnX, pos.y - spawnY) < 2 * PLAYER_RADIUS + 4
-      )) {
-        found = true;
-        usedPos.push({ x: spawnX, y: spawnY });
-      }
-      tries++;
-      angle += Math.PI / 9;
+  function isFarFromUsed(x, y) {
+    const minDist = 2 * PLAYER_RADIUS + 6; // petit tampon
+    for (const pos of usedPos) {
+      if (Math.hypot(pos.x - x, pos.y - y) < minDist) return false;
     }
+    return true;
+  }
+
+  for (let i = 0; i < pseudosArr.length; i++) {
     const pseudo = pseudosArr[i];
     const sid = socketsArr[i];
 
-    // Important : pour les joueurs humains, sid == leur vrai socket.id
-    // Pour les bots, sid commence par "bot"
-    const isBot = sid.startsWith('bot');
+    let angle = i * angleStep;
+    let radius = baseRadius + Math.random() * 10;
+    let spawnX = centerX, spawnY = centerY;
+    let found = false;
 
-    // Remplace ou crée le joueur
+    // On essaie autour du centre, en spirale douce, avec jitter
+    for (let tries = 0; tries < 90 && !found; tries++) {
+      const jitter = 10;
+      spawnX = Math.round(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * jitter);
+      spawnY = Math.round(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * jitter);
+
+      // IMPORTANT : test "cercle vs murs" + distance aux autres spawns
+      if (!isCircleColliding(game.map, spawnX, spawnY, PLAYER_RADIUS) && isFarFromUsed(spawnX, spawnY)) {
+        found = true;
+        break;
+      }
+
+      // on tourne/élargit petit à petit
+      angle += Math.PI / 9;
+      if (tries % 8 === 0) radius += 14 + Math.random() * 8;
+    }
+
+    // Fallback : si pas trouvé, on tente quelques échantillons aléatoires "safe"
+    if (!found) {
+      for (let tries = 0; tries < 200 && !found; tries++) {
+        const rx = (Math.random() * (MAP_COLS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
+        const ry = (Math.random() * (MAP_ROWS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
+        if (!isCircleColliding(game.map, rx, ry, PLAYER_RADIUS) && isFarFromUsed(rx, ry)) {
+          spawnX = Math.round(rx);
+          spawnY = Math.round(ry);
+          found = true;
+          break;
+        }
+      }
+    }
+
+    // Si vraiment pas de spot sûr (extrêmement rare), on force le centre (au pire des cas)
+    if (!found) {
+      spawnX = Math.round(centerX);
+      spawnY = Math.round(centerY);
+    }
+
+    usedPos.push({ x: spawnX, y: spawnY });
+
+    // Crée/écrase l’entrée du joueur/bot
+    const isBot = sid.startsWith('bot');
     game.players[sid] = {
       x: spawnX,
       y: spawnY,
@@ -166,14 +201,16 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       targetId: null,
       money: 10,
       upgrades: { maxHp: 0, speed: 0, regen: 0, damage: 0, goldGain: 0 },
-      maxHealth: 100, // set below
+      maxHealth: 100,
     };
+
     // Calcule les stats dès le départ
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
     game.players[sid].health = stats.maxHp;
   }
 }
+
 
 
 function isNearObstacle(map, cx, cy, radius, tileSize) {
