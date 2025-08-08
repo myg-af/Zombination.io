@@ -477,29 +477,6 @@ function positionShopUI() {
   shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + btnGap + "px";
 
   // --- Panneau SHOP : aligné à droite du joystick, et assez haut pour ne pas chevaucher ---
-  if (shopModalEl) {
-    // On garde la largeur actuelle du modal et l’ancre à droite du joystick
-    shopModalEl.style.position = "fixed";
-    shopModalEl.style.zIndex = "65";
-    shopModalEl.style.right = (window.innerWidth - joyRect.right + 14) + "px";
-
-    // Espace vertical entre le PANNEAU et le joystick
-    const panelGapPortrait  = 28; // portrait : remonter un peu plus
-    const panelGapLandscape = 20;
-
-    const gap = isPortrait ? panelGapPortrait : panelGapLandscape;
-
-    // Place le bas du panneau juste au-dessus du haut du joystick (+ marge)
-    let computedBottom = (window.innerHeight - joyRect.top) + gap;
-
-    // Clamp : éviter de sortir de l’écran en haut (si l’écran est très petit)
-    const minBottom = 10;   // ne jamais coller tout en bas
-    const maxBottom = window.innerHeight - 120; // garde au moins ~120px visibles
-    if (computedBottom < minBottom) computedBottom = minBottom;
-    if (computedBottom > maxBottom) computedBottom = maxBottom;
-
-    shopModalEl.style.bottom = computedBottom + "px";
-  }
 }
 
 
@@ -715,14 +692,20 @@ function drawMap() {
 
     let shootBlocked = false;
 
-    function updateCamera() {
-      if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-      let player = playersHealth[myId];
-      cameraX = player.x - canvas.width / 2;
-      cameraY = player.y - canvas.height / 2;
-      cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - canvas.width));
-      cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - canvas.height));
-    }
+	function updateCamera() {
+	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+	  let player = playersHealth[myId];
+
+	  const viewW = canvas.width / renderScale;
+	  const viewH = canvas.height / renderScale;
+
+	  cameraX = player.x - viewW / 2;
+	  cameraY = player.y - viewH / 2;
+
+	  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
+	  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
+	}
+
 
 	function drawHUD() {
 	  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
