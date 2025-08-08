@@ -1196,29 +1196,31 @@ if (isMobileDevice) {
 	}
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
 
-	// --- RENDER SHOP UPGRADES ---
 	function renderShopUpgrades() {
 	  const el = document.getElementById('shopUpgrades');
 	  el.innerHTML = "";
 	  UPGRADES.forEach(upg => {
 		const lvl = myUpgrades[upg.id] || 0;
 		const value = upg.getValue(upg.baseValue, lvl);
-		const nextValue = upg.getValue(upg.baseValue, lvl+1);
+		const nextValue = upg.getValue(upg.baseValue, lvl + 1);
+
+		// même grille de prix que chez toi
 		let price = 10;
 		if (lvl === 1) price = 25;
 		else if (lvl === 2) price = 50;
-		else if (lvl >= 3) price = 50 + 25 * (lvl-2);
+		else if (lvl >= 3) price = 50 + 25 * (lvl - 2);
+
 		const disabled = myMoney < price;
-		
+
 		el.innerHTML += `
 		  <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
-			<!-- SUPPRIMER L'IMAGE ICI -->
 			<div style="flex:1;">
 			  <div style="font-size:18px;"><b>${upg.label}</b></div>
 			  <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
 			  <div style="font-size:15px; color:#bcffa8;">
-				${upg.statLabel} : <b>${upg.format(value)}</b>
-				<span style="color:#8f8; font-size:14px; margin-left:7px;">${lvl<7?"→ "+upg.format(nextValue):""}</span>
+				${upg.statLabel} : <b>${upg.format(value)}</b>
+				<!-- 🔧 CHANGEMENT ICI : l’aperçu est TOUJOURS affiché -->
+				<span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${upg.format(nextValue)}</span>
 			  </div>
 			</div>
 			<div style="
@@ -1258,14 +1260,14 @@ if (isMobileDevice) {
 		`;
 	  });
 
-	el.querySelectorAll('button[data-upgid]').forEach(btn => {
-	  const upgId = btn.getAttribute('data-upgid');
-	  btn.onclick = () => {
-		socket.emit('upgradeBuy', { upgId }); // demande d'achat
-		// Optionnel : tu peux désactiver le bouton le temps d'attendre la réponse serveur, pour éviter le spam.
-	  };
-	});
+	  el.querySelectorAll('button[data-upgid]').forEach(btn => {
+		const upgId = btn.getAttribute('data-upgid');
+		btn.onclick = () => {
+		  socket.emit('upgradeBuy', { upgId });
+		};
+	  });
 	}
+
 
 	shopBtn.onclick = () => {
 	  renderShopUpgrades();

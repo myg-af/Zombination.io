@@ -125,69 +125,59 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
   const centerY = (MAP_ROWS / 2) * TILE_SIZE;
-
   const angleStep = (2 * Math.PI) / Math.max(1, pseudosArr.length);
-  const baseRadius = 80; // un peu plus large que 60
+  const radius = 60 + pseudosArr.length * 8;
   const usedPos = [];
 
-  function isFarFromUsed(x, y) {
-    const minDist = 2 * PLAYER_RADIUS + 6; // petit tampon
-    for (const pos of usedPos) {
-      if (Math.hypot(pos.x - x, pos.y - y) < minDist) return false;
-    }
-    return true;
-  }
-
   for (let i = 0; i < pseudosArr.length; i++) {
-    const pseudo = pseudosArr[i];
-    const sid = socketsArr[i];
-
     let angle = i * angleStep;
-    let radius = baseRadius + Math.random() * 10;
-    let spawnX = centerX, spawnY = centerY;
-    let found = false;
+    let tries = 0, found = false, spawnX = centerX, spawnY = centerY;
 
-    // On essaie autour du centre, en spirale douce, avec jitter
-    for (let tries = 0; tries < 90 && !found; tries++) {
-      const jitter = 10;
-      spawnX = Math.round(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * jitter);
-      spawnY = Math.round(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * jitter);
+    // 1) Tentatives aléatoires autour du centre (comme avant) avec collision CERCLE
+    while (!found && tries < 30) {
+      const candX = Math.floor(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * 12);
+      const candY = Math.floor(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * 12);
 
-      // IMPORTANT : test "cercle vs murs" + distance aux autres spawns
-      if (!isCircleColliding(game.map, spawnX, spawnY, PLAYER_RADIUS) && isFarFromUsed(spawnX, spawnY)) {
+      if (
+        !isCircleColliding(game.map, candX, candY, PLAYER_RADIUS) &&
+        !usedPos.some(pos => Math.hypot(pos.x - candX, pos.y - candY) < 2 * PLAYER_RADIUS + 4)
+      ) {
+        spawnX = candX;
+        spawnY = candY;
         found = true;
         break;
       }
-
-      // on tourne/élargit petit à petit
+      tries++;
       angle += Math.PI / 9;
-      if (tries % 8 === 0) radius += 14 + Math.random() * 8;
     }
 
-    // Fallback : si pas trouvé, on tente quelques échantillons aléatoires "safe"
+    // 2) FALLBACK déterministe si rien trouvé : anneaux concentriques + 16 directions
     if (!found) {
-      for (let tries = 0; tries < 200 && !found; tries++) {
-        const rx = (Math.random() * (MAP_COLS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
-        const ry = (Math.random() * (MAP_ROWS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
-        if (!isCircleColliding(game.map, rx, ry, PLAYER_RADIUS) && isFarFromUsed(rx, ry)) {
-          spawnX = Math.round(rx);
-          spawnY = Math.round(ry);
-          found = true;
-          break;
+      const maxRing = Math.min(MAP_COLS, MAP_ROWS) * TILE_SIZE * 0.45;
+      outer:
+      for (let ring = TILE_SIZE; ring <= maxRing; ring += TILE_SIZE) {
+        for (let a = 0; a < 16; a++) {
+          const th = (a * 2 * Math.PI) / 16;
+          const candX = Math.floor(centerX + Math.cos(th) * ring);
+          const candY = Math.floor(centerY + Math.sin(th) * ring);
+          if (
+            !isCircleColliding(game.map, candX, candY, PLAYER_RADIUS) &&
+            !usedPos.some(pos => Math.hypot(pos.x - candX, pos.y - candY) < 2 * PLAYER_RADIUS + 4)
+          ) {
+            spawnX = candX;
+            spawnY = candY;
+            found = true;
+            break outer;
+          }
         }
       }
     }
 
-    // Si vraiment pas de spot sûr (extrêmement rare), on force le centre (au pire des cas)
-    if (!found) {
-      spawnX = Math.round(centerX);
-      spawnY = Math.round(centerY);
-    }
+    const pseudo = pseudosArr[i];
+    const sid = socketsArr[i];
 
-    usedPos.push({ x: spawnX, y: spawnY });
-
-    // Crée/écrase l’entrée du joueur/bot
     const isBot = sid.startsWith('bot');
+
     game.players[sid] = {
       x: spawnX,
       y: spawnY,
@@ -204,12 +194,14 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       maxHealth: 100,
     };
 
-    // Calcule les stats dès le départ
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
     game.players[sid].health = stats.maxHp;
+
+    usedPos.push({ x: spawnX, y: spawnY });
   }
 }
+
 
 
 
@@ -226,9 +218,8 @@ function isNearObstacle(map, cx, cy, radius, tileSize) {
   return false;
 }
 
-
 function findPath(game, startX, startY, endX, endY) {
-  // On travaille en cases
+  // On travaille en cases (grid)
   const start = {
     x: Math.floor(startX / TILE_SIZE),
     y: Math.floor(startY / TILE_SIZE)
@@ -237,39 +228,64 @@ function findPath(game, startX, startY, endX, endY) {
     x: Math.floor(endX / TILE_SIZE),
     y: Math.floor(endY / TILE_SIZE)
   };
+
   if (start.x === end.x && start.y === end.y) return [start, end];
-  // Pathfinding Dijkstra/A* minimal
-  const queue = [start];
-  const visited = new Set();
-  const parent = {};
+
+  // BFS (coût uniforme). Diagonales PRIORITAIRES pour favoriser les trajets en diagonale.
   const key = (x, y) => `${x},${y}`;
-  visited.add(key(start.x, start.y));
+  const queue = [start];
+  const visited = new Set([key(start.x, start.y)]);
+  const parent = {};
+
+  // ⚠️ Diagonales d'abord, puis orthogonales
+  const DIRS = [
+    [ 1,  1], [ 1, -1], [-1,  1], [-1, -1],
+    [ 1,  0], [-1,  0], [ 0,  1], [ 0, -1],
+  ];
+
   while (queue.length > 0) {
     const node = queue.shift();
+
     if (node.x === end.x && node.y === end.y) {
-      // Reconstruit le chemin
-      let path = [end];
-      let cur = key(end.x, end.y);
-      while (parent[cur]) {
-        path.unshift(parent[cur]);
-        cur = key(parent[cur].x, parent[cur].y);
+      // Reconstruire le chemin
+      const path = [];
+      let cur = node;
+      while (cur) {
+        path.unshift({ x: cur.x, y: cur.y });
+        const p = parent[key(cur.x, cur.y)];
+        if (!p) break;
+        cur = p;
       }
       return path;
     }
-    // Adjacent
-    for (const [dx, dy] of [[1,0], [-1,0], [0,1], [0,-1]]) {
-      const nx = node.x + dx, ny = node.y + dy;
-      if (
-        nx < 0 || nx >= MAP_COLS ||
-        ny < 0 || ny >= MAP_ROWS ||
-        game.map[ny][nx] === 1 ||
-        visited.has(key(nx, ny))
-      ) continue;
-      parent[key(nx, ny)] = node;
-      visited.add(key(nx, ny));
+
+    for (const [dx, dy] of DIRS) {
+      const nx = node.x + dx;
+      const ny = node.y + dy;
+
+      // bornes carte
+      if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
+      // pas dans un mur
+      if (game.map[ny][nx] === 1) continue;
+
+      // si mouvement diagonal, empêcher de traverser un coin (corner cutting)
+      if (dx !== 0 && dy !== 0) {
+        if (typeof isDiagonalBlocked === 'function') {
+          if (isDiagonalBlocked(game.map, node.x, node.y, nx, ny)) continue;
+        } else {
+          if (game.map[node.y][nx] === 1 || game.map[ny][node.x] === 1) continue;
+        }
+      }
+
+      const k = key(nx, ny);
+      if (visited.has(k)) continue;
+
+      visited.add(k);
+      parent[k] = node;
       queue.push({ x: nx, y: ny });
     }
   }
+
   // Aucun chemin trouvé
   return null;
 }
@@ -358,9 +374,9 @@ function startSpawning(game) {
   game.spawningActive = true;
   game.spawnInterval = setInterval(() => {
     if (!game.spawningActive) return;
-    spawnZombies(game, 1);
+    spawnZombies(game, 10);
     checkWaveEnd(game);
-  }, 200);
+  }, 1000);
 }
 
 function stopSpawning(game) {
@@ -619,38 +635,53 @@ const lastZombieAttackPerGame = {};
 function movePlayers(game, deltaTime) {
   for (const pid in game.players) {
     const p = game.players[pid];
-    if (!p) continue;
-    if (!p.alive) continue;
-    if (!p.moveDir) p.moveDir = {x:0, y:0};
-    let len = Math.sqrt(p.moveDir.x*p.moveDir.x + p.moveDir.y*p.moveDir.y);
-    let dx = 0, dy = 0;
-    if (len > 0) {
-      let stats = getPlayerStats(p);
-      let move = stats.speed * deltaTime;
-      dx = p.moveDir.x / len * move;
-      dy = p.moveDir.y / len * move;
-    }
-    let nx = p.x + dx, ny = p.y + dy;
+    if (!p || !p.alive) continue;
+    if (!p.moveDir) p.moveDir = { x: 0, y: 0 };
 
-    // === COLLISION MURS ===
-    if (!isCircleColliding(game.map, nx, ny, PLAYER_RADIUS)) {
-      // === COLLISION ZOMBIES ===
-      let blocked = false;
+    const stats = getPlayerStats(p);
+    const move = stats.speed * deltaTime;
+
+    const dirX = p.moveDir.x;
+    const dirY = p.moveDir.y;
+    const len = Math.hypot(dirX, dirY);
+    if (len === 0) continue;
+
+    // déplacement voulu (normalisé)
+    const nx = (dirX / len) * move;
+    const ny = (dirY / len) * move;
+
+    // helper : essaie d'appliquer un déplacement en vérifiant murs + zombies
+    function tryMove(toX, toY) {
+      if (isCircleColliding(game.map, toX, toY, PLAYER_RADIUS)) return false;
       for (const zid in game.zombies) {
         const z = game.zombies[zid];
         if (!z) continue;
-        // Vérifie collision cercle/cercle joueur/zombie
-        if (entitiesCollide(nx, ny, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)) {
-          blocked = true;
-          break;
+        if (entitiesCollide(toX, toY, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)) {
+          return false;
         }
       }
-      // Si pas bloqué, applique le déplacement
-      if (!blocked) {
-        p.x = nx;
-        p.y = ny;
-      }
+      p.x = toX;
+      p.y = toY;
+      return true;
     }
+
+    // 1) tentative du mouvement complet (diagonale possible)
+    if (tryMove(p.x + nx, p.y + ny)) continue;
+
+    // 2) glissade à 100% sur un seul axe si l'autre est bloqué
+    //    -> si l'axe X est demandé, on essaie X seul à pleine vitesse
+    if (dirX !== 0) {
+      const stepX = Math.sign(dirX) * move;
+      if (tryMove(p.x + stepX, p.y)) continue;
+    }
+
+    //    -> si l'axe Y est demandé, on essaie Y seul à pleine vitesse
+    if (dirY !== 0) {
+      const stepY = Math.sign(dirY) * move;
+      if (tryMove(p.x, p.y + stepY)) continue;
+    }
+
+    // sinon: pas de mouvement ce tick (totalement bloqué)
   }
 }
 
@@ -849,181 +880,157 @@ function moveBots(game, deltaTime) {
 
 
 
+
 function moveZombies(game, deltaTime) {
+  // petit helper : ligne de vue sans mur
+  function hasLineOfSight(x0, y0, x1, y1) {
+    const dx = x1 - x0, dy = y1 - y0;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return true;
+    const steps = Math.ceil(dist / 8); // échantillonnage
+    for (let s = 1; s < steps; s++) {
+      const ix = x0 + (dx * s / steps);
+      const iy = y0 + (dy * s / steps);
+      if (isCollision(game.map, ix, iy)) return false;
+    }
+    return true;
+  }
+
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
 
-    // Cherche le joueur ou bot vivant le plus proche
-    let closestPlayer = null, closestDist = Infinity;
+    // 1) Cible = joueur/bot vivant le plus proche
+    let target = null, bestDist = Infinity;
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
-      const dx = p.x - z.x, dy = p.y - z.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestPlayer = p;
-      }
+      const d = Math.hypot(p.x - z.x, p.y - z.y);
+      if (d < bestDist) { bestDist = d; target = p; }
     }
-    if (!closestPlayer) continue;
+    if (!target) continue;
 
-    // Blocage direct si on est collé à un joueur/bot
-    let willCollide = false;
+    // 2) Si on est déjà “collé” à un joueur, ne pas pousser dedans
+    let glued = false;
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
       if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
-        willCollide = true;
-        break;
+        glued = true; break;
       }
     }
-    if (willCollide) continue;
+    if (glued) continue;
 
     const oldX = z.x, oldY = z.y;
-    let dx = closestPlayer.x - z.x;
-    let dy = closestPlayer.y - z.y;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-    let speed = z.speed || 40;
+    const speed = z.speed || 40;
 
-    // Quand proche du joueur (<1.4 tuiles), ignore pathfinding, avance direct (mais toujours blocage plus haut)
-    if (dist < TILE_SIZE * 1.4) {
-      let moveDist = speed * deltaTime * 0.7;
-      let nx = z.x + (dx / dist) * moveDist;
-      let ny = z.y + (dy / dist) * moveDist;
+    // 3) Choisir un point vers lequel avancer (toujours en vecteur → diagonale possible)
+    let tx, ty, usingPath = false;
 
-      if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
-        // Vérifie collision joueurs/bots AVANT d’appliquer le move
-        let collision = false;
-        for (const pid in game.players) {
-          const p = game.players[pid];
-          if (!p || !p.alive) continue;
-          if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
-            collision = true;
-            break;
-          }
-        }
-        if (!collision) {
-          z.x = nx; z.y = ny;
-        }
-      }
-      // Reset le path si on est proche
+    if (hasLineOfSight(z.x, z.y, target.x, target.y)) {
+      // ligne de vue claire → on va directement vers le joueur
+      tx = target.x; ty = target.y;
+      // reset de path (inutile)
       z.path = null; z.pathStep = 1; z.pathTarget = null;
-      continue;
-    }
-
-    // Pathfinding si besoin
-    let canGoDirect = true;
-    let steps = Math.ceil(dist / 8);
-    for (let s = 1; s < steps; s++) {
-      let tx = z.x + dx * (s / steps);
-      let ty = z.y + dy * (s / steps);
-      if (isCollision(game.map, tx, ty)) {
-        canGoDirect = false;
-        break;
-      }
-    }
-
-    if (!canGoDirect || (z.path && z.path.length > 0)) {
-      if (
+    } else {
+      // pas de LOS → on suit un path jusqu’au joueur
+      const needNewPath =
         !z.path ||
         !z.pathTarget ||
-        Math.abs(z.pathTarget.x - closestPlayer.x) > 12 ||
-        Math.abs(z.pathTarget.y - closestPlayer.y) > 12 ||
+        Math.abs((z.pathTarget.x || 0) - target.x) > 12 ||
+        Math.abs((z.pathTarget.y || 0) - target.y) > 12 ||
         !Array.isArray(z.path) ||
-        z.path.length < 2
-      ) {
-        // Recalcule le chemin
-        z.path = findPath(game, z.x, z.y, closestPlayer.x, closestPlayer.y);
+        z.path.length < 2 ||
+        z.pathStep == null ||
+        z.pathStep >= z.path.length;
+
+      if (needNewPath) {
+        z.path = findPath(game, z.x, z.y, target.x, target.y);
         z.pathStep = 1;
-        z.pathTarget = { x: closestPlayer.x, y: closestPlayer.y };
+        z.pathTarget = { x: target.x, y: target.y };
       }
-      // Avance le long du chemin
+
       if (z.path && z.path.length > z.pathStep) {
         const nextNode = z.path[z.pathStep];
-        const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-        const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-        const pdx = targetX - z.x, pdy = targetY - z.y;
-        const pdist = Math.sqrt(pdx * pdx + pdy * pdy);
-        if (pdist > 1) {
-          let moveDist = speed * deltaTime * 0.8;
-          let nx = z.x + (pdx / pdist) * moveDist;
-          let ny = z.y + (pdy / pdist) * moveDist;
-          if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
-            // Vérifie collision joueurs/bots AVANT d’appliquer le move
-            let collision = false;
-            for (const pid in game.players) {
-              const p = game.players[pid];
-              if (!p || !p.alive) continue;
-              if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
-                collision = true;
-                break;
-              }
-            }
-            if (!collision) {
-              z.x = nx;
-              z.y = ny;
-              if (Math.abs(z.x - targetX) < 3 && Math.abs(z.y - targetY) < 3) {
-                z.pathStep++;
-              }
-            }
-          } else {
-            // Coincé, recalcul le chemin la prochaine fois
-            z.path = null;
-            z.pathStep = 1;
-            z.pathTarget = null;
-          }
-        } else {
-          z.pathStep++;
-        }
+        tx = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
+        ty = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
+        usingPath = true;
       } else {
-        // Path plus valide, bouge légèrement aléatoirement
-        const angle = Math.random() * 2 * Math.PI;
-        z.x += Math.cos(angle) * 0.7;
-        z.y += Math.sin(angle) * 0.7;
-      }
-    } else if (dist > 1) {
-      // Ligne droite (aucun mur)
-      let moveDist = speed * deltaTime;
-      let nx = z.x + (dx / dist) * moveDist;
-      let ny = z.y + (dy / dist) * moveDist;
-      if (!isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
-        // Vérifie collision joueurs/bots AVANT d’appliquer le move
-        let collision = false;
-        for (const pid in game.players) {
-          const p = game.players[pid];
-          if (!p || !p.alive) continue;
-          if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
-            collision = true;
-            break;
-          }
-        }
-        if (!collision) {
-          z.x = nx; z.y = ny;
-          z.path = null;
-          z.pathStep = 1;
-          z.pathTarget = null;
-        }
+        // aucun path valide → petit jitter pour se décoincer
+        const a = Math.random() * Math.PI * 2;
+        tx = z.x + Math.cos(a) * 14;
+        ty = z.y + Math.sin(a) * 14;
       }
     }
 
-    // Sécurité : reset path si bloqué
-    if (Math.abs(z.x - oldX) < 0.2 && Math.abs(z.y - oldY) < 0.2) {
+    // 4) Avancer EN VECTEUR vers (tx,ty) (→ diagonale fluide)
+    let dx = tx - z.x, dy = ty - z.y;
+    let dist = Math.hypot(dx, dy);
+    if (dist < 0.001) continue;
+
+    const step = speed * deltaTime * (usingPath ? 0.8 : 1.0);
+    let stepX = (dx / dist) * step;
+    let stepY = (dy / dist) * step;
+
+    let nx = z.x + stepX;
+    let ny = z.y + stepY;
+
+    // 5) collisions murs (cercle) + slide sur mur (X puis Y)
+    if (isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS)) {
+      const nxOnly = z.x + stepX;
+      const nyOnly = z.y + stepY;
+
+      let moved = false;
+      if (!isCircleColliding(game.map, nxOnly, z.y, ZOMBIE_RADIUS)) {
+        z.x = nxOnly; moved = true;
+      }
+      if (!isCircleColliding(game.map, z.x, nyOnly, ZOMBIE_RADIUS)) {
+        z.y = nyOnly; moved = true;
+      }
+      if (!moved) {
+        // complètement bloqué → petit jitter et reset path
+        z.path = null; z.pathStep = 1; z.pathTarget = null;
+        z.x += (Math.random() - 0.5) * 2.4;
+        z.y += (Math.random() - 0.5) * 2.4;
+      }
+    } else {
+      // 6) collision joueurs avant d’appliquer le move
+      let hitPlayer = false;
+      for (const pid in game.players) {
+        const p = game.players[pid];
+        if (!p || !p.alive) continue;
+        if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
+          hitPlayer = true; break;
+        }
+      }
+      if (!hitPlayer) {
+        z.x = nx; z.y = ny;
+      }
+    }
+
+    // 7) si on suit un path : passer au node suivant quand on s’en approche
+    if (usingPath && z.path && z.path.length > z.pathStep) {
+      const nextNode = z.path[z.pathStep];
+      const nodeX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
+      const nodeY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
+      if (Math.abs(z.x - nodeX) < 3 && Math.abs(z.y - nodeY) < 3) {
+        z.pathStep++;
+      }
+    }
+
+    // 8) watchdog anti “bloqué”
+    if (Math.abs(z.x - oldX) < 0.15 && Math.abs(z.y - oldY) < 0.15) {
       z.blockedCount = (z.blockedCount || 0) + 1;
     } else {
       z.blockedCount = 0;
     }
-    if (z.blockedCount > 5) {
-      z.path = null;
-      z.pathStep = 1;
-      z.pathTarget = null;
+    if (z.blockedCount > 6) {
+      z.path = null; z.pathStep = 1; z.pathTarget = null;
       z.x += (Math.random() - 0.5) * 2.4;
       z.y += (Math.random() - 0.5) * 2.4;
       z.blockedCount = 0;
     }
   }
 }
-
-
 
 
 
