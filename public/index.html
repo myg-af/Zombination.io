@@ -319,6 +319,14 @@
     // Détection mobile
     function isMobile() { return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent); }
     const isMobileDevice = isMobile();
+	// === [ZOOM MOBILE PAYSAGE] ===
+	let renderScale = 1;
+	function updateRenderScale() {
+	  const isLandscape = isMobileDevice && window.matchMedia('(orientation: landscape)').matches;
+	  // 0.85 = léger dézoom ; mets 0.8 si tu veux voir encore plus large
+	  renderScale = isLandscape ? 0.85 : 1;
+	}
+	updateRenderScale();
     const PLAYER_SPEED_PER_SEC = 60;
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
@@ -431,6 +439,35 @@ function positionShopUI() {
 
   const isPortrait = window.matchMedia("(orientation: portrait)").matches;
   const joyRect = aimJoy.joyDiv.getBoundingClientRect();
+
+	// ----- Adapter la taille du shop pour qu'il tienne à l'écran -----
+	if (shopModalEl) {
+	  // Espace dispo au-dessus du joystick droit
+	  const gap = isPortrait ? 28 : 12;
+	  const availableHeightAboveJoystick = Math.max(0, joyRect.top - gap);
+
+	  // Marge visuelle
+	  const margin = 10;
+
+	  // Hauteur max = min(dispo au-dessus du joystick, hauteur viewport - marges)
+	  const maxH = Math.max(180, Math.min(availableHeightAboveJoystick - margin, window.innerHeight - 2*margin));
+	  shopModalEl.style.maxHeight = maxH + "px";
+	  shopModalEl.style.overflowY = "auto";
+
+	  // Option : limiter un peu la largeur en paysage
+	  if (!isPortrait) {
+		shopModalEl.style.minWidth = "300px";
+		shopModalEl.style.maxWidth = Math.min(360, window.innerWidth - 20) + "px";
+	  }
+
+	  // Recalage vertical du panneau (au-dessus du joystick)
+	  let computedBottom = (window.innerHeight - joyRect.top) + gap;
+	  const minBottom = 8;
+	  const maxBottom = window.innerHeight - 120;
+	  if (computedBottom < minBottom) computedBottom = minBottom;
+	  if (computedBottom > maxBottom) computedBottom = maxBottom;
+	  shopModalEl.style.bottom = computedBottom + "px";
+	}
 
   // --- Bouton SHOP au-dessus du joystick droit ---
   const btnGap = 20; // espace entre bouton et joystick
@@ -715,14 +752,21 @@ function drawMap() {
       lastTime = timestamp;
       update(deltaTime);
       updateCamera();
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawMap();
-      drawBullets();
-      drawZombies();
-	  drawMoneyFloatingTexts();
-      drawPlayers();
-      drawAimLine();
-      drawHUD();
+		// Remet la transform, clear, puis applique le scale (zoom)
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+
+		drawMap();
+		drawBullets();
+		drawZombies();
+		drawMoneyFloatingTexts();
+		drawPlayers();
+		drawAimLine();
+
+		// IMPORTANT : le HUD est en DOM, pas sur le canvas — tu peux le laisser tel quel
+		drawHUD();
+
       if (!isDead) requestAnimationFrame(gameLoop);
     }
 
@@ -965,15 +1009,18 @@ function drawMap() {
       }
     });
 	
-	// --- REAFFICHER LES JOYSTICKS SUR MOBILE APRÈS CHANGEMENT D'ORIENTATION ---
+	// --- REAFFICHER LES JOYSTICKS + MAJ ZOOM SUR MOBILE APRÈS CHANGEMENT D'ORIENTATION ---
 	if (isMobileDevice) {
 	  window.addEventListener('resize', () => {
-		setTimeout(setupJoysticks, 200);
+		updateRenderScale();
+		setTimeout(() => { setupJoysticks(); positionShopUI(); }, 200);
 	  });
 	  window.addEventListener('orientationchange', () => {
-		setTimeout(setupJoysticks, 200);
+		updateRenderScale();
+		setTimeout(() => { setupJoysticks(); positionShopUI(); }, 200);
 	  });
 	}
+
 
 	
   </script>
