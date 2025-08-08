@@ -325,9 +325,10 @@
 	let renderScale = 1;
 	function updateRenderScale() {
 	  const isLandscape = isMobileDevice && window.matchMedia('(orientation: landscape)').matches;
-	  // 0.85 = léger dézoom ; mets 0.8 si tu veux voir encore plus large
-	  renderScale = isLandscape ? 0.85 : 1;
+	  // encore plus dézoomé en paysage
+	  renderScale = isLandscape ? 0.72 : 1; // teste 0.72; tu peux descendre à 0.7 si tu veux ultra large
 	}
+
 	updateRenderScale();
     const PLAYER_SPEED_PER_SEC = 60;
     const TILE_SIZE = 40;
@@ -411,6 +412,80 @@
       return { joyDiv, base, stick, size };
     }
 
+// === Handlers de joystick ===
+function addJoystickHandlers(joy, which) {
+  const size = joy.size;
+  const radius = size / 2;
+  const stickRadius = (size * 0.52) / 2;
+  const center = { x: radius, y: radius };
+
+  let activeId = null;
+
+  function setVec(dx, dy) {
+    // clamp dans le cercle
+    const len = Math.hypot(dx, dy);
+    const max = radius - stickRadius;
+    let nx = dx, ny = dy;
+    if (len > max && len > 0) {
+      nx = dx * (max / len);
+      ny = dy * (max / len);
+    }
+
+    // place le stick
+    joy.stick.style.left = (center.x - stickRadius + nx) + "px";
+    joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
+
+    // envoie la valeur (non normalisée, on clamp dans update())
+    const out = { x: Math.round(nx), y: Math.round(ny) };
+    if (which === "move") {
+      moveJoyVal = out;
+    } else {
+      aimJoyVal = out;
+    }
+  }
+
+  function reset() {
+    activeId = null;
+    setVec(0, 0);
+  }
+
+  function localCoords(clientX, clientY) {
+    const r = joy.joyDiv.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+
+  function onDown(e) {
+    if (activeId !== null) return;
+    activeId = e.pointerId;
+    joy.base.setPointerCapture(activeId);
+    const p = localCoords(e.clientX, e.clientY);
+    setVec(p.x - center.x, p.y - center.y);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (e.pointerId !== activeId) return;
+    const p = localCoords(e.clientX, e.clientY);
+    setVec(p.x - center.x, p.y - center.y);
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (e.pointerId !== activeId) return;
+    joy.base.releasePointerCapture(activeId);
+    reset();
+    e.preventDefault();
+  }
+
+  // listeners
+  joy.base.addEventListener('pointerdown', onDown, { passive: false });
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('pointerup', onUp, { passive: false });
+  window.addEventListener('pointercancel', onUp, { passive: false });
+
+  // démarrage centré
+  reset();
+}
 
 
 function setupJoysticks() {
@@ -428,6 +503,9 @@ function setupJoysticks() {
   // Crée les deux joysticks
   moveJoy = createJoystick(document.body, padding, joyY, "moveJoy");
   aimJoy  = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");
+  
+	addJoystickHandlers(moveJoy, "move");
+	addJoystickHandlers(aimJoy, "aim");
 
   // IMPORTANT : repositionner le bouton + le panneau shop après création/rotation
   positionShopUI();
