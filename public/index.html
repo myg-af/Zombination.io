@@ -101,6 +101,16 @@
 	#shopModal:focus-within { outline: 2px solid #4dfc82; }
 	#shopModal::-webkit-scrollbar { width: 6px; }
 	#shopModal::-webkit-scrollbar-thumb { background: #2a5; border-radius: 4px; }
+	/* Étape 1 — Contraintes plein écran pour mobile */
+	@media (hover: none) and (pointer: coarse) {
+	  #shopModal {
+		box-sizing: border-box;
+		max-width: calc(100vw - 20px) !important;
+		max-height: calc(100vh - 20px) !important;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	  }
+}
 	@keyframes shopPopIn {
 	  0% { opacity: 0; transform: translateY(80px) scale(0.97);}
 	  100% { opacity: 1; transform: none; }
@@ -126,11 +136,6 @@
     <div id="hudRound"></div>
     <div id="hudHP"></div>
   </div>
-	<!-- DEBUG JOYSTICKS (mobile) -->
-	<div id="joyDebug" style="display:none; position:fixed; left:10px; bottom:150px; background:#0009; padding:8px 10px; border-radius:8px; font-size:14px; z-index:10050;">
-	  <div><b>Move</b>: <span id="dbgMove">0, 0</span></div>
-	  <div><b>Aim</b>: <span id="dbgAim">0, 0</span></div>
-	</div>
 
   <div id="deathScreen">
     <div id="deathScreenInner">
@@ -343,31 +348,7 @@
     function isMobile() { return /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent); }
     const isMobileDevice = isMobile();
 	const HAS_POINTER = ('PointerEvent' in window);
-		
-	// --- DEBUG HUD JOYSTICKS ---
-	const joyDebugBox = document.getElementById('joyDebug');
-	const dbgMoveSpan = document.getElementById('dbgMove');
-	const dbgAimSpan  = document.getElementById('dbgAim');
 
-	// Affiche le HUD uniquement sur mobile
-	if (isMobileDevice && joyDebugBox && dbgMoveSpan && dbgAimSpan) {
-	  joyDebugBox.style.display = 'block';
-
-	  function fmt(v) {
-		// arrondit à 2 décimales pour lecture
-		const x = (Math.abs(v.x) < 0.001) ? 0 : v.x;
-		const y = (Math.abs(v.y) < 0.001) ? 0 : v.y;
-		return `${x.toFixed(2)}, ${y.toFixed(2)}`;
-	  }
-
-	  function updateJoyDebug() {
-		dbgMoveSpan.textContent = fmt(moveJoyVal);
-		dbgAimSpan.textContent  = fmt(aimJoyVal);
-	  }
-
-	  // rafraîchit le panneau 5x/s
-	  setInterval(updateJoyDebug, 200);
-	}
 
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
@@ -407,10 +388,12 @@
 	  keys[e.key.toLowerCase()] = false;
 	});
 	
-	window.addEventListener('mousedown', e => { 
-	  if (shopModal.style.display === 'block') return; // empêche le tir si la boutique est ouverte
-	  mouseDown = e.button === 0; 
+	window.addEventListener('mousedown', e => {
+	  const sm = document.getElementById('shopModal');
+	  if (sm && sm.style.display === 'block') return;
+	  mouseDown = e.button === 0;
 	});
+
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
       mousePos = { x: e.clientX, y: e.clientY };
@@ -435,44 +418,46 @@
     let moveJoy = null, aimJoy = null;
 	let moveJoyVal = {x:0, y:0}, aimJoyVal = {x:0, y:0}; // valeurs normalisées [-1..1]
 	
-	function createJoystick(container, baseX, baseY, id) {
-	  const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
-	  const joyDiv = document.createElement('div');
-	  joyDiv.className = 'joystick-container';
-		joyDiv.style.zIndex = '10000';
-		joyDiv.style.touchAction = 'none';  // fix iOS/Safari
-		joyDiv.style.pointerEvents = 'auto';
-	  joyDiv.style.left = baseX + 'px';
-	  joyDiv.style.top = baseY + 'px';
-	  joyDiv.style.width = size + 'px';
-	  joyDiv.style.height = size + 'px';
-	  joyDiv.id = id;
-	  // (ne rien mettre ici pour pointerEvents)
-	  document.body.appendChild(joyDiv);
-	  
-      const base = document.createElement('div');
-      base.className = 'joystick-base';
-      base.style.width = size + 'px';
-      base.style.height = size + 'px';
-      base.style.background = 'rgba(255,255,255,0.12)';
-      base.style.borderRadius = '50%';
-      base.style.position = 'absolute';
-      base.style.left = '0px'; base.style.top = '0px';
-      base.style.pointerEvents = 'auto';
-      joyDiv.appendChild(base);
-      const stick = document.createElement('div');
-      stick.className = 'joystick-stick';
-      stick.style.width = (size*0.52) + 'px';
-      stick.style.height = (size*0.52) + 'px';
-      stick.style.background = 'rgba(160,255,240,0.45)';
-      stick.style.borderRadius = '50%';
-      stick.style.position = 'absolute';
-      stick.style.left = (size*0.24) + 'px';
-      stick.style.top = (size*0.24) + 'px';
-      stick.style.pointerEvents = 'auto';
-      joyDiv.appendChild(stick);
-      return { joyDiv, base, stick, size };
-    }
+function createJoystick(container, baseX, baseY, id) {
+  const size = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
+  const joyDiv = document.createElement('div');
+  joyDiv.className = 'joystick-container';
+  joyDiv.style.left = baseX + 'px';
+  joyDiv.style.top = baseY + 'px';
+  joyDiv.style.width = size + 'px';
+  joyDiv.style.height = size + 'px';
+  joyDiv.id = id;
+  joyDiv.style.pointerEvents = 'auto';
+  document.body.appendChild(joyDiv);
+
+  const base = document.createElement('div');
+  base.className = 'joystick-base';
+  base.style.width = size + 'px';
+  base.style.height = size + 'px';
+  base.style.background = 'rgba(255,255,255,0.12)';
+  base.style.borderRadius = '50%';
+  base.style.position = 'absolute';
+  base.style.left = '0px';
+  base.style.top = '0px';
+  base.style.pointerEvents = 'auto';
+  joyDiv.appendChild(base);
+
+  const stick = document.createElement('div');
+  stick.className = 'joystick-stick';
+  stick.style.width = (size * 0.52) + 'px';
+  stick.style.height = (size * 0.52) + 'px';
+  stick.style.background = 'rgba(160,255,240,0.45)';
+  stick.style.borderRadius = '50%';
+  stick.style.position = 'absolute';
+  stick.style.left = (size * 0.24) + 'px';
+  stick.style.top = (size * 0.24) + 'px';
+  stick.style.pointerEvents = 'auto';
+  joyDiv.appendChild(stick);
+
+  return { joyDiv, base, stick, size };
+}
+
+
 
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
@@ -840,48 +825,53 @@ function positionShopUI() {
 	  ctx.strokeRect(x - w / 2, y, w, height);
 	}
 
-	function drawAimLine() {
-	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-	  const player = playersHealth[myId];
-	  let dir = {x: 1, y: 0};
-	  let show = false;
+function drawAimLine() {
+  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  const player = playersHealth[myId];
+  let dir = { x: 1, y: 0 };
+  let show = false;
 
-	  if (isMobileDevice) {
-		let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-		if (len > 0.06) {
-		  dir = { x: aimJoyVal.x/len, y: aimJoyVal.y/len };
-		  show = true;
-		}
-	  } else {
-		if (mouseDown) {
-		  // ✅ corrige avec / renderScale
-		  let dx = (cameraX + mousePos.x / renderScale) - player.x;
-		  let dy = (cameraY + mousePos.y / renderScale) - player.y;
-		  let dist = Math.sqrt(dx*dx + dy*dy);
-		  if (dist > 3) {
-			dir = { x: dx / dist, y: dy / dist };
-			show = true;
-		  }
-		}
-	  }
+  if (isMobileDevice) {
+    // 👉 même logique que le tir mobile (avec curve)
+    let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+    if (len > 0.06) {
+      let ax = aimJoyVal.x / (len || 1);
+      let ay = aimJoyVal.y / (len || 1);
+      ax = curve(ax);
+      ay = curve(ay);
+      const n = Math.hypot(ax, ay);
+      if (n > 0.0001) dir = { x: ax / n, y: ay / n }; // on renormalise pour tracer une ligne propre
+      show = true;
+    }
+  } else {
+    if (mouseDown) {
+      let dx = (cameraX + mousePos.x / renderScale) - player.x;
+      let dy = (cameraY + mousePos.y / renderScale) - player.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 3) {
+        dir = { x: dx / dist, y: dy / dist };
+        show = true;
+      }
+    }
+  }
 
-	  if (!show) return;
+  if (!show) return;
 
-	  const length = 440;
-	  const screenX = player.x - cameraX;
-	  const screenY = player.y - cameraY;
+  const length = 440;
+  const screenX = player.x - cameraX;
+  const screenY = player.y - cameraY;
 
-	  ctx.save();
-	  ctx.beginPath();
-	  ctx.moveTo(screenX, screenY);
-	  ctx.lineTo(screenX + dir.x * length, screenY + dir.y * length);
-	  ctx.strokeStyle = 'rgba(255,255,0,0.66)';
-	  ctx.lineWidth = 2;
-	  ctx.shadowColor = 'yellow';
-	  ctx.shadowBlur = 7;
-	  ctx.stroke();
-	  ctx.restore();
-	}
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(screenX, screenY);
+  ctx.lineTo(screenX + dir.x * length, screenY + dir.y * length);
+  ctx.strokeStyle = 'rgba(255,255,0,0.66)';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = 'yellow';
+  ctx.shadowBlur = 7;
+  ctx.stroke();
+  ctx.restore();
+}
 
 
 	
