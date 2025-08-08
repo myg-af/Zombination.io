@@ -115,35 +115,36 @@
 	}
 
 
-	/* Étape 1 — Contraintes plein écran pour mobile (corrigé) */
-	@media (hover: none) and (pointer: coarse) {
-	  #shopModal {
-		box-sizing: border-box;
-		/* largeur qui tient sur l'écran */
-		width: auto;
-		max-width: min(92vw, 420px) !important;
-
-		/* hauteur qui tient toujours dans l'écran (UI mobile incluse) */
-		max-height: calc(100dvh - 24px) !important;
-
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		-webkit-overflow-scrolling: touch;
-	  }
-	}
 		
-	@media (hover: none) and (pointer: coarse) {
-	  #shopModal {
-		transform: scale(0.5);
-		transform-origin: bottom right;
-		animation-name: shopPopInMobile; /* utilise une anim spéciale mobile */
-	  }
+@media (hover: none) and (pointer: coarse) {
+  /* Contraintes + anim spécifiques mobile */
+  #shopModal {
+    box-sizing: border-box;
 
-	  @keyframes shopPopInMobile {
-		0%   { opacity: 0; transform: translateY(80px) scale(0.5); }
-		100% { opacity: 1; transform: scale(0.5); }
-	  }
-	}
+    /* dimensions qui tiennent toujours dans l'écran */
+    width: auto;
+    max-width: min(92vw, 420px) !important;
+    max-height: calc(100dvh - 24px) !important;
+
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+
+    /* apparition mobile + easing voulu */
+    transform: scale(0.5);
+    transform-origin: bottom right;
+    animation: shopPopInMobile 0.22s ease-out;
+  }
+
+  /* Le bouton doit passer sous le panneau */
+  #shopBtn { z-index: 10005 !important; }
+}
+
+@keyframes shopPopInMobile {
+  0%   { opacity: 0; transform: translateY(80px) scale(0.5); }
+  100% { opacity: 1; transform: scale(0.5); }
+}
+
 
 
 
@@ -727,13 +728,12 @@ function positionShopUI() {
   // --- Bouton SHOP au-dessus du joystick droit ---
   const btnGap = 20; // espace entre bouton et joystick
   shopBtnEl.style.position = "fixed";
-  shopBtnEl.style.zIndex = "10020";
+  shopBtnEl.style.zIndex = "10005";
   shopBtnEl.style.right  = (window.innerWidth - joyRect.right) + "px";
   shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + btnGap + "px";
 
   // --- Panneau SHOP : aligné à droite du joystick, et assez haut pour ne pas chevaucher ---
 }
-
 
 	function drawMap() {
 	  if (!map.length) return;
