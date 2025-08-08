@@ -131,14 +131,20 @@
 		-webkit-overflow-scrolling: touch;
 	  }
 	}
-	
+		
 	@media (hover: none) and (pointer: coarse) {
-	  /* Réduction visuelle du panneau shop à 50% */
 	  #shopModal {
 		transform: scale(0.5);
-		transform-origin: bottom right; /* reste ancré au même coin */
+		transform-origin: bottom right;
+		animation-name: shopPopInMobile; /* utilise une anim spéciale mobile */
+	  }
+
+	  @keyframes shopPopInMobile {
+		0%   { opacity: 0; transform: translateY(80px) scale(0.5); }
+		100% { opacity: 1; transform: scale(0.5); }
 	  }
 	}
+
 
 
 	@keyframes shopPopIn {
