@@ -401,9 +401,12 @@
       return { joyDiv, base, stick, size };
     }
 
+
+
 function setupJoysticks() {
   if (!isMobileDevice) return;
 
+  // Nettoyage
   if (moveJoy && moveJoy.joyDiv) moveJoy.joyDiv.remove();
   if (aimJoy && aimJoy.joyDiv) aimJoy.joyDiv.remove();
 
@@ -414,90 +417,54 @@ function setupJoysticks() {
 
   // Crée les deux joysticks
   moveJoy = createJoystick(document.body, padding, joyY, "moveJoy");
-  aimJoy = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");
+  aimJoy  = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");
 
-  // === Positionner le bouton SHOP au-dessus du joystick de tir ===
-  const paddingBetween = 20; // espace entre le joystick et le bouton
-  const shopBtnEl = document.getElementById('shopBtn');
-  if (shopBtnEl && aimJoy && aimJoy.joyDiv) {
-    const joyRect = aimJoy.joyDiv.getBoundingClientRect();
-    shopBtnEl.style.position = "fixed";
-    // Aligne le bord droit du bouton avec le bord droit du joystick
-    shopBtnEl.style.right = (window.innerWidth - joyRect.right) + "px";
-    // Place le bas du bouton juste au-dessus du haut du joystick (+ marge)
-    shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + paddingBetween + "px";
-    shopBtnEl.style.zIndex = "60";
-  }
-
-  // Gestion des touch events (inchangé)
-  let moveTouchId = null;
-  moveJoy.joyDiv.addEventListener('touchstart', function(e) { moveTouchId = e.changedTouches[0].identifier; });
-  moveJoy.joyDiv.addEventListener('touchmove', function(e) {
-    if (moveTouchId == null) return;
-    for (let t of e.changedTouches) {
-      if (t.identifier === moveTouchId) {
-        const rect = moveJoy.joyDiv.getBoundingClientRect();
-        const cx = rect.width/2, cy = rect.height/2;
-        let dx = t.clientX - rect.left - cx;
-        let dy = t.clientY - rect.top - cy;
-        let len = Math.sqrt(dx*dx+dy*dy);
-        if (len > moveJoy.size/2*0.8) {
-          dx = dx / len * moveJoy.size/2*0.8;
-          dy = dy / len * moveJoy.size/2*0.8;
-        }
-        moveJoy.stick.style.left = (cx+dx-moveJoy.stick.offsetWidth/2)+'px';
-        moveJoy.stick.style.top  = (cy+dy-moveJoy.stick.offsetHeight/2)+'px';
-        moveJoyVal = {x: dx, y: dy};
-        break;
-      }
-    }
-  });
-  moveJoy.joyDiv.addEventListener('touchend', function(e) {
-    for (let t of e.changedTouches) {
-      if (t.identifier === moveTouchId) {
-        moveTouchId = null;
-        moveJoy.stick.style.left = (moveJoy.size*0.24)+'px';
-        moveJoy.stick.style.top  = (moveJoy.size*0.24)+'px';
-        moveJoyVal = {x:0, y:0};
-        break;
-      }
-    }
-  });
-
-  let aimTouchId = null;
-  aimJoy.joyDiv.addEventListener('touchstart', function(e) { aimTouchId = e.changedTouches[0].identifier; });
-  aimJoy.joyDiv.addEventListener('touchmove', function(e) {
-    if (aimTouchId == null) return;
-    for (let t of e.changedTouches) {
-      if (t.identifier === aimTouchId) {
-        const rect = aimJoy.joyDiv.getBoundingClientRect();
-        const cx = rect.width/2, cy = rect.height/2;
-        let dx = t.clientX - rect.left - cx;
-        let dy = t.clientY - rect.top - cy;
-        let len = Math.sqrt(dx*dx+dy*dy);
-        if (len > aimJoy.size/2*0.8) {
-          dx = dx / len * aimJoy.size/2*0.8;
-          dy = dy / len * aimJoy.size/2*0.8;
-        }
-        aimJoy.stick.style.left = (cx+dx-aimJoy.stick.offsetWidth/2)+'px';
-        aimJoy.stick.style.top  = (cy+dy-aimJoy.stick.offsetHeight/2)+'px';
-        aimJoyVal = {x: dx, y: dy};
-        break;
-      }
-    }
-  });
-  aimJoy.joyDiv.addEventListener('touchend', function(e) {
-    for (let t of e.changedTouches) {
-      if (t.identifier === aimTouchId) {
-        aimTouchId = null;
-        aimJoy.stick.style.left = (aimJoy.size*0.24)+'px';
-        aimJoy.stick.style.top  = (aimJoy.size*0.24)+'px';
-        aimJoyVal = {x:1, y:0};
-        break;
-      }
-    }
-  });
+  // IMPORTANT : repositionner le bouton + le panneau shop après création/rotation
+  positionShopUI();
 }
+
+function positionShopUI() {
+  if (!isMobileDevice) return;
+  const shopBtnEl = document.getElementById('shopBtn');
+  const shopModalEl = document.getElementById('shopModal');
+  if (!aimJoy || !aimJoy.joyDiv || !shopBtnEl) return;
+
+  const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+  const joyRect = aimJoy.joyDiv.getBoundingClientRect();
+
+  // --- Bouton SHOP au-dessus du joystick droit ---
+  const btnGap = 20; // espace entre bouton et joystick
+  shopBtnEl.style.position = "fixed";
+  shopBtnEl.style.zIndex = "60";
+  shopBtnEl.style.right  = (window.innerWidth - joyRect.right) + "px";
+  shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + btnGap + "px";
+
+  // --- Panneau SHOP : aligné à droite du joystick, et assez haut pour ne pas chevaucher ---
+  if (shopModalEl) {
+    // On garde la largeur actuelle du modal et l’ancre à droite du joystick
+    shopModalEl.style.position = "fixed";
+    shopModalEl.style.zIndex = "65";
+    shopModalEl.style.right = (window.innerWidth - joyRect.right + 14) + "px";
+
+    // Espace vertical entre le PANNEAU et le joystick
+    const panelGapPortrait  = 28; // portrait : remonter un peu plus
+    const panelGapLandscape = 20;
+
+    const gap = isPortrait ? panelGapPortrait : panelGapLandscape;
+
+    // Place le bas du panneau juste au-dessus du haut du joystick (+ marge)
+    let computedBottom = (window.innerHeight - joyRect.top) + gap;
+
+    // Clamp : éviter de sortir de l’écran en haut (si l’écran est très petit)
+    const minBottom = 10;   // ne jamais coller tout en bas
+    const maxBottom = window.innerHeight - 120; // garde au moins ~120px visibles
+    if (computedBottom < minBottom) computedBottom = minBottom;
+    if (computedBottom > maxBottom) computedBottom = maxBottom;
+
+    shopModalEl.style.bottom = computedBottom + "px";
+  }
+}
+
 
 function drawMap() {
   if (!map.length) return;
@@ -889,6 +856,15 @@ function drawMap() {
 	const shopModal = document.getElementById('shopModal');
 	const shopClose = document.getElementById('shopClose');
 
+	function closeShopIfOutside(evt) {
+	  if (shopModal.style.display !== 'block') return;
+	  const target = evt.target;
+	  // Ne ferme pas si on clique sur le bouton ou dans le panneau
+	  if (shopModal.contains(target) || shopBtn.contains(target)) return;
+	  shopModal.style.display = 'none';
+	}
+	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
+
 	// --- RENDER SHOP UPGRADES ---
 	function renderShopUpgrades() {
 	  const el = document.getElementById('shopUpgrades');
@@ -963,7 +939,10 @@ function drawMap() {
 	shopBtn.onclick = () => {
 	  renderShopUpgrades();
 	  shopModal.style.display = 'block';
+	  // Recalage à l’ouverture (tailles DOM connues)
+	  positionShopUI();
 	};
+
 
 	shopClose.onclick = () => {
 	  shopModal.style.display = 'none';
@@ -985,6 +964,18 @@ function drawMap() {
         socket.emit('giveMillion');
       }
     });
+	
+	// --- REAFFICHER LES JOYSTICKS SUR MOBILE APRÈS CHANGEMENT D'ORIENTATION ---
+	if (isMobileDevice) {
+	  window.addEventListener('resize', () => {
+		setTimeout(setupJoysticks, 200);
+	  });
+	  window.addEventListener('orientationchange', () => {
+		setTimeout(setupJoysticks, 200);
+	  });
+	}
+
+	
   </script>
 </body>
 </html>
