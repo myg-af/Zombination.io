@@ -131,6 +131,15 @@
 		-webkit-overflow-scrolling: touch;
 	  }
 	}
+	
+	@media (hover: none) and (pointer: coarse) {
+	  /* Réduction visuelle du panneau shop à 50% */
+	  #shopModal {
+		transform: scale(0.5);
+		transform-origin: bottom right; /* reste ancré au même coin */
+	  }
+	}
+
 
 	@keyframes shopPopIn {
 	  0% { opacity: 0; transform: translateY(80px) scale(0.97);}
