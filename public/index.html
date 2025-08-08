@@ -805,7 +805,6 @@ function drawMap() {
 	if (isMobileDevice) {
 	  canvas.addEventListener('pointerdown', (e) => {
 		const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-		if (!isLandscape) return;
 		// On ne tire que si on tape sur la moitié droite de l'écran
 		if (e.clientX <= window.innerWidth * 0.5) return;
 		if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
