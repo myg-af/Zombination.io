@@ -266,22 +266,22 @@
 <style>
   /* Mobile only */
   @media (max-width: 768px) {
-    .mobile-build {
-      position: fixed;
-      left: 50%;
-      bottom: 16px;
-      transform: translateX(-50%);
-      display: grid;
-      grid-template-columns: repeat(4, auto);
-      gap: 10px;
-      padding: 10px 12px;
-      background: rgba(0,0,0,0.35);
-      backdrop-filter: blur(6px);
-      border-radius: 14px;
-      z-index: 9999;
-      user-select: none;
-    }
-    .mobile-build .mb-btn {
+	.mobile-build {
+	  position: fixed;
+	  left: 50%;
+	  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); /* marge iOS + au-dessus du Shop */
+	  transform: translateX(-50%);
+	  display: grid;
+	  grid-template-columns: repeat(4, auto);
+	  gap: 10px;
+	  padding: 10px 12px;
+	  background: rgba(0,0,0,0.35);
+	  backdrop-filter: blur(6px);
+	  border-radius: 14px;
+	  z-index: 10007; /* supérieur au Shop */
+	  user-select: none;
+	}
+ .mb-btn {
       padding: 10px 12px;
       font-size: 14px;
       font-weight: 600;
