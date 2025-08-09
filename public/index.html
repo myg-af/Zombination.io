@@ -229,7 +229,7 @@
     ];
     function getDefaultLang() { return "en"; }
     let currentLang = getDefaultLang();
-    let lobbyData = { started: false, count: 0, max: 5, timeLeft: 30, players: {} };
+    let lobbyData = { started: false, count: 0, max: 10, timeLeft: 30, players: {} };
     let lobbyJoined = false, lobbyStarted = false;
     function initLobbyTexts() {
       updateLobbyTexts();
@@ -300,64 +300,69 @@
     const hudRound = document.getElementById('hudRound');
     const hudHP = document.getElementById('hudHP');
 	const hudMoney = document.getElementById('hudMoney');
-	let myMoney = 10;
-	// --- UPGRADES CONFIG ---
-	const UPGRADES = [
-	  {
-		id: "maxHp",    // identifiant interne
-		label: "+10% Vie max",
-		desc: "Augmente les PV max.",
-		icon: "/icons/heart.svg",
-		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-		baseValue: 100,
-		statLabel: "PV max",
-		format: v => v + " PV"
-	  },
-	  {
-		id: "speed",
-		label: "+10% Vitesse",
-		desc: "Déplace-toi plus vite.",
-		icon: "/icons/speed.svg",
-		getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
-		baseValue: 60,
-		statLabel: "Vitesse",
-		format: v => v + " px/s"
-	  },
-	  {
-		id: "regen",
-		label: "+0.25 PV/s regen",
-		desc: "Régénère tes PV chaque seconde.",
-		icon: "/icons/regen.svg",
-		getValue: (base, level) => +(base + 0.25 * level).toFixed(2),
-		baseValue: 0,
-		statLabel: "Régén.",
-		format: v => v + " PV/s"
-	  },
-	  {
-		id: "damage",
-		label: "+10% Dégâts",
-		desc: "Tire plus fort.",
-		icon: "/icons/bullet.svg",
-		getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-		baseValue: 5,
-		statLabel: "Dégâts",
-		format: v => v
-	  },
-		{
-		  id: "goldGain",
-		  label: "+10% d'or gagné",
-		  desc: "Gagne plus d’or sur les zombies.",
-		  icon: "/icons/gold.svg",
-		  getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-		  baseValue: 10, // car goldGain commence à 10 côté serveur !
-		  statLabel: "$/zombie",
-		  format: (v) => {
-			const min = Math.round(10 * (v / 10));
-			const max = Math.round(20 * (v / 10));
-			return `$${min}–${max}`;
-		  }
-		}
-	];
+	let myMoney = 0;
+	
+
+const UPGRADES = [
+  {
+    id: "maxHp",
+    label: "+10% Vie max",
+    desc: "Augmente les PV max.",
+    icon: "/icons/heart.svg",
+    getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+    baseValue: 100,
+    statLabel: "PV max",
+    format: v => v + " PV"
+  },
+  {
+    id: "speed",
+    label: "+10% Vitesse",
+    desc: "Déplace-toi plus vite.",
+    icon: "/icons/speed.svg",
+    getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
+    baseValue: 60,
+    statLabel: "Vitesse",
+    format: v => v + " px/s"
+  },
+  {
+    id: "regen",
+    label: "Régénération PV",
+    desc: "Regénère tes PV.",
+    icon: "/icons/regen.svg",
+    getValue: (base, level) => {
+      if (level <= 10) return level;                 // 0..10 linéaire
+      return +(10 * Math.pow(1.1, level - 10)).toFixed(2); // >10 : +10%/niv
+    },
+    baseValue: 0,
+    statLabel: "Régén.",
+    format: v => v + " PV/s"
+  },
+  {
+    id: "damage",
+    label: "+10% Dégâts",
+    desc: "Tire plus fort.",
+    icon: "/icons/bullet.svg",
+    getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+    baseValue: 5,
+    statLabel: "Dégâts",
+    format: v => v
+  },
+  {
+    id: "goldGain",
+    label: "+10% d'or gagné",
+    desc: "Gagne plus d’or sur les zombies.",
+    icon: "/icons/gold.svg",
+    getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+    baseValue: 10, // goldGain commence à 10 côté serveur
+    statLabel: "$/zombie",
+    format: (v) => {
+      const min = Math.round(10 * (v / 10));
+      const max = Math.round(20 * (v / 10));
+      return `$${min}–${max}`;
+    }
+  }
+];
+
 
 	// Niveau des upgrades du joueur local (simulé pour l’instant)
 	let myUpgrades = {
@@ -406,6 +411,59 @@
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
+	let structures = null;
+
+// === Helpers map/structures (client) ===
+function worldToTile(x, y) {
+  return { tx: Math.floor(x / TILE_SIZE), ty: Math.floor(y / TILE_SIZE) };
+}
+function isWallAt(tx, ty) {
+  if (!map || ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return true;
+  return map[ty][tx] === 1;
+}
+function structAtWorld(x, y) {
+  if (!structures) return null;
+  const { tx, ty } = worldToTile(x, y);
+  if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return null;
+  return structures[ty]?.[tx] || null;
+}
+function isSolidForZombieClient(struct) {
+  // pour la ligne de vue côté client : tout ce qui a des PV bloque
+  return struct && struct.hp > 0; // B, D, T…
+}
+function losBlockedForZombieClient(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return false;
+  const steps = Math.ceil(dist / 8);
+  for (let s = 1; s < steps; s++) {
+    const ix = x0 + (dx * s / steps);
+    const iy = y0 + (dy * s / steps);
+    const { tx, ty } = worldToTile(ix, iy);
+    if (isWallAt(tx, ty)) return true;
+    const st = structures?.[ty]?.[tx];
+    if (isSolidForZombieClient(st)) return true;
+  }
+  return false;
+}
+
+
+
+
+function findTurretTargetAngle(cxWorld, cyWorld) {
+  let best = null, bestDist = Infinity, bdx = 1, bdy = 0;
+  for (const z of Object.values(zombies)) {
+    const dx = z.x - cxWorld;
+    const dy = z.y - cyWorld;
+    const d = Math.hypot(dx, dy);
+    if (d < bestDist && !losBlockedForZombieClient(cxWorld, cyWorld, z.x, z.y)) {
+      best = z; bestDist = d; bdx = dx; bdy = dy;
+    }
+  }
+  return Math.atan2(bdy, bdx); // défaut: 0 rad (vers la droite)
+}
+
+
     let cameraX = 0, cameraY = 0;
     const keys = {};
     let mouseDown = false, mousePos = { x: 0, y: 0 };
@@ -765,6 +823,97 @@ function positionShopUI() {
 	}
 
 
+function drawStructures() {
+  if (!structures) return;
+
+  // 1) Pré-calcul : angle le plus récent par tourelle (depuis les bullets)
+  const latestTurretAngles = {};
+  for (const bid in bullets) {
+    const b = bullets[bid];
+    if (!b || typeof b.owner !== 'string') continue;
+    if (!b.owner.startsWith('turret_')) continue; // seulement les balles de tourelles
+
+    const key = b.owner; // ex: "turret_12_8"
+    const t = b.createdAt || 0;
+    if (!latestTurretAngles[key] || t > latestTurretAngles[key].t) {
+      latestTurretAngles[key] = {
+        t,
+        ang: Math.atan2(b.dy, b.dx)
+      };
+    }
+  }
+
+  // 2) Bornes d'affichage (caméra/viewport)
+  const viewW = canvas.width / renderScale;
+  const viewH = canvas.height / renderScale;
+
+  const startCol = Math.floor(cameraX / TILE_SIZE);
+  const startRow = Math.floor(cameraY / TILE_SIZE);
+  const visibleCols = Math.ceil(viewW / TILE_SIZE) + 2;
+  const visibleRows = Math.ceil(viewH / TILE_SIZE) + 2;
+
+  // 3) Parcours des structures visibles
+  for (let row = startRow; row < startRow + visibleRows; row++) {
+    if (row < 0 || row >= MAP_ROWS) continue;
+    for (let col = startCol; col < startCol + visibleCols; col++) {
+      if (col < 0 || col >= MAP_COLS) continue;
+      const s = structures[row]?.[col];
+      if (!s) continue;
+
+      const x = col * TILE_SIZE - cameraX;
+      const y = row * TILE_SIZE - cameraY;
+
+      if (s.type === 'B') {
+        // Barricade
+        ctx.fillStyle = '#7b4b2a';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = '#000';
+        ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+      } else if (s.type === 'D') {
+        // Porte
+        ctx.fillStyle = '#a57b4a';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = '#000';
+        ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+      } else if (s.type === 'T') {
+        // Tourelle : base
+        ctx.fillStyle = '#3aa6ff';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = '#0b1b2a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        // Centre écran et monde
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE / 2;
+        const cxW = col * TILE_SIZE + TILE_SIZE / 2;
+        const cyW = row * TILE_SIZE + TILE_SIZE / 2;
+
+        // 🔧 NOUVEAU : angle = dernière balle tirée par cette tourelle, sinon fallback
+        const turretKey = `turret_${col}_${row}`;
+        let ang = latestTurretAngles[turretKey]?.ang;
+        if (ang == null) {
+          // Fallback : angle vers zombie visible le plus proche (comportement précédent)
+          ang = findTurretTargetAngle(cxW, cyW);
+        }
+
+        // Canon
+        const L = TILE_SIZE * 0.38;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(ang) * L, cy + Math.sin(ang) * L);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+
+
+
+
 	function drawPlayers() {
 	  for (const id in playersHealth) {
 		const p = playersHealth[id];
@@ -1045,6 +1194,7 @@ if (isMobileDevice) {
 		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
 		drawMap();
+		drawStructures();
 		drawBullets();
 		drawZombies();
 		drawMoneyFloatingTexts();
@@ -1106,7 +1256,12 @@ if (isMobileDevice) {
       isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
+	  structures = data.structures || null;
     });
+
+	socket.on('structuresUpdate', (grid) => {
+	  structures = grid;
+	});
 
     socket.on('zombiesUpdate', (z) => { zombies = z; });
     socket.on('bulletsUpdate', (b) => { bullets = b; });
@@ -1196,77 +1351,54 @@ if (isMobileDevice) {
 	}
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
 
-	function renderShopUpgrades() {
-	  const el = document.getElementById('shopUpgrades');
-	  el.innerHTML = "";
-	  UPGRADES.forEach(upg => {
-		const lvl = myUpgrades[upg.id] || 0;
-		const value = upg.getValue(upg.baseValue, lvl);
-		const nextValue = upg.getValue(upg.baseValue, lvl + 1);
 
-		// même grille de prix que chez toi
-		let price = 10;
-		if (lvl === 1) price = 25;
-		else if (lvl === 2) price = 50;
-		else if (lvl >= 3) price = 50 + 25 * (lvl - 2);
 
-		const disabled = myMoney < price;
 
-		el.innerHTML += `
-		  <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
-			<div style="flex:1;">
-			  <div style="font-size:18px;"><b>${upg.label}</b></div>
-			  <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
-			  <div style="font-size:15px; color:#bcffa8;">
-				${upg.statLabel} : <b>${upg.format(value)}</b>
-				<!-- 🔧 CHANGEMENT ICI : l’aperçu est TOUJOURS affiché -->
-				<span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${upg.format(nextValue)}</span>
-			  </div>
-			</div>
-			<div style="
-			  background:#282;
-			  color:#fff;
-			  font-weight:bold;
-			  border-radius:7px;
-			  font-size:15px;
-			  min-width:30px;
-			  text-align:center;
-			  padding:2px 0 1px 0;
-			  margin-right:10px;
-			  box-shadow:0 1.5px 6px #0007;
-			  border:2px solid #232;
-			  ">
-			  <span style="font-size:15px;">${lvl}</span>
-			</div>
-			<button 
-			  style="
-				font-size:16px; 
-				background:${disabled ? '#444' : '#393'}; 
-				color:#fff; 
-				border:none; 
-				border-radius:7px; 
-				padding:7px 18px; 
-				box-shadow:0 2px 8px #0004; 
-				cursor:${disabled ? 'not-allowed' : 'pointer'}; 
-				opacity:${disabled ? '0.5' : '1'}; 
-				margin-left:8px;
-				transition: background 0.16s;
-			  " 
-			  data-upgid="${upg.id}" 
-			  ${disabled?'disabled':''}>
-			  +1<br>$${price}
-			</button>
-		  </div>
-		`;
-	  });
+const PRICE_TIERS = [10, 25, 50, 75, 100];
+const PRICE_STEP_AFTER_TIER = 50;
+function getUpgradePrice(nextLevel) {
+  if (nextLevel <= PRICE_TIERS.length) return PRICE_TIERS[nextLevel - 1];
+  return PRICE_TIERS[PRICE_TIERS.length - 1] + (nextLevel - PRICE_TIERS.length) * PRICE_STEP_AFTER_TIER;
+}
 
-	  el.querySelectorAll('button[data-upgid]').forEach(btn => {
-		const upgId = btn.getAttribute('data-upgid');
-		btn.onclick = () => {
-		  socket.emit('upgradeBuy', { upgId });
-		};
-	  });
-	}
+function renderShopUpgrades() {
+  const el = document.getElementById('shopUpgrades');
+  el.innerHTML = "";
+  UPGRADES.forEach(upg => {
+    const lvl = myUpgrades[upg.id] || 0;                 // <-- définis d’abord
+    const price = getUpgradePrice(lvl + 1);              // <-- prix synchro serveur
+    const value = upg.getValue(upg.baseValue, lvl);
+    const nextValue = upg.getValue(upg.baseValue, lvl + 1);
+    const disabled = myMoney < price;
+
+    el.innerHTML += `
+      <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
+        <div style="flex:1;">
+          <div style="font-size:18px;"><b>${upg.label}</b></div>
+          <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
+          <div style="font-size:15px; color:#bcffa8;">
+            ${upg.statLabel} : <b>${upg.format(value)}</b>
+            <span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${upg.format(nextValue)}</span>
+          </div>
+        </div>
+        <div style="background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;min-width:30px;text-align:center;padding:2px 0 1px 0;margin-right:10px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">
+          <span style="font-size:15px;">${lvl}</span>
+        </div>
+        <button
+          style="font-size:16px;background:${disabled ? '#444' : '#393'};color:#fff;border:none;border-radius:7px;padding:7px 18px;box-shadow:0 2px 8px #0004;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? '0.5' : '1'};margin-left:8px;transition: background 0.16s;"
+          data-upgid="${upg.id}" ${disabled?'disabled':''}>
+          +1<br>$${price}
+        </button>
+      </div>
+    `;
+  });
+
+  el.querySelectorAll('button[data-upgid]').forEach(btn => {
+    const upgId = btn.getAttribute('data-upgid');
+    btn.onclick = () => socket.emit('upgradeBuy', { upgId });
+  });
+}
+
 
 
 	shopBtn.onclick = () => {

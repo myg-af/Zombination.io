@@ -55,36 +55,53 @@ function createEmptyMap(rows, cols) {
   return map;
 }
 
-// Obstacles plus petits (max 3x3)
+
+// Remplace TOUTE la fonction placeObstaclesConnected par ceci :
+
 function placeObstaclesConnected(map, count) {
   const centerR = Math.floor(MAP_ROWS / 2);
   const centerC = Math.floor(MAP_COLS / 2);
+
+  // Rayon (en tuiles) du carré central à laisser VIDE.
+  // 4 => carré 9x9. (taille = 2*rayon + 1)
+  const CENTER_CLEAR_RADIUS_TILES = 6;
+
   let placed = 0;
   let attempts = 0;
+
   while (placed < count && attempts < count * 12) {
     attempts++;
-    const w = Math.floor(Math.random() * 3) + 1; // ← taille max 3
-    const h = Math.floor(Math.random() * 3) + 1;
+
+    const w = Math.floor(Math.random() * 3) + 1; // largeur 1..3
+    const h = Math.floor(Math.random() * 3) + 1; // hauteur 1..3
     const r = Math.floor(Math.random() * (MAP_ROWS - h - 2)) + 1;
     const c = Math.floor(Math.random() * (MAP_COLS - w - 2)) + 1;
 
-    // Ne bouche jamais le centre ni autour
-    let centerBlocked = false;
-    for (let rr = r; rr < r + h; rr++) {
+    // --- EXCLUSION stricte du carré central ---
+    let touchesCenter = false;
+    for (let rr = r; rr < r + h && !touchesCenter; rr++) {
       for (let cc = c; cc < c + w; cc++) {
         if (
-          map[rr][cc] === 1 ||
-          (Math.abs(rr - centerR) <= 2 && Math.abs(cc - centerC) <= 2)
+          Math.abs(rr - centerR) <= CENTER_CLEAR_RADIUS_TILES &&
+          Math.abs(cc - centerC) <= CENTER_CLEAR_RADIUS_TILES
         ) {
-          centerBlocked = true;
+          touchesCenter = true;
           break;
         }
       }
-      if (centerBlocked) break;
     }
-    if (centerBlocked) continue;
+    if (touchesCenter) continue;
 
-    // Place temporairement l'obstacle
+    // Vérifier qu'on n’écrase pas déjà un mur/obstacle existant
+    let overlaps = false;
+    for (let rr = r; rr < r + h && !overlaps; rr++) {
+      for (let cc = c; cc < c + w; cc++) {
+        if (map[rr][cc] === 1) { overlaps = true; break; }
+      }
+    }
+    if (overlaps) continue;
+
+    // Placement temporaire
     const coords = [];
     for (let rr = r; rr < r + h; rr++) {
       for (let cc = c; cc < c + w; cc++) {
@@ -93,15 +110,17 @@ function placeObstaclesConnected(map, count) {
       }
     }
 
-    // Vérifie que la map reste connectée
+    // Conserver uniquement si la map reste connectée depuis le centre
     if (isFullyConnected(map, centerR, centerC)) {
       placed++;
     } else {
-      // Annule
+      // Annuler si ça coupe l’accessibilité
       for (const [rr, cc] of coords) map[rr][cc] = 0;
     }
   }
 }
+
+
 
 function generateConnectedMap() {
   let map;
