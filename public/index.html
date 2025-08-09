@@ -202,19 +202,26 @@
 	
 	
 	
-	<!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
+
+<!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
 <div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
   <!-- Conteneur horizontal des 4 tuiles -->
   <div id="buildTiles" style="display:flex; gap:10px;">
-    <!-- Grande tourelle -->
+    <!-- Grande tourelle (avec petit canon) -->
     <button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 5, Cadence: ~6.7/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007;"></div>
+      <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
+        <!-- petit canon -->
+        <div style="position:absolute; left:50%; top:50%; width:16px; height:3px; background:#3a0b0b; transform:translate(0,-50%); border-radius:2px;"></div>
+      </div>
       <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
     </button>
 
-    <!-- Mini-tourelle -->
+    <!-- Mini-tourelle (avec petit canon) -->
     <button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007;"></div>
+      <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
+        <!-- petit canon -->
+        <div style="position:absolute; left:50%; top:50%; width:14px; height:3px; background:#0b1b2a; transform:translate(0,-50%); border-radius:2px;"></div>
+      </div>
       <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
     </button>
 
@@ -235,7 +242,7 @@
   <div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
 </div>
 
-	
+
 	
 	
 	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
