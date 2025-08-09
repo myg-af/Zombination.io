@@ -265,6 +265,12 @@
 
 <style>
   /* Mobile only */
+  
+	 @media (max-width: 768px) and (orientation: portrait) {
+	  .mobile-build { 
+		display: none !important; 
+	  }
+	}
   @media (max-width: 768px) {
 	.mobile-build {
 	  position: fixed;
@@ -846,51 +852,71 @@ function setupJoysticks() {
 }
 
 
+// ===== remplace entièrement cette fonction =====
 function positionShopUI() {
   if (!isMobileDevice) return;
-  const shopBtnEl = document.getElementById('shopBtn');
+  const shopBtnEl   = document.getElementById('shopBtn');
   const shopModalEl = document.getElementById('shopModal');
+  const buildBarEl  = document.getElementById('buildBar');
   if (!aimJoy || !aimJoy.joyDiv || !shopBtnEl) return;
 
   const isPortrait = window.matchMedia("(orientation: portrait)").matches;
   const joyRect = aimJoy.joyDiv.getBoundingClientRect();
 
-	if (shopModalEl) {
-	  const gap = isPortrait ? 28 : 12;
-	  const availableHeightAboveJoystick = Math.max(0, joyRect.top - gap);
-	  const margin = 10;
-
-	  const maxH = Math.max(180, Math.min(availableHeightAboveJoystick - margin, window.innerHeight - 2*margin));
-	  shopModalEl.style.maxHeight = maxH + "px";
-	  shopModalEl.style.overflowY = "auto";
-
-	  if (!isPortrait) {
-		shopModalEl.style.minWidth = "300px";
-		shopModalEl.style.maxWidth = Math.min(360, window.innerWidth - 20) + "px";
-	  }
-
-	  // 👉 ancrage horizontal à droite du joystick
-	  shopModalEl.style.right = (window.innerWidth - joyRect.right + 14) + "px";
-
-	  // recalage vertical au-dessus du joystick
-	  let computedBottom = (window.innerHeight - joyRect.top) + gap;
-	  const minBottom = 8;
-	  const maxBottom = window.innerHeight - 120;
-	  if (computedBottom < minBottom) computedBottom = minBottom;
-	  if (computedBottom > maxBottom) computedBottom = maxBottom;
-	  shopModalEl.style.bottom = computedBottom + "px";
-	}
-
-
   // --- Bouton SHOP au-dessus du joystick droit ---
   const btnGap = 20; // espace entre bouton et joystick
   shopBtnEl.style.position = "fixed";
-  shopBtnEl.style.zIndex = "10005";
-  shopBtnEl.style.right  = (window.innerWidth - joyRect.right) + "px";
-  shopBtnEl.style.bottom = (window.innerHeight - joyRect.top) + btnGap + "px";
+  shopBtnEl.style.zIndex   = "10005";
+  shopBtnEl.style.right    = (window.innerWidth - joyRect.right) + "px";
+  shopBtnEl.style.bottom   = (window.innerHeight - joyRect.top) + btnGap + "px";
 
   // --- Panneau SHOP : aligné à droite du joystick, et assez haut pour ne pas chevaucher ---
+  if (shopModalEl) {
+    const gap = isPortrait ? 28 : 12;
+    const availableHeightAboveJoystick = Math.max(0, joyRect.top - gap);
+    const margin = 10;
+
+    const maxH = Math.max(180, Math.min(availableHeightAboveJoystick - margin, window.innerHeight - 2*margin));
+    shopModalEl.style.maxHeight = maxH + "px";
+    shopModalEl.style.overflowY = "auto";
+
+    if (!isPortrait) {
+      shopModalEl.style.minWidth = "300px";
+      shopModalEl.style.maxWidth = Math.min(360, window.innerWidth - 20) + "px";
+    }
+
+    // ancrage horizontal à droite du joystick
+    shopModalEl.style.right = (window.innerWidth - joyRect.right + 14) + "px";
+
+    // recalage vertical au-dessus du joystick
+    let computedBottom = (window.innerHeight - joyRect.top) + gap;
+    const minBottom = 8;
+    const maxBottom = window.innerHeight - 120;
+    if (computedBottom < minBottom) computedBottom = minBottom;
+    if (computedBottom > maxBottom) computedBottom = maxBottom;
+    shopModalEl.style.bottom = computedBottom + "px";
+  }
+
+  // --- ❶ NOUVEAU : positionner la barre de construction juste au-dessus du bouton SHOP ---
+  if (buildBarEl) {
+    // aligne horizontalement avec le bouton SHOP
+    buildBarEl.style.position = "fixed";
+    buildBarEl.style.right = shopBtnEl.style.right;
+
+    // place la barre juste au-dessus du bouton SHOP (écart 12px)
+    const btnBottomPx = parseFloat(shopBtnEl.style.bottom) || 0;
+    const btnHeight   = shopBtnEl.offsetHeight || 56; // fallback si non rendu
+    const gapAboveBtn = 12;
+    buildBarEl.style.bottom = (btnBottomPx + btnHeight + gapAboveBtn) + "px";
+
+    // priorité d’affichage au-dessus du SHOP
+    buildBarEl.style.zIndex = "10006";
+  }
 }
+
+
+
+
 
 	function drawMap() {
 	  if (!map.length) return;
