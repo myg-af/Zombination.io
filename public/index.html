@@ -140,6 +140,8 @@
   #shopBtn { z-index: 10005 !important; }
 }
 
+
+
 @keyframes shopPopInMobile {
   0%   { opacity: 0; transform: translateY(80px) scale(0.5); }
   100% { opacity: 1; transform: scale(0.5); }
@@ -197,6 +199,45 @@
 	  <img src="/icons/cart.svg" alt="Shop" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);" />
 	  SHOP
 	</button>
+	
+	
+	
+	<!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
+<div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
+  <!-- Conteneur horizontal des 4 tuiles -->
+  <div id="buildTiles" style="display:flex; gap:10px;">
+    <!-- Grande tourelle -->
+    <button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 5, Cadence: ~6.7/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+      <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007;"></div>
+      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
+    </button>
+
+    <!-- Mini-tourelle -->
+    <button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+      <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007;"></div>
+      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
+    </button>
+
+    <!-- Mur (barricade) -->
+    <button class="build-tile" data-type="B" data-tip="Mur (HP: 200)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+      <div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
+    </button>
+
+    <!-- Porte -->
+    <button class="build-tile" data-type="D" data-tip="Porte (HP: 200)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+      <div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
+    </button>
+  </div>
+
+  <!-- Tooltip hover -->
+  <div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
+</div>
+
+	
+	
+	
 	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
 	  <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 	  <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
@@ -378,6 +419,8 @@ const UPGRADES = [
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let shootBlocked = false;
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
+	let buildMode = null;         // 'T' | 't' | 'B' | 'D' | null
+	let buildHover = { tx: -1, ty: -1 }; // tuile survolée pendant le placement
 
 	function curve(v) {
 	  // 0.55 = plus sensible au centre (augmente si tu trouves encore trop mou)
@@ -482,11 +525,13 @@ function findTurretTargetAngle(cxWorld, cyWorld) {
 	  keys[e.key.toLowerCase()] = false;
 	});
 	
-	window.addEventListener('mousedown', e => {
-	  const sm = document.getElementById('shopModal');
-	  if (sm && sm.style.display === 'block') return;
-	  mouseDown = e.button === 0;
-	});
+window.addEventListener('mousedown', e => {
+  if (buildMode) { e.preventDefault(); return; }   // ← ajoute ça
+  const sm = document.getElementById('shopModal');
+  if (sm && sm.style.display === 'block') return;
+  mouseDown = e.button === 0;
+});
+
 
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
@@ -1122,7 +1167,7 @@ function drawAimLine() {
 
 if (isMobileDevice) {
   canvas.addEventListener('pointerdown', (e) => {
-    // On tire seulement si on tape sur la moitié droite
+    if (buildMode) return;
     if (e.clientX <= window.innerWidth * 0.5) return;
     if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
@@ -1142,6 +1187,96 @@ if (isMobileDevice) {
     }
   }, { passive: true });
 }
+
+
+// ---- Aide : écran -> monde -> tuile ----
+function screenToWorldTile(clientX, clientY) {
+  const wx = cameraX + clientX / renderScale;
+  const wy = cameraY + clientY / renderScale;
+  return {
+    tx: Math.floor(wx / TILE_SIZE),
+    ty: Math.floor(wy / TILE_SIZE)
+  };
+}
+
+// Survol pour l'aperçu de placement
+canvas.addEventListener('mousemove', (e) => {
+  if (!buildMode) return;
+  const { tx, ty } = screenToWorldTile(e.clientX, e.clientY);
+  buildHover.tx = tx; buildHover.ty = ty;
+}, { passive: true });
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!buildMode) return;
+  const { tx, ty } = screenToWorldTile(e.clientX, e.clientY);
+  buildHover.tx = tx; buildHover.ty = ty;
+}, { passive: true });
+
+
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (!buildMode) return;
+  e.preventDefault();
+  e.stopPropagation();
+  tryPlaceStructureAtCursor(e.clientX, e.clientY);
+  mouseDown = false;
+});
+
+
+
+function drawBuildPreview() {
+  if (!buildMode || buildHover.tx < 0 || buildHover.ty < 0) return;
+
+  const tx = buildHover.tx, ty = buildHover.ty;
+  if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) return;
+
+  // rouge si bloqué, vert si OK
+  const blocked = isWallAt(tx, ty) || (structures?.[ty]?.[tx]);
+  const x = tx * TILE_SIZE - cameraX;
+  const y = ty * TILE_SIZE - cameraY;
+
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  // couleur selon le type
+  if (buildMode === 'T') ctx.fillStyle = '#d33';
+  else if (buildMode === 't') ctx.fillStyle = '#3aa6ff';
+  else if (buildMode === 'B') ctx.fillStyle = '#7b4b2a';
+  else if (buildMode === 'D') ctx.fillStyle = '#a57b4a';
+  else ctx.fillStyle = '#888';
+
+  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+  // liseré rouge si bloqué / vert sinon
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = blocked ? '#ff3b3b' : '#34e05a';
+  ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+  ctx.restore();
+}
+
+
+
+
+function tryPlaceStructureAtCursor(clientX, clientY) {
+  const { tx, ty } = screenToWorldTile(clientX, clientY);
+
+  // bornes / murs
+  if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) return;
+  if (isWallAt(tx, ty)) return;
+
+  // bloc déjà occupé par une structure ?
+  if (structures?.[ty]?.[tx]) return;
+
+  // envoie au serveur
+  socket.emit('buyStructure', { type: buildMode, tx, ty });
+
+  // on sort du mode placement (une seule pose par clic)
+  buildMode = null;
+  buildHover = { tx: -1, ty: -1 };
+}
+
+
+
 
 
 	function updateCamera() {
@@ -1193,6 +1328,7 @@ if (isMobileDevice) {
 		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
 		drawMap();
+		drawBuildPreview();
 		drawStructures();
 		drawBullets();
 		drawZombies();
@@ -1256,11 +1392,21 @@ if (isMobileDevice) {
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
 	  structures = data.structures || null;
+	if (data.structurePrices) {
+	  STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...data.structurePrices };
+	}
+	updateBuildTilesState(); // rafraîchir les étiquettes + disabled
     });
 
 	socket.on('structuresUpdate', (grid) => {
 	  structures = grid;
 	});
+
+socket.on('structurePricesUpdate', (prices) => {
+  STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...prices };
+  updateBuildTilesState();
+});
+
 
     socket.on('zombiesUpdate', (z) => { zombies = z; });
     socket.on('bulletsUpdate', (b) => { bullets = b; });
@@ -1285,6 +1431,7 @@ if (isMobileDevice) {
 	if (me) {
 	  playerHealth = me.health;
 	  myMoney = me.money || 0;
+	  updateBuildTilesState();
 	  playersHealth[myId].maxHealth = me.maxHealth || 100; // <--- aussi ici pour être sûr
 	}
 	});
@@ -1305,7 +1452,23 @@ if (isMobileDevice) {
 		duration: 1200, // ms
 		vy: -0.14 // pixels/ms (vitesse vers le haut)
 	  });
+	  myMoney += amount;          // <--- ajoute
+	  drawHUD();                  // <--- ajoute
+	  updateBuildTilesState();    // <--- ajoute
 	});
+
+
+socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
+  if (u) myUpgrades = { ...myUpgrades, ...u };
+  if (typeof m === 'number') myMoney = m;
+  renderShopUpgrades();
+  drawHUD();
+  updateBuildTilesState();
+});
+
+
+
+
 
     socket.on('waveMessage', (msg) => {
       waveMessage.textContent = msg;
@@ -1319,6 +1482,7 @@ if (isMobileDevice) {
 	  myMoney = newMoney;
 	  renderShopUpgrades();
 	  drawHUD();
+	  updateBuildTilesState();
 
 	  // Trouve le bouton correspondant et applique l'animation
 	  setTimeout(() => {
@@ -1341,6 +1505,114 @@ if (isMobileDevice) {
 	const shopModal = document.getElementById('shopModal');
 	const shopClose = document.getElementById('shopClose');
 
+
+// ====== UI Achat Structures (au-dessus du SHOP) ======
+const buildBar = document.getElementById('buildBar');
+const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
+const buildTooltip = document.getElementById('buildTooltip');
+let STRUCTURE_PRICES = { T: 1000, t: 250, B: 100, D: 200 };
+
+// Hover → tooltip
+buildTiles.forEach(btn => {
+  const tip = btn.getAttribute('data-tip') || '';
+  btn.addEventListener('mouseenter', () => {
+    buildTooltip.textContent = tip;
+    buildTooltip.style.display = 'block';
+  }, { passive: true });
+  btn.addEventListener('mouseleave', () => {
+    buildTooltip.style.display = 'none';
+  }, { passive: true });
+});
+
+
+
+// Click → entrer/sortir du mode placement (toggle)
+let buildClickCooldown = false;
+buildTiles.forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (buildClickCooldown) return;
+    buildClickCooldown = true;
+    setTimeout(() => (buildClickCooldown = false), 250);
+
+    const type = btn.getAttribute('data-type');
+
+    // Si on reclique sur le même type → on annule le placement
+    if (buildMode === type) {
+      buildMode = null;
+      buildHover = { tx: -1, ty: -1 };
+      try { console.log(`[build] Mode placement annulé pour '${type}'.`); } catch {}
+      return;
+    }
+
+    // Sinon, on entre en mode placement pour ce type
+    buildMode = type;
+    try { console.log(`[build] Mode placement pour '${type}'. Clique/tape une case vide.`); } catch {}
+  });
+});
+
+
+
+
+updateBuildTilesState();
+
+// Ajuster la position quand on bouge le shop (mobile)
+function positionBuildBar() {
+  // Sur mobile, on se base sur la position recalculée du SHOP (déjà gérée par positionShopUI)
+  // Ici, on laisse le buildBar accrochée en haut du shopBtn (style inline déjà ok).
+  // Si besoin d’ajustements fins mobile, on les ferait ici sans toucher au reste.
+}
+window.addEventListener('resize', positionBuildBar);
+window.addEventListener('orientationchange', positionBuildBar);
+
+
+
+// Réception du résultat d’achat d’une structure
+socket.on('buildResult', (payload) => {
+  const {
+    ok,
+    reason,
+    type,
+    tx,
+    ty,
+    newMoney,
+    structurePrices // <-- si le serveur renvoie des prix à jour
+  } = payload || {};
+
+  // Maj argent et éventuellement la table des prix
+  if (typeof newMoney === 'number') {
+    myMoney = newMoney;
+  }
+  if (structurePrices) {
+    STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...structurePrices };
+  }
+
+  // Rafraîchir l’UI
+  drawHUD();
+  updateBuildTilesState();
+
+  // Gestion des erreurs + feedback
+  if (!ok) {
+    let msg = '';
+    switch (reason) {
+      case 'game_not_running': msg = "Impossible d’acheter : la partie n’est pas en cours."; break;
+      case 'player_invalid':   msg = "Action impossible : joueur inactif."; break;
+      case 'invalid_type':     msg = "Type d’objet invalide."; break;
+      case 'not_enough_money': msg = "Pas assez d’argent."; break;
+      case 'tile_blocked':     msg = "Case indisponible (mur, structure, autre joueur ou zombie)."; break;
+      default:                 msg = "Achat impossible."; break;
+    }
+    try { console.warn('[buildResult]', msg); } catch {}
+    return;
+  }
+
+  // Succès
+  try { console.log(`[buildResult] Posé '${type}' en ${tx},${ty}`); } catch {}
+});
+
+
+
+
+
 	function closeShopIfOutside(evt) {
 	  if (shopModal.style.display !== 'block') return;
 	  const target = evt.target;
@@ -1349,6 +1621,25 @@ if (isMobileDevice) {
 	  shopModal.style.display = 'none';
 	}
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
+
+
+
+function updateBuildTilesState() {
+  document.querySelectorAll('#buildTiles .build-tile').forEach(btn => {
+    const type = btn.getAttribute('data-type');
+    const price = STRUCTURE_PRICES[type] ?? Infinity;
+
+    // maj de l’étiquette sous la tuile (2e div)
+    const priceLabel = btn.querySelector('div:nth-child(2)');
+    if (priceLabel) priceLabel.textContent = `$${price}`;
+
+    // état “achetable”
+    const afford = myMoney >= price;
+    btn.style.opacity = afford ? '1' : '0.55';
+    btn.style.cursor  = afford ? 'pointer' : 'not-allowed';
+    btn.disabled = !afford;
+  });
+}
 
 
 

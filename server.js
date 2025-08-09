@@ -46,6 +46,15 @@ const SHOP_CONST = {
   priceStepAfterTier: 50            // après niv 5 → +50/niv
 };
 
+// --- Prix d'achat des structures (serveur autoritatif) ---
+const SHOP_BUILD_PRICES = {
+  T: 1000, // Grande tourelle
+  t: 250,  // Mini-tourelle
+  B: 100,  // Mur
+  D: 200   // Porte
+};
+
+
 function getUpgradePrice(nextLevel) {
   const tiers = SHOP_CONST.priceTiers;
   const step = SHOP_CONST.priceStepAfterTier;
@@ -183,6 +192,37 @@ function setStruct(game, tx, ty, s) {
   if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return;
   game.structures[ty][tx] = s;
 }
+
+function canPlaceStructureAt(game, tx, ty, buyerId) {
+  if (!game || !game.map) return false;
+  if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return false;
+
+  // 1) pas un mur de la map
+  if (game.map[ty][tx] === 1) return false;
+
+  // 2) pas de structure existante
+  const existing = getStruct(game, tx, ty);
+  if (existing) return false;
+
+  // 3) aucun joueur/BOT dont le CERCLE touche la tuile (y compris l'acheteur)
+  //    (avant on ne testait que la tuile du centre du joueur → pouvait coincer)
+  for (const [pid, p] of Object.entries(game.players)) {
+    if (!p || !p.alive) continue;
+    // Empêche la pose si le disque du joueur chevauche le rectangle [tx,ty]
+    if (circleIntersectsTile(p.x, p.y, PLAYER_RADIUS, tx, ty)) return false;
+  }
+
+  // 4) aucun zombie dont le CERCLE touche la tuile
+  for (const z of Object.values(game.zombies)) {
+    if (!z) continue;
+    if (circleIntersectsTile(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) return false;
+  }
+
+  return true;
+}
+
+
+
 function isSolidForPlayer(struct) {
   // Joueurs traversent les portes, mais PAS barricades ni tourelles (grandes ou mini)
   return struct && (
@@ -211,6 +251,31 @@ function circleBlockedByStructures(game, x, y, radius, solidCheckFn) {
   return solidCheckFn(s);
 }
 
+// Variante pour un joueur précis : ignore la tuile de grâce (p.graceTile) si définie
+function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
+  const points = 8;
+
+  // Helper: teste si (tx,ty) est la tuile de grâce du joueur
+  function isGrace(tx, ty) {
+    return !!(player && player.graceTile && player.graceTile.tx === tx && player.graceTile.ty === ty);
+  }
+
+  // échantillonnage du cercle
+  for (let a = 0; a < points; a++) {
+    const ang = (2 * Math.PI * a) / points;
+    const px = x + Math.cos(ang) * radius;
+    const py = y + Math.sin(ang) * radius;
+    const { tx, ty } = worldToTile(px, py);
+    const s = getStruct(game, tx, ty);
+    if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
+  }
+  // centre
+  const { tx, ty } = worldToTile(x, y);
+  const s = getStruct(game, tx, ty);
+  if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
+
+  return false;
+}
 
 
 function tickTurrets(game) {
@@ -668,6 +733,7 @@ function launchGame(game, readyPlayersArr = null) {
     players: game.players,
     round: game.currentRound,
     structures: game.structures, // <-- IMPORTANT
+	structurePrices: SHOP_BUILD_PRICES
   });
 
   console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
@@ -767,6 +833,72 @@ io.on('connection', socket => {
       });
     }
   });
+
+
+socket.on('buyStructure', ({ type, tx, ty }) => {
+  const gameId = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gameId);
+  if (!game || !game.lobby.started) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'game_not_running' });
+    return;
+  }
+  const player = game.players[socket.id];
+  if (!player || !player.alive) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'player_invalid' });
+    return;
+  }
+
+  // Validation entrée
+  if (!['T','t','B','D'].includes(type)) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'invalid_type' });
+    return;
+  }
+  if (!Number.isInteger(tx) || !Number.isInteger(ty) ||
+      tx < 0 || tx >= MAP_COLS || ty < 0 || ty >= MAP_ROWS) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'tile_blocked' });
+    return;
+  }
+
+  // Prix
+  const price = SHOP_BUILD_PRICES[type] || 0;
+  if ((player.money || 0) < price) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'not_enough_money' });
+    return;
+  }
+
+  // Vérifs de placement sur (tx, ty)
+  if (!canPlaceStructureAt(game, tx, ty, socket.id)) {
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'tile_blocked' });
+    return;
+  }
+
+  // Création structure
+  let s = null;
+  if (type === 'B') s = { type: 'B', hp: 200, placedBy: socket.id };
+  if (type === 'D') s = { type: 'D', hp: 200, placedBy: socket.id };
+  if (type === 'T') s = { type: 'T', hp: 500, lastShot: 0, placedBy: socket.id };
+  if (type === 't') s = { type: 't', hp: 200, lastShot: 0, placedBy: socket.id };
+
+  // Débit argent
+  player.money = (player.money || 0) - price;
+
+  // Pose
+  setStruct(game, tx, ty, s);
+
+  // Grâce de collision seulement si le joueur a posé sous lui
+  const cur = worldToTile(player.x, player.y);
+  if (cur.tx === tx && cur.ty === ty) {
+    player.graceTile = { tx, ty };
+  }
+
+  // Broadcast
+  io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
+  io.to(socket.id).emit('buildResult', { ok: true, type, tx, ty, newMoney: player.money });
+});
+
+
+
+
 
   socket.on('shoot', (data) => {
     if (!game.lobby.started) return;
@@ -888,12 +1020,22 @@ function movePlayers(game, deltaTime) {
     let dirX = (p.moveDir?.x || 0);
     let dirY = (p.moveDir?.y || 0);
     const len = Math.hypot(dirX, dirY);
-    if (len < 1e-6) continue;
+    if (len < 1e-6) {
+      // Même si le joueur ne bouge pas, on vérifie s’il a quitté la tuile de grâce.
+      if (p.graceTile) {
+        const { tx, ty } = worldToTile(p.x, p.y);
+        if (tx !== p.graceTile.tx || ty !== p.graceTile.ty) {
+          p.graceTile = null;
+        }
+      }
+      continue;
+    }
     dirX /= len; dirY /= len;
 
     const blockedForPlayer = (x, y) =>
       isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
-      circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForPlayer) ||
+      // ⚠️ tient compte d’une éventuelle tuile “grâce” pour CE joueur
+      circleBlockedByStructuresForPlayer(game, x, y, PLAYER_RADIUS, p) ||
       // ne traverse PAS les zombies
       Object.values(game.zombies).some(z =>
         entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
@@ -928,8 +1070,17 @@ function movePlayers(game, deltaTime) {
       }
       break;
     }
+
+    // ✅ Si le joueur a quitté la tuile de grâce, on réactive la collision définitivement
+    if (p.graceTile) {
+      const { tx, ty } = worldToTile(p.x, p.y);
+      if (tx !== p.graceTile.tx || ty !== p.graceTile.ty) {
+        p.graceTile = null;
+      }
+    }
   }
 }
+
 
 
 function moveBots(game, deltaTime) {
@@ -1445,6 +1596,8 @@ function fixHealth(p) {
   p.health = Math.max(0, Math.min(p.health, p.maxHealth));
 }
 
+
+
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
     const bullet = game.bullets[id];
@@ -1463,46 +1616,68 @@ function moveBullets(game, deltaTime) {
       continue;
     }
 
-    if (String(bullet.owner).startsWith('turret_')) {
-      // tourelles : s’arrêtent SEULEMENT sur les murs de la map
-      if (isCollision(game.map, bullet.x, bullet.y)) {
-        delete game.bullets[id];
-        continue;
-      }
-    } else {
-      // joueurs/bots : arrêt sur les murs de la map
-      if (isCollision(game.map, bullet.x, bullet.y)) {
-        delete game.bullets[id];
-        continue;
-      }
+    // collisions avec les murs de la MAP
+    if (isCollision(game.map, bullet.x, bullet.y)) {
+      delete game.bullets[id];
+      continue;
     }
 
     // collision avec zombies
     for (const zid in game.zombies) {
       const z = game.zombies[zid];
       if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
-        const stats = getPlayerStats(game.players[bullet.owner] || {});
-        const bulletDamage = stats.damage || BULLET_DAMAGE; // tir tourelle → fallback
+        // dégâts : joueurs/bots utilisent leur stat, tourelles utilisent BULLET_DAMAGE
+        const shooterIsPlayer = !!game.players[bullet.owner];
+        const statsShooter = shooterIsPlayer ? getPlayerStats(game.players[bullet.owner]) : {};
+        const bulletDamage = shooterIsPlayer ? (statsShooter.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
+
         z.hp -= bulletDamage;
 
-        if (z.hp <= 0) {
-          if (game.players[bullet.owner]) {
+        const killed = z.hp <= 0;
+        if (killed) {
+          // --- Attribution des gains d'argent ---
+          // 1) Si c'est un tir d'un joueur/bot : logique existante (kills + argent)
+          if (shooterIsPlayer) {
             game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
             io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+
             const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
-            const moneyEarned = Math.round(baseMoney * (stats.goldGain / 10));
+            const moneyEarned = Math.round(baseMoney * ((statsShooter.goldGain || 10) / 10));
             game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
             io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
+
+          } else if (typeof bullet.owner === 'string' && bullet.owner.startsWith('turret_')) {
+            // 2) Tir d'une tourelle : l'argent va au joueur qui a posé la tourelle (PAS de kill)
+            const tx = bullet.originTx, ty = bullet.originTy;
+            const s = getStruct(game, tx, ty);
+            if (s && (s.type === 'T' || s.type === 't') && s.placedBy) {
+              const ownerId = s.placedBy;
+              const ownerPlayer = game.players[ownerId];
+              if (ownerPlayer) {
+                const ownerStats = getPlayerStats(ownerPlayer);
+                const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+                const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
+                ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
+                io.to(ownerId).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
+              }
+            }
           }
+
+          // suppression du zombie tué
           delete game.zombies[zid];
         }
 
+        // La balle s'arrête sur impact
         delete game.bullets[id];
         break;
       }
     }
   }
 }
+
+
+
+
 
 // PATCH: log de fin de partie
 function checkGameEnd(game) {
