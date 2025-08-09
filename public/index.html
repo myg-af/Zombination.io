@@ -320,7 +320,7 @@ const UPGRADES = [
     desc: "Déplace-toi plus vite.",
     icon: "/icons/speed.svg",
     getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
-    baseValue: 60,
+    baseValue: 50,
     statLabel: "Vitesse",
     format: v => v + " px/s"
   },
@@ -406,7 +406,6 @@ const UPGRADES = [
 
 
 	updateRenderScale();
-    const PLAYER_SPEED_PER_SEC = 60;
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
@@ -831,8 +830,7 @@ function drawStructures() {
   for (const bid in bullets) {
     const b = bullets[bid];
     if (!b || typeof b.owner !== 'string') continue;
-    if (!b.owner.startsWith('turret_')) continue; // seulement les balles de tourelles
-
+    if (!b.owner.startsWith('turret_')) continue; // seulement balles de tourelles
     const key = b.owner; // ex: "turret_12_8"
     const t = b.createdAt || 0;
     if (!latestTurretAngles[key] || t > latestTurretAngles[key].t) {
@@ -877,11 +875,12 @@ function drawStructures() {
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-      } else if (s.type === 'T') {
-        // Tourelle : base
-        ctx.fillStyle = '#3aa6ff';
+      } else if (s.type === 'T' || s.type === 't') {
+        // Tourelle (T = grande/rouge, t = mini/bleue)
+        const isBig = s.type === 'T';
+        ctx.fillStyle = isBig ? '#d33' : '#3aa6ff';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-        ctx.strokeStyle = '#0b1b2a';
+        ctx.strokeStyle = isBig ? '#3a0b0b' : '#0b1b2a';
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
@@ -891,13 +890,10 @@ function drawStructures() {
         const cxW = col * TILE_SIZE + TILE_SIZE / 2;
         const cyW = row * TILE_SIZE + TILE_SIZE / 2;
 
-        // 🔧 NOUVEAU : angle = dernière balle tirée par cette tourelle, sinon fallback
+        // Angle du canon (dernière balle tirée, sinon target visible la plus proche)
         const turretKey = `turret_${col}_${row}`;
         let ang = latestTurretAngles[turretKey]?.ang;
-        if (ang == null) {
-          // Fallback : angle vers zombie visible le plus proche (comportement précédent)
-          ang = findTurretTargetAngle(cxW, cyW);
-        }
+        if (ang == null) ang = findTurretTargetAngle(cxW, cyW);
 
         // Canon
         const L = TILE_SIZE * 0.38;
@@ -905,12 +901,15 @@ function drawStructures() {
         ctx.moveTo(cx, cy);
         ctx.lineTo(cx + Math.cos(ang) * L, cy + Math.sin(ang) * L);
         ctx.stroke();
+
+        // ✅ Barre de vie (au-dessus de la tuile)
+        const maxHp = isBig ? 500 : 200;
+        // x = centre, y = légèrement au-dessus de la case
+        drawHealthBar(cx, y - 8, s.hp, maxHp, TILE_SIZE - 6, 5);
       }
     }
   }
 }
-
-
 
 
 

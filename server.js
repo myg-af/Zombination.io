@@ -40,7 +40,7 @@ const MAX_ACTIVE_ZOMBIES = 200;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
-  base: { maxHp: 100, speed: 60, regen: 0, damage: 5, goldGain: 10 },
+  base: { maxHp: 100, speed: 50, regen: 0, damage: 5, goldGain: 10 },
   regenPerLevel: 1,                 // 1 PV/sec/niveau
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
   priceStepAfterTier: 50            // après niv 5 → +50/niv
@@ -90,7 +90,7 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
     Array.from({ length: MAP_COLS }, () => null)
   );
 
-  // 2) Trouver les bornes du carré vide central (robuste même si la taille change)
+  // 2) Trouver les bornes du carré vide central
   const cR = Math.floor(MAP_ROWS / 2);
   const cC = Math.floor(MAP_COLS / 2);
 
@@ -100,10 +100,13 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
       const nr = r + dirR, nc = c + dirC;
       if (nr <= 0 || nr >= MAP_ROWS - 1 || nc <= 0 || nc >= MAP_COLS - 1) break;
       if (game.map[nr][nc] === 1) break;
-      r = nr; c = nc; k++;
+      r = nr;
+      c = nc;
+      k++;
     }
     return k;
   }
+
   const up = extent(-1, 0);
   const down = extent(1, 0);
   const left = extent(0, -1);
@@ -119,25 +122,36 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
 
   // 3) Murs barricades autour du carré
   for (let c = c0; c <= c1; c++) {
-    setStruct(game, c, r0, { type: 'B', hp: 100 });
-    setStruct(game, c, r1, { type: 'B', hp: 100 });
+    setStruct(game, c, r0, { type: 'B', hp: 200 });
+    setStruct(game, c, r1, { type: 'B', hp: 200 });
   }
   for (let r = r0; r <= r1; r++) {
-    setStruct(game, c0, r, { type: 'B', hp: 100 });
-    setStruct(game, c1, r, { type: 'B', hp: 100 });
+    setStruct(game, c0, r, { type: 'B', hp: 200 });
+    setStruct(game, c1, r, { type: 'B', hp: 200 });
   }
 
-  // 4) Portes au milieu de chaque côté
+  // 4) Portes au milieu de chaque côté (HP = 200)
   const midC = Math.floor((c0 + c1) / 2);
   const midR = Math.floor((r0 + r1) / 2);
-  setStruct(game, midC, r0, { type: 'D', hp: 100 });
-  setStruct(game, midC, r1, { type: 'D', hp: 100 });
-  setStruct(game, c0, midR, { type: 'D', hp: 100 });
-  setStruct(game, c1, midR, { type: 'D', hp: 100 });
+  setStruct(game, midC, r0, { type: 'D', hp: 200 });
+  setStruct(game, midC, r1, { type: 'D', hp: 200 });
+  setStruct(game, c0, midR, { type: 'D', hp: 200 });
+  setStruct(game, c1, midR, { type: 'D', hp: 200 });
 
-  // 5) ✅ Une seule tourelle au centre de la base des joueurs
-  //    (au centre géométrique de l’enceinte)
-  setStruct(game, midC, midR, { type: 'T', hp: 100, lastShot: 0 });
+  // 5) Grande tourelle au centre (HP = 500)
+  setStruct(game, midC, midR, { type: 'T', hp: 500, lastShot: 0 });
+
+  // 6) Mini-tourelles décalées d’1 case en diagonale (inset = 2)
+  const inset = 2;
+  const miniPositions = [
+    { tx: c0 + inset, ty: r0 + inset }, // haut-gauche
+    { tx: c1 - inset, ty: r0 + inset }, // haut-droit
+    { tx: c0 + inset, ty: r1 - inset }, // bas-gauche
+    { tx: c1 - inset, ty: r1 - inset }, // bas-droit
+  ];
+  for (const pos of miniPositions) {
+    setStruct(game, pos.tx, pos.ty, { type: 't', hp: 200, lastShot: 0 });
+  }
 }
 
 
@@ -170,9 +184,12 @@ function setStruct(game, tx, ty, s) {
   game.structures[ty][tx] = s;
 }
 function isSolidForPlayer(struct) {
-  // Joueurs traversent les portes, mais PAS barricades ni tourelles
-  return struct && ((struct.type === 'B' || struct.type === 'T') && struct.hp > 0);
+  // Joueurs traversent les portes, mais PAS barricades ni tourelles (grandes ou mini)
+  return struct && (
+    (struct.type === 'B' || struct.type === 'T' || struct.type === 't') && struct.hp > 0
+  );
 }
+
 
 function isSolidForZombie(struct) {
   // Zombies bloqués par portes ET barricades tant que HP > 0
@@ -195,6 +212,7 @@ function circleBlockedByStructures(game, x, y, radius, solidCheckFn) {
 }
 
 
+
 function tickTurrets(game) {
   if (!game.structures) return;
   const now = Date.now();
@@ -202,16 +220,19 @@ function tickTurrets(game) {
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
-      if (!s || s.type !== 'T' || s.hp <= 0) continue;
+      if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
 
       if (!s.lastShot) s.lastShot = 0;
-      if (now - s.lastShot < TURRET_SHOOT_INTERVAL) continue;
 
-      // centre de la tuile tourelle
+      // cadence différente selon le type
+      const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
+      if (now - s.lastShot < interval) continue;
+
+      // centre de la tuile
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // zombie le plus proche avec LOS libre
+      // cible zombie la plus proche avec LOS libre
       let best = null, bestDist = Infinity, bdx = 0, bdy = 0;
       for (const z of Object.values(game.zombies)) {
         const dx = z.x - cx;
@@ -232,13 +253,12 @@ function tickTurrets(game) {
       const bulletId = `turret_${tx}_${ty}_${now}_${Math.floor(Math.random()*100000)}`;
       game.bullets[bulletId] = {
         id: bulletId,
-        owner: `turret_${tx}_${ty}`,
+        owner: `turret_${tx}_${ty}`, // garde le même préfixe pour l’affichage client
         x: cx,
         y: cy,
         dx: dirx,
         dy: diry,
         createdAt: now,
-        // NEW: infos pour éviter l’auto-destruction au départ
         originTx: tx,
         originTy: ty,
         lifeFrames: 0
@@ -289,17 +309,25 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
 }
 
 
+// Remplace TOUT le corps de isCircleColliding par ceci (dans server.js)
 function isCircleColliding(map, x, y, radius) {
-  const points = 8;
-  for (let a = 0; a < points; a++) {
-    const angle = (2 * Math.PI * a) / points;
-    const px = x + Math.cos(angle) * radius;
-    const py = y + Math.sin(angle) * radius;
-    if (isCollision(map, px, py)) return true;
+  // Balayage intelligent : on ne teste que les tuiles qui peuvent toucher le cercle
+  const minTx = Math.max(0, Math.floor((x - radius) / TILE_SIZE));
+  const maxTx = Math.min(MAP_COLS - 1, Math.floor((x + radius) / TILE_SIZE));
+  const minTy = Math.max(0, Math.floor((y - radius) / TILE_SIZE));
+  const maxTy = Math.min(MAP_ROWS - 1, Math.floor((y + radius) / TILE_SIZE));
+
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      if (map[ty][tx] === 1) {
+        // Test précis cercle-vs-tuile (empêche de “couper les coins”)
+        if (circleIntersectsTile(x, y, radius, tx, ty)) return true;
+      }
+    }
   }
-  if (isCollision(map, x, y)) return true;
   return false;
 }
+
 
 function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   let spawnX, spawnY, border, tries = 0;
@@ -501,8 +529,9 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const PLAYER_SPEED_PER_SEC = 60;
 const TURRET_SHOOT_INTERVAL = 150;
+const MINI_TURRET_SHOOT_INTERVAL = 1000;
+
 
 function broadcastLobby(game) {
   io.to('lobby' + game.id).emit('lobbyUpdate', {
@@ -540,7 +569,7 @@ function spawnZombies(game, count) {
 
   const hp = 10 + (game.currentRound - 1);
   const baseSpeed = 40;
-  const speedIncreasePercent = 0.10;
+  const speedIncreasePercent = 0.05;
   const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
 
   let spawnedCount = 0;
@@ -789,7 +818,7 @@ io.on('connection', socket => {
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 60, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  const base = { maxHp: 100, speed: 50, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
@@ -828,65 +857,107 @@ const ATTACK_REACH_STRUCT = ZOMBIE_RADIUS + 2;    // contact (avant ~36)
 const ZOMBIE_ATTACK_COOLDOWN_MS = 300;            // avant 350
 const ZOMBIE_DAMAGE_BASE = 15;                                 // base dmg
 
-function movePlayers(game, deltaTime) {
-  for (const pid in game.players) {
-    const p = game.players[pid];
-    if (!p || !p.alive) continue;
-    if (!p.moveDir) p.moveDir = { x: 0, y: 0 };
 
-    const stats = getPlayerStats(p);
-    const move = stats.speed * deltaTime;
-
-    const dirX = p.moveDir.x;
-    const dirY = p.moveDir.y;
-    const len = Math.hypot(dirX, dirY);
-    if (len === 0) continue;
-
-    const nx = (dirX / len) * move;
-    const ny = (dirY / len) * move;
-
-    function blockedForPlayer(x, y) {
-      // Murs map
-      if (isCircleColliding(game.map, x, y, PLAYER_RADIUS)) return true;
-      // Structures solides pour joueur (barricades)
-      if (circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForPlayer)) return true;
-      // Pas sur les zombies
-      for (const zid in game.zombies) {
-        const z = game.zombies[zid];
-        if (!z) continue;
-        if (entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)) return true;
-      }
-      return false;
-    }
-
-    // 1) essai complet
-    if (!blockedForPlayer(p.x + nx, p.y + ny)) { p.x += nx; p.y += ny; continue; }
-
-    // 2) slide axe X
-    if (dirX !== 0) {
-      const stepX = Math.sign(dirX) * move;
-      if (!blockedForPlayer(p.x + stepX, p.y)) { p.x += stepX; continue; }
-    }
-    // 3) slide axe Y
-    if (dirY !== 0) {
-      const stepY = Math.sign(dirY) * move;
-      if (!blockedForPlayer(p.x, p.y + stepY)) { p.y += stepY; continue; }
+function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
+  // pousse doucement l’entity hors des zombies si chevauchement (spawn/lag)
+  for (const z of Object.values(game.zombies)) {
+    const dx = entity.x - z.x;
+    const dy = entity.y - z.y;
+    const d  = Math.hypot(dx, dy);
+    const minD = radiusSelf + ZOMBIE_RADIUS - 0.5; // petite marge anti-jitter
+    if (d > 0 && d < minD) {
+      const push = (minD - d) * 0.5;               // poussée douce
+      entity.x += (dx / d) * push;
+      entity.y += (dy / d) * push;
     }
   }
 }
 
+
+function movePlayers(game, deltaTime) {
+  const MAX_STEP = 6;   // px par micro-pas
+  const NUDGE    = 1.6; // petit décalage anti-coin
+
+  for (const pid in game.players) {
+    const p = game.players[pid];
+    if (!p || !p.alive) continue;
+
+    const stats = getPlayerStats(p);
+    const distToTravel = stats.speed * deltaTime;
+
+    let dirX = (p.moveDir?.x || 0);
+    let dirY = (p.moveDir?.y || 0);
+    const len = Math.hypot(dirX, dirY);
+    if (len < 1e-6) continue;
+    dirX /= len; dirY /= len;
+
+    const blockedForPlayer = (x, y) =>
+      isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
+      circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForPlayer) ||
+      // ne traverse PAS les zombies
+      Object.values(game.zombies).some(z =>
+        entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
+      );
+
+    let remaining = distToTravel;
+    while (remaining > 0.0001) {
+      const step = Math.min(remaining, MAX_STEP);
+      remaining -= step;
+
+      let nx = p.x + dirX * step;
+      let ny = p.y + dirY * step;
+
+      if (!blockedForPlayer(nx, ny)) {
+        p.x = nx; p.y = ny;
+        continue;
+      }
+
+      // slide X
+      nx = p.x + Math.sign(dirX) * step;
+      if (!blockedForPlayer(nx, p.y)) { p.x = nx; continue; }
+
+      // slide Y
+      ny = p.y + Math.sign(dirY) * step;
+      if (!blockedForPlayer(p.x, ny)) { p.y = ny; continue; }
+
+      // anti-coin léger
+      if (!blockedForPlayer(p.x + Math.sign(dirX) * NUDGE, p.y)) {
+        p.x += Math.sign(dirX) * NUDGE;
+      } else if (!blockedForPlayer(p.x, p.y + Math.sign(dirY) * NUDGE)) {
+        p.y += Math.sign(dirY) * NUDGE;
+      }
+      break;
+    }
+  }
+}
+
+
 function moveBots(game, deltaTime) {
+  const MAX_STEP = 6;
+  const NUDGE    = 1.6;
   const now = Date.now();
   const ZOMBIE_DETECTION_RADIUS = 400;
+  const shootingRange = 250;
 
-  // helper: true si le bot ne peut PAS aller à (x,y)
-  function blockedForBot(x, y) {
-    // murs de la map
-    if (isCircleColliding(game.map, x, y, PLAYER_RADIUS)) return true;
-    // structures solides pour le joueur/bot (barricades uniquement)
-    if (circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForPlayer)) return true;
-    return false;
-  }
+  // ❗ Les BOTS ne traversent plus les portes : on utilise isSolidForZombie (tout struct hp>0 est solide)
+  const blockedForBot = (x, y) =>
+    isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
+    circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForZombie) ||
+    Object.values(game.zombies).some(z =>
+      entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
+    );
+
+  const canShoot = (fromX, fromY, tx, ty) => {
+    const dx = tx - fromX, dy = ty - fromY;
+    const dist = Math.hypot(dx, dy);
+    const steps = Math.ceil(dist / TILE_SIZE);
+    for (let s = 1; s <= steps; s++) {
+      const ix = fromX + dx * (s/steps);
+      const iy = fromY + dy * (s/steps);
+      if (isCollision(game.map, ix, iy)) return false;
+    }
+    return true;
+  };
 
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
@@ -894,204 +965,155 @@ function moveBots(game, deltaTime) {
     const stats = getPlayerStats(bot);
     const speed = stats.speed;
 
-    // 1) zombie le plus proche
+    // zombie le plus proche
     let closestZombie = null, closestDist = Infinity;
     for (const z of Object.values(game.zombies)) {
-      const dx = z.x - bot.x, dy = z.y - bot.y, dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < closestDist) { closestDist = dist; closestZombie = z; }
+      const d = Math.hypot(z.x - bot.x, z.y - bot.y);
+      if (d < closestDist) { closestDist = d; closestZombie = z; }
     }
 
-    // 2) ERRANCE / PATROUILLE si rien à portée
-    if (!closestZombie || closestDist > ZOMBIE_DETECTION_RADIUS) {
-      // choisir une cible d’errance atteignable
-      if (!bot.wanderTarget || !bot.wanderPath || bot.wanderPath.length < 2 ||
-          (Math.abs(bot.x - bot.wanderTarget.x) < 12 && Math.abs(bot.y - bot.wanderTarget.y) < 12)) {
+    if (closestZombie && closestDist <= ZOMBIE_DETECTION_RADIUS) {
+      const dx = closestZombie.x - bot.x;
+      const dy = closestZombie.y - bot.y;
+      const dist = Math.hypot(dx, dy);
 
-        if (!bot.wanderTarget || Math.random() < 0.20) {
-          let wx, wy, tries = 0, path = null;
-          do {
-            wx = (Math.random() * (MAP_COLS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
-            wy = (Math.random() * (MAP_ROWS - 2) + 1) * TILE_SIZE + TILE_SIZE / 2;
-            path = findPath(game, bot.x, bot.y, wx, wy);
-            tries++;
-          } while ((isCollision(game.map, wx, wy) || !path || path.length < 2) && tries < 30);
+      // kite + tir si LOS
+      if (dist > 1e-6 && dist <= shootingRange && canShoot(bot.x, bot.y, closestZombie.x, closestZombie.y)) {
+        let dirx = -dx / dist, diry = -dy / dist;
+        let remaining = speed * deltaTime;
 
-          if (path && path.length >= 2) {
-            bot.wanderTarget = { x: wx, y: wy };
-            bot.wanderPath = path;
-            bot.wanderDir = null;
-          } else {
-            bot.wanderTarget = null;
-            bot.wanderPath = null;
+        while (remaining > 0.0001) {
+          const step = Math.min(remaining, MAX_STEP);
+          remaining -= step;
+
+          let nx = bot.x + dirx * step, ny = bot.y + diry * step;
+          if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; }
+          else {
+            nx = bot.x + Math.sign(dirx) * step;
+            if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
+
+            ny = bot.y + Math.sign(diry) * step;
+            if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
+
+            if (!blockedForBot(bot.x + Math.sign(dirx)*NUDGE, bot.y))
+              bot.x += Math.sign(dirx)*NUDGE;
+            else if (!blockedForBot(bot.x, bot.y + Math.sign(diry)*NUDGE))
+              bot.y += Math.sign(diry)*NUDGE;
+
+            break;
           }
-        } else {
-          // direction aléatoire fallback
-          const angle = Math.random() * 2 * Math.PI;
-          bot.wanderDir = { x: Math.cos(angle), y: Math.sin(angle) };
-          bot.wanderChangeTime = Date.now() + 800 + Math.random() * 1200;
-          bot.wanderTarget = null;
-          bot.wanderPath = null;
+        }
+
+        if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
+          bot.lastShot = now;
+          const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+          game.bullets[bulletId] = {
+            id: bulletId,
+            owner: botId,
+            x: bot.x,
+            y: bot.y,
+            dx: dx / dist,
+            dy: dy / dist,
+            createdAt: now,
+          };
+        }
+        continue;
+      }
+
+      // sinon : avancer (path si besoin)
+      let tx = closestZombie.x, ty = closestZombie.y;
+      const forwardBlocked = isCollision(game.map, bot.x + (dx/dist), bot.y + (dy/dist));
+      if (forwardBlocked) {
+        const path = findPath(game, bot.x, bot.y, tx, ty);
+        if (path && path.length > 1) {
+          const n = path[1];
+          tx = n.x * TILE_SIZE + TILE_SIZE / 2;
+          ty = n.y * TILE_SIZE + TILE_SIZE / 2;
         }
       }
 
-      // suivre le path si présent
-      if (bot.wanderTarget && bot.wanderPath && bot.wanderPath.length > 1) {
-        const nextNode = bot.wanderPath[1];
-        const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-        const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-        const dx = targetX - bot.x, dy = targetY - bot.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
+      let mvx = tx - bot.x, mvy = ty - bot.y;
+      const md = Math.hypot(mvx, mvy);
+      if (md > 1e-6) { mvx /= md; mvy /= md; }
 
-        if (dist > 8) {
-          const moveDist = speed * deltaTime * 0.7;
-          const nx = bot.x + (dx / dist) * moveDist;
-          const ny = bot.y + (dy / dist) * moveDist;
+      let remaining = speed * deltaTime;
+      while (remaining > 0.0001) {
+        const step = Math.min(remaining, MAX_STEP);
+        remaining -= step;
 
-          if (!blockedForBot(nx, ny)) {
-            bot.x = nx; bot.y = ny;
-            if (Math.abs(bot.x - targetX) < 4 && Math.abs(bot.y - targetY) < 4) {
-              bot.wanderPath.shift();
-            }
-          } else {
-            // coincé → reset errance
-            bot.wanderTarget = null;
-            bot.wanderPath = null;
-          }
-        } else {
-          bot.wanderTarget = null;
-          bot.wanderPath = null;
-        }
-      } else if (bot.wanderDir) {
-        const moveDist = speed * deltaTime * 0.7;
-        const nx = bot.x + bot.wanderDir.x * moveDist;
-        const ny = bot.y + bot.wanderDir.y * moveDist;
-        if (!blockedForBot(nx, ny)) {
-          bot.x = nx; bot.y = ny;
-        } else {
-          bot.wanderChangeTime = 0;
-        }
+        let nx = bot.x + mvx * step, ny = bot.y + mvy * step;
+        if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; continue; }
+
+        nx = bot.x + Math.sign(mvx) * step;
+        if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
+
+        ny = bot.y + Math.sign(mvy) * step;
+        if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
+
+        if (!blockedForBot(bot.x + Math.sign(mvx)*NUDGE, bot.y))
+          bot.x += Math.sign(mvx)*NUDGE;
+        else if (!blockedForBot(bot.x, bot.y + Math.sign(mvy)*NUDGE))
+          bot.y += Math.sign(mvy)*NUDGE;
+
+        break;
       }
-
-      bot.moveDir = { x: 0, y: 0 };
       continue;
     }
 
-    // 3) COMBAT : zombie repéré
-    const dx = closestZombie.x - bot.x;
-    const dy = closestZombie.y - bot.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-
-    // Les balles traversent murs/portes → on ne teste que la map pour la visée (comme avant)
-    function canShoot() {
-      const steps = Math.ceil(dist / TILE_SIZE);
-      for (let s = 1; s <= steps; s++) {
-        const ix = bot.x + (dx * s / steps);
-        const iy = bot.y + (dy * s / steps);
-        if (isCollision(game.map, ix, iy)) return false;
-      }
-      return true;
+    // errance
+    if (!bot.wanderDir || now > bot.wanderChangeTime) {
+      const a = Math.random() * Math.PI * 2;
+      bot.wanderDir = { x: Math.cos(a), y: Math.sin(a) };
+      bot.wanderChangeTime = now + 800 + Math.random() * 1200;
     }
 
-    const shootingRange = 250;
+    let tx = bot.x + bot.wanderDir.x * 100;
+    let ty = bot.y + bot.wanderDir.y * 100;
 
-    if (dist <= shootingRange && canShoot()) {
-      // reculer en tirant
-      const backMoveDist = speed * deltaTime;
-      const backDir = { x: -dx / dist, y: -dy / dist };
-      const backX = bot.x + backDir.x * backMoveDist;
-      const backY = bot.y + backDir.y * backMoveDist;
+    let dx = tx - bot.x, dy = ty - bot.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1e-6) { dx /= dist; dy /= dist; }
 
-      if (!blockedForBot(backX, backY)) {
-        bot.x = backX; bot.y = backY;
-      } else {
-        // pathfinding pour reculer si bloqué
-        const awayLength = 100;
-        const px = bot.x + backDir.x * awayLength;
-        const py = bot.y + backDir.y * awayLength;
-        const pathBack = findPath(game, bot.x, bot.y, px, py);
-        if (pathBack && pathBack.length > 1) {
-          const nextNode = pathBack[1];
-          const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-          const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-          const ndx = targetX - bot.x, ndy = targetY - bot.y;
-          const ndist = Math.sqrt(ndx*ndx + ndy*ndy);
-          if (ndist > 1) {
-            const nx = bot.x + (ndx / ndist) * backMoveDist;
-            const ny = bot.y + (ndy / ndist) * backMoveDist;
-            if (!blockedForBot(nx, ny)) {
-              bot.x = nx; bot.y = ny;
-            }
-          }
-        }
-      }
+    let remaining = speed * deltaTime;
+    while (remaining > 0.0001) {
+      const step = Math.min(remaining, MAX_STEP);
+      remaining -= step;
 
-      if (now - bot.lastShot > SHOOT_INTERVAL) {
-        bot.lastShot = now;
-        const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-        game.bullets[bulletId] = {
-          id: bulletId,
-          owner: botId,
-          x: bot.x,
-          y: bot.y,
-          dx: dx / dist,
-          dy: dy / dist,
-          createdAt: now,
-        };
-      }
-      bot.moveDir = { x: 0, y: 0 };
-    } else {
-      // avancer vers le zombie (direct si possible, sinon path)
-      let canGoDirect = true;
-      const steps = Math.ceil(dist / 6);
-      for (let s = 1; s < steps; s++) {
-        const tx = bot.x + dx * (s / steps);
-        const ty = bot.y + dy * (s / steps);
-        if (isCollision(game.map, tx, ty)) { // test LOS simple map
-          canGoDirect = false;
-          break;
-        }
-      }
+      let nx = bot.x + dx * step, ny = bot.y + dy * step;
+      if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; continue; }
 
-      let nx = bot.x, ny = bot.y;
-      if (canGoDirect && dist > 1) {
-        nx += (dx / dist) * speed * deltaTime;
-        ny += (dy / dist) * speed * deltaTime;
-      } else {
-        const path = findPath(game, bot.x, bot.y, closestZombie.x, closestZombie.y);
-        if (path && path.length > 1) {
-          const nextNode = path[1];
-          const targetX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-          const targetY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-          const ndx = targetX - bot.x, ndy = targetY - bot.y;
-          const ndist = Math.sqrt(ndx*ndx + ndy*ndy);
-          if (ndist > 1) {
-            nx += (ndx / ndist) * speed * deltaTime;
-            ny += (ndy / ndist) * speed * deltaTime;
-          }
-        }
-      }
+      nx = bot.x + Math.sign(dx) * step;
+      if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
 
-      if (!blockedForBot(nx, ny)) {
-        bot.x = nx; bot.y = ny;
-      }
+      ny = bot.y + Math.sign(dy) * step;
+      if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
 
-      bot.moveDir = { x: 0, y: 0 };
+      if (!blockedForBot(bot.x + Math.sign(dx)*NUDGE, bot.y))
+        bot.x += Math.sign(dx)*NUDGE;
+      else if (!blockedForBot(bot.x, bot.y + Math.sign(dy)*NUDGE))
+        bot.y += Math.sign(dy)*NUDGE;
+
+      break;
     }
   }
 }
 
 
 
+
 function moveZombies(game, deltaTime) {
-  // Prépare la liste des cibles potentielles (joueurs vivants + tourelles vivantes)
+  const MAX_STEP = 6;      // micro-pas (px)
+  const NUDGE    = 1.6;    // petit anti-coin
+  const now      = Date.now();
+
+  // cibles tourelles vivantes
   const turretTargets = [];
   if (game.structures) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
       for (let tx = 0; tx < MAP_COLS; tx++) {
         const s = getStruct(game, tx, ty);
-        if (s && s.type === 'T' && s.hp > 0) {
+        if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
           turretTargets.push({
-            kind: 'turret',
             x: tx * TILE_SIZE + TILE_SIZE / 2,
             y: ty * TILE_SIZE + TILE_SIZE / 2,
             tx, ty
@@ -1101,42 +1123,53 @@ function moveZombies(game, deltaTime) {
     }
   }
 
+  // helpers : bloque par murs/structures + JOUEURS, mais PAS par autres zombies
+  const collidesPlayerAt = (x, y) =>
+    Object.values(game.players).some(p =>
+      p && p.alive && entitiesCollide(x, y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 0)
+    );
+
+  const blockedForZombie = (x, y) =>
+    isCircleColliding(game.map, x, y, ZOMBIE_RADIUS) ||
+    circleBlockedByStructures(game, x, y, ZOMBIE_RADIUS, isSolidForZombie) ||
+    collidesPlayerAt(x, y); // <-- pas de collision zombie-zombie
+
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
 
-    // Cible = plus proche entre joueur vivant et tourelle
-    let target = null, bestDist = Infinity;
+    // 1) si le zombie vient d'attaquer, il reste IMMOBILE le temps du freeze
+    if (z.attackFreezeUntil && now < z.attackFreezeUntil) {
+      continue; // pas de déplacement ce tick
+    }
 
-    // joueurs
-    for (const pid in game.players) {
-      const p = game.players[pid];
+    // 2) choisir la cible (joueur vivant le + proche, sinon tourelle)
+    let target = null, bestDist = Infinity;
+    for (const p of Object.values(game.players)) {
       if (!p || !p.alive) continue;
       const d = Math.hypot(p.x - z.x, p.y - z.y);
-      if (d < bestDist) { bestDist = d; target = { kind:'player', x:p.x, y:p.y, pid }; }
+      if (d < bestDist) { bestDist = d; target = { x: p.x, y: p.y }; }
     }
-    // tourelles
     for (const t of turretTargets) {
       const d = Math.hypot(t.x - z.x, t.y - z.y);
-      if (d < bestDist) { bestDist = d; target = t; }
+      if (d < bestDist) { bestDist = d; target = { x: t.x, y: t.y }; }
     }
     if (!target) continue;
 
-    const oldX = z.x, oldY = z.y;
     const speed = z.speed || 40;
 
-    // Choix du point vers lequel avancer (LOS tient compte structures)
+    // 3) déterminer vers où marcher (LOS directe sinon pathfinding)
     let tx, ty, usingPath = false;
     if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
     } else {
       const needNewPath =
-        !z.path ||
-        !z.pathTarget ||
-        Math.abs((z.pathTarget.x || 0) - target.x) > 12 ||
-        Math.abs((z.pathTarget.y || 0) - target.y) > 12 ||
-        !Array.isArray(z.path) || z.path.length < 2 ||
-        z.pathStep == null || z.pathStep >= z.path.length;
+        !z.path || !z.pathTarget ||
+        Math.abs(z.pathTarget.x - target.x) > 12 ||
+        Math.abs(z.pathTarget.y - target.y) > 12 ||
+        z.path.length < 2 ||
+        z.pathStep == null ||
+        z.pathStep >= z.path.length;
 
       if (needNewPath) {
         z.path = findPath(game, z.x, z.y, target.x, target.y);
@@ -1145,85 +1178,71 @@ function moveZombies(game, deltaTime) {
       }
 
       if (z.path && z.path.length > z.pathStep) {
-        const nextNode = z.path[z.pathStep];
-        tx = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-        ty = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
+        const n = z.path[z.pathStep];
+        tx = n.x * TILE_SIZE + TILE_SIZE / 2;
+        ty = n.y * TILE_SIZE + TILE_SIZE / 2;
         usingPath = true;
       } else {
+        // petit jitter si aucun chemin
         const a = Math.random() * Math.PI * 2;
         tx = z.x + Math.cos(a) * 14;
         ty = z.y + Math.sin(a) * 14;
       }
     }
 
-    // Avancer
+    // 4) déplacement par micro-pas avec slides; bloqué par joueurs/obstacles seulement
     let dx = tx - z.x, dy = ty - z.y;
-    let dist = Math.hypot(dx, dy);
-    if (dist >= 0.001) {
-      const step = speed * deltaTime * (usingPath ? 0.8 : 1.0);
-      let stepX = (dx / dist) * step;
-      let stepY = (dy / dist) * step;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) continue;
+    dx /= dist; dy /= dist;
 
-      let nx = z.x + stepX;
-      let ny = z.y + stepY;
+    let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
 
-      const blockedMap = isCircleColliding(game.map, nx, ny, ZOMBIE_RADIUS);
-      const blockedStruct = circleBlockedByStructures(game, nx, ny, ZOMBIE_RADIUS, isSolidForZombie);
+    while (remaining > 0.0001) {
+      const step = Math.min(remaining, MAX_STEP);
+      remaining -= step;
 
-      if (blockedMap || blockedStruct) {
-        let moved = false;
-        const nxOnly = z.x + stepX;
-        const nyOnly = z.y + stepY;
+      let nx = z.x + dx * step;
+      let ny = z.y + dy * step;
 
-        if (!isCircleColliding(game.map, nxOnly, z.y, ZOMBIE_RADIUS) &&
-            !circleBlockedByStructures(game, nxOnly, z.y, ZOMBIE_RADIUS, isSolidForZombie)) {
-          z.x = nxOnly; moved = true;
-        }
-        if (!isCircleColliding(game.map, z.x, nyOnly, ZOMBIE_RADIUS) &&
-            !circleBlockedByStructures(game, z.x, nyOnly, ZOMBIE_RADIUS, isSolidForZombie)) {
-          z.y = nyOnly; moved = true;
-        }
-        if (!moved) {
-          z.path = null; z.pathStep = 1; z.pathTarget = null;
-          z.x += (Math.random() - 0.5) * 2.4;
-          z.y += (Math.random() - 0.5) * 2.4;
-        }
-      } else {
-        // éviter de rentrer dans un joueur
-        let hitPlayer = false;
-        for (const pid in game.players) {
-          const p = game.players[pid];
-          if (!p || !p.alive) continue;
-          if (entitiesCollide(nx, ny, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 1.5)) {
-            hitPlayer = true; break;
-          }
-        }
-        if (!hitPlayer) { z.x = nx; z.y = ny; }
+      if (!blockedForZombie(nx, ny)) {
+        z.x = nx; z.y = ny;
+        continue;
       }
 
-      if (usingPath && z.path && z.path.length > z.pathStep) {
-        const nextNode = z.path[z.pathStep];
-        const nodeX = nextNode.x * TILE_SIZE + TILE_SIZE / 2;
-        const nodeY = nextNode.y * TILE_SIZE + TILE_SIZE / 2;
-        if (Math.abs(z.x - nodeX) < 3 && Math.abs(z.y - nodeY) < 3) {
-          z.pathStep++;
-        }
-      }
+      // slide X
+      nx = z.x + Math.sign(dx) * step;
+      if (!blockedForZombie(nx, z.y)) { z.x = nx; continue; }
 
-      if (Math.abs(z.x - oldX) < 0.15 && Math.abs(z.y - oldY) < 0.15) {
-        z.blockedCount = (z.blockedCount || 0) + 1;
-      } else {
-        z.blockedCount = 0;
+      // slide Y
+      ny = z.y + Math.sign(dy) * step;
+      if (!blockedForZombie(z.x, ny)) { z.y = ny; continue; }
+
+      // anti-coin léger
+      if (!blockedForZombie(z.x + Math.sign(dx) * NUDGE, z.y)) {
+        z.x += Math.sign(dx) * NUDGE;
+      } else if (!blockedForZombie(z.x, z.y + Math.sign(dy) * NUDGE)) {
+        z.y += Math.sign(dy) * NUDGE;
       }
-      if (z.blockedCount > 6) {
-        z.path = null; z.pathStep = 1; z.pathTarget = null;
-        z.x += (Math.random() - 0.5) * 2.4;
-        z.y += (Math.random() - 0.5) * 2.4;
-        z.blockedCount = 0;
+      break;
+    }
+
+    // progression du path
+    if (usingPath && z.path && z.path.length > z.pathStep) {
+      const n = z.path[z.pathStep];
+      const nodeX = n.x * TILE_SIZE + TILE_SIZE / 2;
+      const nodeY = n.y * TILE_SIZE + TILE_SIZE / 2;
+      if (Math.abs(z.x - nodeX) < 4 && Math.abs(z.y - nodeY) < 4) {
+        z.pathStep++;
       }
     }
   }
 }
+
+
+
+
+
 
 // Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
@@ -1240,13 +1259,13 @@ function handleZombieAttacks(game) {
   const now = Date.now();
   let structuresChanged = false;
 
-  // Cibles tourelles vivantes (pour dégâts + priorité de cible)
+  // Cibles tourelles vivantes (coords et cases)
   const turretTargets = [];
   if (game.structures) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
       for (let tx = 0; tx < MAP_COLS; tx++) {
         const s = getStruct(game, tx, ty);
-        if (s && s.type === 'T' && s.hp > 0) {
+        if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
           turretTargets.push({
             x: tx * TILE_SIZE + TILE_SIZE / 2,
             y: ty * TILE_SIZE + TILE_SIZE / 2,
@@ -1264,7 +1283,7 @@ function handleZombieAttacks(game) {
 
     let hasAttackedAny = false;
 
-    // ===== 1) attaquer les joueurs au contact
+    // 1) Attaques sur joueurs au contact
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
@@ -1274,8 +1293,9 @@ function handleZombieAttacks(game) {
         if (!z.lastAttackTimes[pid]) z.lastAttackTimes[pid] = 0;
         if (now - z.lastAttackTimes[pid] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
           z.lastAttackTimes[pid] = now;
+
           fixHealth(p);
-          const DAMAGE = ZOMBIE_DAMAGE_BASE + Math.floor(game.currentRound / 2);
+          const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
           p.health = Math.max(0, Math.round(p.health - DAMAGE));
           if (p.health <= 0) {
             p.health = 0;
@@ -1286,12 +1306,15 @@ function handleZombieAttacks(game) {
           } else {
             io.to(pid).emit('healthUpdate', p.health);
           }
+
+          // <-- gèle le zombie qui vient de frapper
+          z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
         }
       }
     }
 
-    // ===== 1bis) attaquer les tourelles au contact
+    // 1bis) Attaques sur tourelles au contact
     for (const t of turretTargets) {
       const dist = Math.hypot(z.x - t.x, z.y - t.y);
       if (dist <= ATTACK_REACH_PLAYER) {
@@ -1300,42 +1323,38 @@ function handleZombieAttacks(game) {
         if (now - z.lastAttackTimes[key] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
           z.lastAttackTimes[key] = now;
           const s = getStruct(game, t.tx, t.ty);
-          if (s && s.type === 'T' && s.hp > 0) {
-            const DAMAGE = ZOMBIE_DAMAGE_BASE + Math.floor(game.currentRound / 2);
+          if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
+            const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
             s.hp = Math.max(0, s.hp - DAMAGE);
             if (s.hp <= 0) {
               setStruct(game, t.tx, t.ty, null);
               structuresChanged = true;
             }
           }
+          // <-- gèle le zombie qui vient de frapper
+          z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
         }
       }
     }
 
-    // ===== 2) attaquer les structures si collé (contact géométrique), 
-    // même si la LOS vers la "meilleure" cible n'est pas bloquée.
+    // 2) Attaques sur structures en contact (3x3 autour)
     const { tx: ztx, ty: zty } = worldToTile(z.x, z.y);
-    const DAMAGE = ZOMBIE_DAMAGE_BASE + Math.floor(game.currentRound / 2);
+    const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
 
-    // On regarde 3x3 autour + la tuile actuelle
     const candidates = [];
     for (let oy = -1; oy <= 1; oy++) {
       for (let ox = -1; ox <= 1; ox++) {
         const ntx = ztx + ox, nty = zty + oy;
         const s = getStruct(game, ntx, nty);
         if (!s || s.hp <= 0) continue;
-
-        // Test précis : le cercle du zombie "touche" la tuile
         if (circleIntersectsTile(z.x, z.y, ATTACK_REACH_STRUCT, ntx, nty)) {
           candidates.push({ tx: ntx, ty: nty, s });
         }
       }
     }
 
-    // Si on est collé à quelque chose de solide, on tape.
     if (candidates.length > 0) {
-      // petit round-robin random pour éviter qu'ils tapent tous EXACTEMENT la même tuile
       const tgt = candidates[Math.floor(Math.random() * candidates.length)];
       const key = `struct_${tgt.tx}_${tgt.ty}`;
       if (!z.lastAttackTimes[key]) z.lastAttackTimes[key] = 0;
@@ -1347,12 +1366,12 @@ function handleZombieAttacks(game) {
           setStruct(game, tgt.tx, tgt.ty, null);
           structuresChanged = true;
         }
+        // <-- gèle le zombie qui vient de frapper
+        z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
         hasAttackedAny = true;
       }
     } else {
-      // ===== 3) fallback : si LOS vers la cible la plus proche est bloquée, 
-      // taper une structure proche (ancienne logique, utile si pas "collé" mais quasi).
-      // cible la plus proche (joueurs + tourelles)
+      // 3) Fallback : si LOS vers meilleure cible est bloquée, taper une structure proche
       let best = null, bestDist = Infinity;
       for (const pid in game.players) {
         const p = game.players[pid];
@@ -1380,23 +1399,25 @@ function handleZombieAttacks(game) {
 
         if (nearTiles.length > 0) {
           const tgt = nearTiles[Math.floor(Math.random() * nearTiles.length)];
-          const key = `struct_${tgt.tx}_${tgt.ty}`;
-          if (!z.lastAttackTimes[key]) z.lastAttackTimes[key] = 0;
+          const key2 = `struct_${tgt.tx}_${tgt.ty}`;
+          if (!z.lastAttackTimes[key2]) z.lastAttackTimes[key2] = 0;
 
-          if (now - z.lastAttackTimes[key] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
-            z.lastAttackTimes[key] = now;
+          if (now - z.lastAttackTimes[key2] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
+            z.lastAttackTimes[key2] = now;
             tgt.s.hp = Math.max(0, tgt.s.hp - DAMAGE);
             if (tgt.s.hp <= 0) {
               setStruct(game, tgt.tx, tgt.ty, null);
               structuresChanged = true;
             }
+            // <-- gèle le zombie qui vient de frapper
+            z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
             hasAttackedAny = true;
           }
         }
       }
     }
 
-    // Nettoyage cooldowns périmés
+    // nettoyage optionnel de vieux cooldowns d’attaque
     if (!hasAttackedAny) {
       for (const k in z.lastAttackTimes) {
         if (z.lastAttackTimes[k] && now - z.lastAttackTimes[k] > 2000) {
@@ -1414,10 +1435,7 @@ function handleZombieAttacks(game) {
 
 
 
-
-
 function fixHealth(p) {
-  // Empêche NaN et bornes bizarres (y compris infinis)
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
     p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
   }
@@ -1426,8 +1444,6 @@ function fixHealth(p) {
   }
   p.health = Math.max(0, Math.min(p.health, p.maxHealth));
 }
-
-
 
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
@@ -1448,28 +1464,25 @@ function moveBullets(game, deltaTime) {
     }
 
     if (String(bullet.owner).startsWith('turret_')) {
-      // Tourelles : s’arrêtent SEULEMENT sur les murs de la map
+      // tourelles : s’arrêtent SEULEMENT sur les murs de la map
       if (isCollision(game.map, bullet.x, bullet.y)) {
         delete game.bullets[id];
         continue;
       }
-      // Pas de blocage sur les autres structures (barricades, portes, tourelles)
-
     } else {
-      // Joueurs/Bots : arrêt sur les murs de la map
+      // joueurs/bots : arrêt sur les murs de la map
       if (isCollision(game.map, bullet.x, bullet.y)) {
         delete game.bullets[id];
         continue;
       }
-      // Tu peux ajouter ici un test pour stopper sur barricades si tu veux
     }
 
-    // collision zombies
+    // collision avec zombies
     for (const zid in game.zombies) {
       const z = game.zombies[zid];
       if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
         const stats = getPlayerStats(game.players[bullet.owner] || {});
-        const bulletDamage = stats.damage || BULLET_DAMAGE; // si tir tourelle → fallback
+        const bulletDamage = stats.damage || BULLET_DAMAGE; // tir tourelle → fallback
         z.hp -= bulletDamage;
 
         if (z.hp <= 0) {
@@ -1491,25 +1504,20 @@ function moveBullets(game, deltaTime) {
   }
 }
 
-
-
-
-
 // PATCH: log de fin de partie
 function checkGameEnd(game) {
-  const allDead = Object.values(game.players).filter(p=>p.alive).length === 0;
+  const allDead = Object.values(game.players).filter(p => p.alive).length === 0;
   if (allDead && game.lobby.started) {
     console.log(`---- Partie terminée, vague atteinte : ${game.currentRound}`);
     game.lobby.started = false;
     stopSpawning(game);
-    // Optionnel: reset lobby ?
     setTimeout(() => {
-      // Reset la partie pour lobby
       game.lobby.players = {};
       broadcastLobby(game);
     }, 3000);
   }
 }
+
 
 function gameLoop() {
   try {
@@ -1518,29 +1526,39 @@ function gameLoop() {
       const deltaTime = 1 / 30;
 
       movePlayers(game, deltaTime);
-      moveBots(game, deltaTime);    // <-- Ajout ici pour gérer les bots
+      moveBots(game, deltaTime);
       moveZombies(game, deltaTime);
-	  tickTurrets(game);
+      tickTurrets(game);
       moveBullets(game, deltaTime);
-	  handleZombieAttacks(game);
+      handleZombieAttacks(game);
 
+      // --- PUSH ÉTAT TEMPS-RÉEL ---
+      // 1) Zombies & balles (déjà fait avant)
       io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
       io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
+
+      // 2) Vague courante (déjà fait avant)
       io.to('lobby' + game.id).emit('currentRound', game.currentRound);
+
+      // 3) HP joueurs (déjà fait avant)
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
 
-	for (const pid in game.players) {
-	  const p = game.players[pid];
-	  if (!p || !p.alive) continue;
-	  const stats = getPlayerStats(p);
-		if (stats.regen > 0 && p.health < p.maxHealth) {
-		  p.health += stats.regen * (1/30);
-		  fixHealth(p);
-		  io.to(pid).emit('healthUpdate', p.health);
-		}
+      // 4) ✅ NOUVEAU : push systématique des structures/tourelles (HP inclus)
+      io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
 
-	}
+      // Regen joueurs
+      for (const pid in game.players) {
+        const p = game.players[pid];
+        if (!p || !p.alive) continue;
+        const stats = getPlayerStats(p);
+        if (stats.regen > 0 && p.health < p.maxHealth) {
+          p.health += stats.regen * (1 / 30);
+          fixHealth(p);
+          io.to(pid).emit('healthUpdate', p.health);
+        }
+      }
 
+      checkWaveEnd(game);
       checkGameEnd(game);
     }
   } catch (err) {
@@ -1548,6 +1566,8 @@ function gameLoop() {
   }
   setTimeout(gameLoop, 1000 / 30);
 }
+
+
 
 gameLoop();
 
