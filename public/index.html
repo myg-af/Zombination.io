@@ -253,7 +253,62 @@
   <div id="waveMessage"></div>
   <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
+  
+  
+    <!-- === Mobile Build Buttons === -->
+<div id="mobile-build" class="mobile-build">
+  <button class="mb-btn" data-type="B" aria-label="Construire Mur (B)">Mur</button>
+  <button class="mb-btn" data-type="D" aria-label="Construire Porte (D)">Porte</button>
+  <button class="mb-btn" data-type="t" aria-label="Construire Mini-Tourelle (t)">Mini-T</button>
+  <button class="mb-btn" data-type="T" aria-label="Construire Grande Tourelle (T)">Tourelle</button>
+</div>
+
+<style>
+  /* Mobile only */
+  @media (max-width: 768px) {
+    .mobile-build {
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: repeat(4, auto);
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.35);
+      backdrop-filter: blur(6px);
+      border-radius: 14px;
+      z-index: 9999;
+      user-select: none;
+    }
+    .mobile-build .mb-btn {
+      padding: 10px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      background: #222;
+      color: #fff;
+    }
+    .mobile-build .mb-btn:active {
+      transform: translateY(1px);
+    }
+  }
+
+  /* Desktop: hide */
+  @media (min-width: 769px) {
+    .mobile-build { display: none; }
+  }
+</style>
+<!-- === /Mobile Build Buttons === -->
+  
+  
+  
   <script>
+  
+
+
+
   window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
     // --- LANG/LOBBY ---
     const LANGS = [
@@ -1731,9 +1786,51 @@ function renderShopUpgrades() {
 		setTimeout(() => { setupJoysticks(); positionShopUI(); }, 200);
 	  });
 	}
+(() => {
+  const container = document.getElementById('mobile-build');
+  if (!container) return;
 
+  const buttons = container.querySelectorAll('.mb-btn');
 
+  function setBuildMode(type) {
+    // Toggle si on reclique le même type
+    if (buildMode === type) {
+      buildMode = null;
+      buildHover = { tx: -1, ty: -1 };
+      return;
+    }
+
+    // Vérif argent (évite de passer en mode si pas assez d'argent)
+    const price = (STRUCTURE_PRICES && STRUCTURE_PRICES[type]) ?? Infinity;
+    if (myMoney < price) {
+      if (navigator.vibrate) try { navigator.vibrate(60); } catch {}
+      return;
+    }
+
+    buildMode = type;
+    // reset survol
+    buildHover = { tx: -1, ty: -1 };
+  }
+
+  function handleTap(type, e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    setBuildMode(type);
+  }
+
+  buttons.forEach(btn => {
+    const type = btn.getAttribute('data-type');
+    // Click / Pointer / Touch : on capte tous les cas
+    btn.addEventListener('click',       e => handleTap(type, e));
+    btn.addEventListener('pointerdown', e => handleTap(type, e), { passive: false });
+    btn.addEventListener('touchstart',  e => handleTap(type, e), { passive: false });
+  });
+})();
 	
   </script>
+  
+  
+
+
+
 </body>
 </html>
