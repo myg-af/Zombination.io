@@ -1294,6 +1294,30 @@ canvas.addEventListener('pointermove', (e) => {
 }, { passive: true });
 
 
+// Survol mobile pour l’aperçu de placement
+canvas.addEventListener('touchmove', (e) => {
+  if (!buildMode) return;
+  const t = e.changedTouches && e.changedTouches[0];
+  if (!t) return;
+  const { tx, ty } = screenToWorldTile(t.clientX, t.clientY);
+  buildHover.tx = tx; 
+  buildHover.ty = ty;
+}, { passive: true });
+
+
+
+// ---- Placement sur mobile (touch) ----
+canvas.addEventListener('touchstart', (e) => {
+  if (!buildMode) return;
+  const t = e.changedTouches && e.changedTouches[0];
+  if (!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  tryPlaceStructureAtCursor(t.clientX, t.clientY);
+  mouseDown = false;
+}, { passive: false });
+
+
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!buildMode) return;
