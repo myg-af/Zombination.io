@@ -493,7 +493,7 @@ const UPGRADES = [
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
 // --- Interpolation helpers (client smoothing) ---
 const SMOOTH_MS_ZB = 80;   // zombies/bullets ~80ms
-const SMOOTH_MS_P   = 140; // autres joueurs ~140ms
+const SMOOTH_MS_P   = 220; // autres joueurs ~140ms
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
@@ -1151,13 +1151,8 @@ function drawPlayers() {
 }
 
 
-
-
 function drawZombies() {
   const now = performance.now();
-
-  // Prépare l’état commun
-  ctx.fillStyle = 'red';
 
   for (const id in zombies) {
     const z = zombies[id];
@@ -1166,16 +1161,19 @@ function drawZombies() {
     const screenX = pos.x - cameraX;
     const screenY = pos.y - cameraY;
 
-    // Dessin du cercle via Path2D + translate local
+    // Couleur zombie : toujours rouge
     ctx.save();
     ctx.translate(screenX, screenY);
+    ctx.fillStyle = 'red';
     ctx.fill(ZOMBIE_CIRCLE);
     ctx.restore();
 
-    // Barre de PV (fonction existante)
+    // Barre de PV au-dessus du zombie
     drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
   }
 }
+
+
 
 
 function drawBullets() {
