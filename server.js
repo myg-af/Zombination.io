@@ -1760,7 +1760,7 @@ if (nowGlobal - game._lastBroadcastAt >= BROADCAST_INTERVAL_MS) {
   io.volatile.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
   io.volatile.to('lobby' + game.id).emit('currentRound', game.currentRound);
   io.volatile.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-  io.volatile.to('lobby' + game.id).emit('playersUpdate', game.players);
+	io.to('lobby' + game.id).emit('playersUpdate', game.players);
   // ⚠️ Pas de structuresUpdate ici : elles sont déjà envoyées quand ça change.
 }
 
