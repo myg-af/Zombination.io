@@ -1250,9 +1250,6 @@ function moveBots(game, deltaTime) {
 }
 
 
-
-
-
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;      // micro-pas (px)
   const BASE_NUDGE = 1.6;  // anti-coin normal
@@ -1285,6 +1282,12 @@ function moveZombies(game, deltaTime) {
     isCircleColliding(game.map, x, y, r) ||
     circleBlockedByStructures(game, x, y, r, isSolidForZombie) ||
     collidesPlayerAtR(x, y, r); // <-- pas de collision zombie-zombie
+
+  // petite fonction de rotation 2D
+  const rotated = (vx, vy, rad) => {
+    const c = Math.cos(rad), s = Math.sin(rad);
+    return { x: vx * c - vy * s, y: vx * s + vy * c };
+  };
 
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
@@ -1375,7 +1378,7 @@ function moveZombies(game, deltaTime) {
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
-    // 5) watchdog anti-bloqué (étape 2)
+    // 5) watchdog anti-bloqué
     if (now - z._lastTrackAt >= 450) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
@@ -1396,7 +1399,7 @@ function moveZombies(game, deltaTime) {
       }
     }
 
-    // 6) “wall-follow” doux pendant l’unstuck (étape 2)
+    // 6) “wall-follow” doux pendant l’unstuck
     if (now < z._unstuckUntil) {
       const side = z._wallSide || 1;
       const px = side * (-dy);
@@ -1411,7 +1414,7 @@ function moveZombies(game, deltaTime) {
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
     const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
 
-    // ✅ Étape 4 : rayon collision temporairement réduit de 1 px pendant l’unstuck
+    // rayon collision temporairement réduit de 1 px pendant l’unstuck
     const radiusNow = (now < z._unstuckUntil) ? Math.max(1, ZOMBIE_RADIUS - 1) : ZOMBIE_RADIUS;
 
     // réinitialise le compteur de blocage local au début de l’itération
@@ -1450,6 +1453,39 @@ function moveZombies(game, deltaTime) {
             } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
               z.y += Math.sign(dy) * NUDGE;
               advanced = true;
+            } else {
+              // tentative 5 : direction Tournée (±20°) pour contourner les coins
+              const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
+              let r1 = rotated(dx, dy, turn);
+              nx = z.x + r1.x * step; ny = z.y + r1.y * step;
+              if (!blockedAt(nx, ny, radiusNow)) {
+                z.x = nx; z.y = ny;
+                advanced = true;
+              } else {
+                let r2 = rotated(dx, dy, -turn);
+                nx = z.x + r2.x * step; ny = z.y + r2.y * step;
+                if (!blockedAt(nx, ny, radiusNow)) {
+                  z.x = nx; z.y = ny;
+                  advanced = true;
+                } else {
+                  // 🔥 ESCALADE SUPPLÉMENTAIRE : si toujours bloqué, tente ±45° (pas 80%)
+                  const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
+                  const stepStrong = step * 0.8;
+                  let r3 = rotated(dx, dy, turnStrong);
+                  nx = z.x + r3.x * stepStrong; ny = z.y + r3.y * stepStrong;
+                  if (!blockedAt(nx, ny, radiusNow)) {
+                    z.x = nx; z.y = ny;
+                    advanced = true;
+                  } else {
+                    let r4 = rotated(dx, dy, -turnStrong);
+                    nx = z.x + r4.x * stepStrong; ny = z.y + r4.y * stepStrong;
+                    if (!blockedAt(nx, ny, radiusNow)) {
+                      z.x = nx; z.y = ny;
+                      advanced = true;
+                    }
+                  }
+                }
+              }
             }
           }
         }
@@ -1460,7 +1496,7 @@ function moveZombies(game, deltaTime) {
         continue;
       }
 
-      // === Micro-repath immédiat sur blocage local (étape 3) ===
+      // === Micro-repath immédiat sur blocage local ===
       z._localBlockStrikes++;
 
       if (z._localBlockStrikes >= 2) {
