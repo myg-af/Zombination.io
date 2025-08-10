@@ -19,9 +19,10 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
-  perMessageDeflate: { threshold: 1024 },
-  transports: ['websocket'] // optionnel, si ton client le supporte
+  perMessageDeflate: { threshold: 1024 }
+  // transports retiré pour autoriser le fallback (polling + websocket)
 });
+
 
 const {
   MAP_ROWS,
@@ -613,25 +614,51 @@ function broadcastLobby(game) {
   });
 }
 
+
 function startLobbyTimer(game) {
   if (game.lobby.timer) return;
-  game.lobby.timeLeft = LOBBY_TIME / 1000;
+
+  game.lobby.timeLeft = Math.floor(LOBBY_TIME / 1000); // ← 5 sec si LOBBY_TIME = 5000
   game.lobby.started = false;
-  game.lobby.timer = setInterval(() => {
+
+  // Envoie l’état initial au client
+  broadcastLobby(game);
+
+  const tick = () => {
     if (game.lobby.started) return;
-    game.lobby.timeLeft--;
-    broadcastLobby(game);
-    const readyPlayers = Object.entries(game.lobby.players).filter(([sid, p]) => p.ready);
-    if ((readyPlayers.length >= MAX_PLAYERS) || game.lobby.timeLeft <= 0) {
-      if (readyPlayers.length > 0) {
-        game.lobby.started = true;
-        clearInterval(game.lobby.timer);
-        game.lobby.timer = null;
-        launchGame(game, readyPlayers);
-      }
+
+    const playersArr = Object.entries(game.lobby.players);
+    const readyPlayers = playersArr.filter(([_, p]) => p && p.ready);
+    const totalPlayers = playersArr.length;
+
+    // Démarrage immédiat si tous les présents sont prêts (et qu'il y en a au moins 1)
+    if (readyPlayers.length > 0 && readyPlayers.length === totalPlayers) {
+      game.lobby.started = true;
+      clearInterval(game.lobby.timer);
+      game.lobby.timer = null;
+      launchGame(game, readyPlayers);
+      return;
     }
-  }, 1000);
+
+    // Décrément du compte à rebours (5 → 0)
+    game.lobby.timeLeft = Math.max(0, game.lobby.timeLeft - 1);
+    broadcastLobby(game);
+
+    // À 0, on lance si au moins 1 joueur est prêt
+    if (game.lobby.timeLeft <= 0 && readyPlayers.length > 0) {
+      game.lobby.started = true;
+      clearInterval(game.lobby.timer);
+      game.lobby.timer = null;
+      launchGame(game, readyPlayers);
+    }
+  };
+
+  game.lobby.timer = setInterval(tick, 1000);
 }
+
+
+
+
 
 function spawnZombies(game, count) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
