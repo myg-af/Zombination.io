@@ -1252,10 +1252,11 @@ function moveBots(game, deltaTime) {
 
 
 
+
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;      // micro-pas (px)
-  const NUDGE    = 1.6;    // petit anti-coin
-  const now      = Date.now();
+  const BASE_NUDGE = 1.6;  // anti-coin normal
+  const now = Date.now();
 
   // cibles tourelles vivantes
   const turretTargets = [];
@@ -1274,23 +1275,41 @@ function moveZombies(game, deltaTime) {
     }
   }
 
-  // helpers : bloque par murs/structures + JOUEURS, mais PAS par autres zombies
-  const collidesPlayerAt = (x, y) =>
+  // --- Helpers avec rayon paramétrable (pour réduire le rayon en "unstuck") ---
+  const collidesPlayerAtR = (x, y, r) =>
     Object.values(game.players).some(p =>
-      p && p.alive && entitiesCollide(x, y, ZOMBIE_RADIUS, p.x, p.y, PLAYER_RADIUS, 0)
+      p && p.alive && entitiesCollide(x, y, r, p.x, p.y, PLAYER_RADIUS, 0)
     );
 
-  const blockedForZombie = (x, y) =>
-    isCircleColliding(game.map, x, y, ZOMBIE_RADIUS) ||
-    circleBlockedByStructures(game, x, y, ZOMBIE_RADIUS, isSolidForZombie) ||
-    collidesPlayerAt(x, y); // <-- pas de collision zombie-zombie
+  const blockedAt = (x, y, r) =>
+    isCircleColliding(game.map, x, y, r) ||
+    circleBlockedByStructures(game, x, y, r, isSolidForZombie) ||
+    collidesPlayerAtR(x, y, r); // <-- pas de collision zombie-zombie
 
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
 
-    // 1) si le zombie vient d'attaquer, il reste IMMOBILE le temps du freeze
+    // 0) init états “anti-bloqué”
+    if (z._lastTrackAt == null) {
+      z._lastTrackAt = now;
+      z._lastTrackX = z.x;
+      z._lastTrackY = z.y;
+      z._stuckAccum = 0;
+      z._unstuckUntil = 0;
+      z._wallSide = (Math.random() < 0.5 ? -1 : 1); // gauche/droite
+      z._localBlockStrikes = 0;                      // blocage local (étape 3)
+    }
+
+    // 1) freeze après attaque
     if (z.attackFreezeUntil && now < z.attackFreezeUntil) {
-      continue; // pas de déplacement ce tick
+      if (now - z._lastTrackAt >= 450) {
+        z._lastTrackAt = now;
+        z._lastTrackX = z.x;
+        z._lastTrackY = z.y;
+        z._stuckAccum = 0;
+        z._localBlockStrikes = 0;
+      }
+      continue;
     }
 
     // 2) choisir la cible (joueur vivant le + proche, sinon tourelle)
@@ -1308,13 +1327,21 @@ function moveZombies(game, deltaTime) {
 
     const speed = z.speed || 40;
 
-    // 3) déterminer vers où marcher (LOS directe sinon pathfinding)
+    // 3) déterminer vers où marcher (LOS directe sinon pathfinding) + repath périodique
     let tx, ty, usingPath = false;
+
     if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
+      // ligne de vue claire → marche directe
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
+      if (!z.nextRepathAt) {
+        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+      }
     } else {
+      const dueForPeriodicRepath = now >= (z.nextRepathAt || 0);
+
       const needNewPath =
+        dueForPeriodicRepath ||
         !z.path || !z.pathTarget ||
         Math.abs(z.pathTarget.x - target.x) > 12 ||
         Math.abs(z.pathTarget.y - target.y) > 12 ||
@@ -1326,6 +1353,7 @@ function moveZombies(game, deltaTime) {
         z.path = findPath(game, z.x, z.y, target.x, target.y);
         z.pathStep = 1;
         z.pathTarget = { x: target.x, y: target.y };
+        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
       }
 
       if (z.path && z.path.length > z.pathStep) {
@@ -1341,45 +1369,137 @@ function moveZombies(game, deltaTime) {
       }
     }
 
-    // 4) déplacement par micro-pas avec slides; bloqué par joueurs/obstacles seulement
+    // 4) calcul direction de base
     let dx = tx - z.x, dy = ty - z.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
+    // 5) watchdog anti-bloqué (étape 2)
+    if (now - z._lastTrackAt >= 450) {
+      const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
+      const nearlyStill = moved < 6;
+      const losBlocked = losBlockedForZombie(game, z.x, z.y, target.x, target.y);
+      if (nearlyStill && losBlocked) {
+        z._stuckAccum = Math.min(2500, z._stuckAccum + (now - z._lastTrackAt));
+      } else {
+        z._stuckAccum = Math.max(0, z._stuckAccum - 200);
+      }
+      z._lastTrackAt = now;
+      z._lastTrackX = z.x;
+      z._lastTrackY = z.y;
+
+      if (z._stuckAccum >= 2000 && now >= z._unstuckUntil) {
+        z._unstuckUntil = now + 600;              // 0.6s d’unlock
+        z._wallSide = -z._wallSide;               // alterner le côté
+        z._stuckAccum = 900;                      // évite retrigger instant
+      }
+    }
+
+    // 6) “wall-follow” doux pendant l’unstuck (étape 2)
+    if (now < z._unstuckUntil) {
+      const side = z._wallSide || 1;
+      const px = side * (-dy);
+      const py = side * ( dx);
+      const mixX = dx * 0.4 + px * 0.6;
+      const mixY = dy * 0.4 + py * 0.6;
+      const n = Math.hypot(mixX, mixY);
+      if (n > 0.0001) { dx = mixX / n; dy = mixY / n; }
+    }
+
+    // 7) déplacement par micro-pas avec slides (+ micro-repath sur blocage local)
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
+    const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
+
+    // ✅ Étape 4 : rayon collision temporairement réduit de 1 px pendant l’unstuck
+    const radiusNow = (now < z._unstuckUntil) ? Math.max(1, ZOMBIE_RADIUS - 1) : ZOMBIE_RADIUS;
+
+    // réinitialise le compteur de blocage local au début de l’itération
+    z._localBlockStrikes = 0;
 
     while (remaining > 0.0001) {
       const step = Math.min(remaining, MAX_STEP);
       remaining -= step;
 
+      let advanced = false;
+
+      // tentative 1 : direction principale
       let nx = z.x + dx * step;
       let ny = z.y + dy * step;
 
-      if (!blockedForZombie(nx, ny)) {
+      if (!blockedAt(nx, ny, radiusNow)) {
         z.x = nx; z.y = ny;
+        advanced = true;
+      } else {
+        // tentative 2 : slide X
+        nx = z.x + Math.sign(dx) * step;
+        if (!blockedAt(nx, z.y, radiusNow)) {
+          z.x = nx;
+          advanced = true;
+        } else {
+          // tentative 3 : slide Y
+          ny = z.y + Math.sign(dy) * step;
+          if (!blockedAt(z.x, ny, radiusNow)) {
+            z.y = ny;
+            advanced = true;
+          } else {
+            // tentative 4 : NUDGE
+            if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
+              z.x += Math.sign(dx) * NUDGE;
+              advanced = true;
+            } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
+              z.y += Math.sign(dy) * NUDGE;
+              advanced = true;
+            }
+          }
+        }
+      }
+
+      if (advanced) {
+        z._localBlockStrikes = 0;
         continue;
       }
 
-      // slide X
-      nx = z.x + Math.sign(dx) * step;
-      if (!blockedForZombie(nx, z.y)) { z.x = nx; continue; }
+      // === Micro-repath immédiat sur blocage local (étape 3) ===
+      z._localBlockStrikes++;
 
-      // slide Y
-      ny = z.y + Math.sign(dy) * step;
-      if (!blockedForZombie(z.x, ny)) { z.y = ny; continue; }
+      if (z._localBlockStrikes >= 2) {
+        const tgtX = target.x, tgtY = target.y;
+        const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
+        if (newPath && newPath.length > 1) {
+          z.path = newPath;
+          z.pathStep = 1;
+          z.pathTarget = { x: tgtX, y: tgtY };
+          z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
 
-      // anti-coin léger
-      if (!blockedForZombie(z.x + Math.sign(dx) * NUDGE, z.y)) {
-        z.x += Math.sign(dx) * NUDGE;
-      } else if (!blockedForZombie(z.x, z.y + Math.sign(dy) * NUDGE)) {
-        z.y += Math.sign(dy) * NUDGE;
+          // tente immédiatement un micro-pas vers le prochain nœud
+          const n = newPath[1];
+          const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
+          const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
+
+          let rdx = nwx - z.x, rdy = nwy - z.y;
+          const rd = Math.hypot(rdx, rdy);
+          if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
+
+          const step2 = Math.min(MAX_STEP, remaining + step);
+          let nx2 = z.x + rdx * step2;
+          let ny2 = z.y + rdy * step2;
+
+          if (!blockedAt(nx2, ny2, radiusNow)) {
+            z.x = nx2; z.y = ny2;
+            z._localBlockStrikes = 0;
+            continue;
+          }
+        }
+
+        break; // micro-repath n’a pas aidé → on stoppe ce tick
       }
-      break;
+
+      break; // échec simple (1er strike) → stop pour ce tick
     }
 
-    // progression du path
-    if (usingPath && z.path && z.path.length > z.pathStep) {
+    // 8) progression du path (si on suit un chemin)
+    if (z.path && z.path.length > z.pathStep) {
       const n = z.path[z.pathStep];
       const nodeX = n.x * TILE_SIZE + TILE_SIZE / 2;
       const nodeY = n.y * TILE_SIZE + TILE_SIZE / 2;
@@ -1389,8 +1509,6 @@ function moveZombies(game, deltaTime) {
     }
   }
 }
-
-
 
 
 
