@@ -1,8 +1,8 @@
 // Ceci est le fichier gameMap.js :
 
-const MAP_ROWS = 50;
-const MAP_COLS = 50;
-const OBSTACLE_COUNT = 200; // ← moins d'obstacles pour plus d'espaces ouverts !
+const MAP_ROWS = 70;
+const MAP_COLS = 70;
+const OBSTACLE_COUNT = 400; // ← moins d'obstacles pour plus d'espaces ouverts !
 const TILE_SIZE = 40;
 
 // Flood fill pour marquer les cases accessibles
@@ -56,15 +56,52 @@ function createEmptyMap(rows, cols) {
 }
 
 
-// Remplace TOUTE la fonction placeObstaclesConnected par ceci :
+
 
 function placeObstaclesConnected(map, count) {
   const centerR = Math.floor(MAP_ROWS / 2);
   const centerC = Math.floor(MAP_COLS / 2);
 
   // Rayon (en tuiles) du carré central à laisser VIDE.
-  // 4 => carré 9x9. (taille = 2*rayon + 1)
   const CENTER_CLEAR_RADIUS_TILES = 6;
+
+  // --- Helpers anti-diagonales (local à cette fonction) ---
+  function rectContains(r0, c0, w, h, r, c) {
+    return r >= r0 && r < r0 + h && c >= c0 && c < c0 + w;
+  }
+  // valeur finale (0/1) d'une tuile si on pose le rectangle (r0,c0,w,h)
+  function finalTileValue(r0, c0, w, h, r, c) {
+    if (r < 0 || c < 0 || r >= MAP_ROWS || c >= MAP_COLS) return 1; // hors carte = mur
+    if (rectContains(r0, c0, w, h, r, c)) return 1; // fera partie du nouveau bloc
+    return map[r][c];
+  }
+  // true si la pose du rectangle créerait un contact purement diagonal (sans voisin orthogonal)
+  function wouldCreateDiagonalAdjacency(r0, c0, w, h) {
+    // on parcourt uniquement le contour du rectangle (optimisation simple)
+    for (let rr = r0; rr < r0 + h; rr++) {
+      for (let cc = c0; cc < c0 + w; cc++) {
+        // quatre diagonales autour de (rr,cc)
+        const diag = [[-1,-1],[-1,1],[1,-1],[1,1]];
+        for (const [dr, dc] of diag) {
+          const r2 = rr + dr, c2 = cc + dc;
+          if (r2 < 0 || c2 < 0 || r2 >= MAP_ROWS || c2 >= MAP_COLS) continue;
+          // existe-t-il déjà un mur en diagonale ?
+          if (map[r2][c2] !== 1) continue;
+
+          // Les deux orthogonaux reliés à cette diagonale doivent être vides après pose
+          // orthos: (rr+dr, cc) et (rr, cc+dc)
+          const ortho1 = finalTileValue(r0, c0, w, h, rr + dr, cc);
+          const ortho2 = finalTileValue(r0, c0, w, h, rr, cc + dc);
+
+          if (ortho1 === 0 && ortho2 === 0) {
+            // Cela créerait un coin qui ne touche qu'en diagonale → interdit
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
 
   let placed = 0;
   let attempts = 0;
@@ -92,7 +129,7 @@ function placeObstaclesConnected(map, count) {
     }
     if (touchesCenter) continue;
 
-    // Vérifier qu'on n’écrase pas déjà un mur/obstacle existant
+    // Ne pas écraser des murs existants
     let overlaps = false;
     for (let rr = r; rr < r + h && !overlaps; rr++) {
       for (let cc = c; cc < c + w; cc++) {
@@ -100,6 +137,9 @@ function placeObstaclesConnected(map, count) {
       }
     }
     if (overlaps) continue;
+
+    // 🚫 Nouveau : refuse toute pose qui créerait un contact purement diagonal
+    if (wouldCreateDiagonalAdjacency(r, c, w, h)) continue;
 
     // Placement temporaire
     const coords = [];
@@ -119,6 +159,8 @@ function placeObstaclesConnected(map, count) {
     }
   }
 }
+
+
 
 
 
