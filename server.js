@@ -334,21 +334,32 @@ function tickTurrets(game) {
 
 
 
-// Variante ligne de vue qui tient compte des structures solides (pour zombies)
+
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
-  const steps = Math.ceil(dist / 8);
+
+  // Pas d'échantillonnage plus fin et surtout test "cercle" (rayon zombie)
+  // pour empêcher les tentatives de passage en diagonale entre 2 blocs.
+  const stepLen = Math.max(4, Math.min(8, TILE_SIZE / 3)); // ~4..8 px
+  const steps = Math.ceil(dist / stepLen);
+
   for (let s = 1; s < steps; s++) {
     const ix = x0 + (dx * s / steps);
     const iy = y0 + (dy * s / steps);
-    if (isCollision(game.map, ix, iy)) return true; // murs map
-    const { tx, ty } = worldToTile(ix, iy);
-    if (isSolidForZombie(getStruct(game, tx, ty))) return true; // structures
+
+    // Mur de la MAP (avec rayon)
+    if (isCircleColliding(game.map, ix, iy, ZOMBIE_RADIUS)) return true;
+
+    // Structures solides pour zombies (barricades, portes, tourelles) avec rayon
+    if (circleBlockedByStructures(game, ix, iy, ZOMBIE_RADIUS, isSolidForZombie)) return true;
   }
   return false;
 }
+
+
+
 
 // LOS des tourelles : bloquée uniquement par les murs de la MAP (pas par barricades/portes)
 function losBlockedForTurret(game, x0, y0, x1, y1) {
