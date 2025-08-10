@@ -1859,6 +1859,7 @@ function checkGameEnd(game) {
 }
 
 
+
 function gameLoop() {
   try {
     const nowGlobal = Date.now();
@@ -1888,7 +1889,8 @@ function gameLoop() {
       io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
       io.to('lobby' + game.id).emit('currentRound', game.currentRound);
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-      io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
+      // ❌ (supprimé) : n'envoyez plus la grille des structures à chaque tick
+      // io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
 
       // --- Régénération basée sur le vrai deltaTime ---
       for (const pid in game.players) {
