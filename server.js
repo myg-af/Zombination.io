@@ -17,12 +17,9 @@ const gameMapModule = require('./game/gameMap');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  pingInterval: 10000,
-  pingTimeout: 60000,
-  perMessageDeflate: { threshold: 1024 }
-  // transports retiré pour autoriser le fallback (polling + websocket)
+  pingInterval: 10000, // laisse 10s
+  pingTimeout: 60000   // passe à 60s (au lieu de 30s par défaut)
 });
-
 
 const {
   MAP_ROWS,
@@ -599,9 +596,6 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 150;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
-const BROADCAST_HZ = 30;
-const BROADCAST_INTERVAL_MS = Math.floor(1000 / BROADCAST_HZ);
-
 
 
 function broadcastLobby(game) {
@@ -614,51 +608,25 @@ function broadcastLobby(game) {
   });
 }
 
-
 function startLobbyTimer(game) {
   if (game.lobby.timer) return;
-
-  game.lobby.timeLeft = Math.floor(LOBBY_TIME / 1000); // ← 5 sec si LOBBY_TIME = 5000
+  game.lobby.timeLeft = LOBBY_TIME / 1000;
   game.lobby.started = false;
-
-  // Envoie l’état initial au client
-  broadcastLobby(game);
-
-  const tick = () => {
+  game.lobby.timer = setInterval(() => {
     if (game.lobby.started) return;
-
-    const playersArr = Object.entries(game.lobby.players);
-    const readyPlayers = playersArr.filter(([_, p]) => p && p.ready);
-    const totalPlayers = playersArr.length;
-
-    // Démarrage immédiat si tous les présents sont prêts (et qu'il y en a au moins 1)
-    if (readyPlayers.length > 0 && readyPlayers.length === totalPlayers) {
-      game.lobby.started = true;
-      clearInterval(game.lobby.timer);
-      game.lobby.timer = null;
-      launchGame(game, readyPlayers);
-      return;
-    }
-
-    // Décrément du compte à rebours (5 → 0)
-    game.lobby.timeLeft = Math.max(0, game.lobby.timeLeft - 1);
+    game.lobby.timeLeft--;
     broadcastLobby(game);
-
-    // À 0, on lance si au moins 1 joueur est prêt
-    if (game.lobby.timeLeft <= 0 && readyPlayers.length > 0) {
-      game.lobby.started = true;
-      clearInterval(game.lobby.timer);
-      game.lobby.timer = null;
-      launchGame(game, readyPlayers);
+    const readyPlayers = Object.entries(game.lobby.players).filter(([sid, p]) => p.ready);
+    if ((readyPlayers.length >= MAX_PLAYERS) || game.lobby.timeLeft <= 0) {
+      if (readyPlayers.length > 0) {
+        game.lobby.started = true;
+        clearInterval(game.lobby.timer);
+        game.lobby.timer = null;
+        launchGame(game, readyPlayers);
+      }
     }
-  };
-
-  game.lobby.timer = setInterval(tick, 1000);
+  }, 1000);
 }
-
-
-
-
 
 function spawnZombies(game, count) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
@@ -1750,20 +1718,12 @@ function gameLoop() {
       moveBullets(game,       deltaTime);
       handleZombieAttacks(game);
 
-// --- PUSH ÉTAT TEMPS-RÉEL (throttlé + VOLATILE) ---
-if (!game._lastBroadcastAt) game._lastBroadcastAt = nowGlobal;
-if (nowGlobal - game._lastBroadcastAt >= BROADCAST_INTERVAL_MS) {
-  game._lastBroadcastAt = nowGlobal;
-
-  // volatile: si le client est en retard, ces frames peuvent être ignorées
-  io.volatile.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
-  io.volatile.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
-  io.volatile.to('lobby' + game.id).emit('currentRound', game.currentRound);
-  io.volatile.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-	io.to('lobby' + game.id).emit('playersUpdate', game.players);
-  // ⚠️ Pas de structuresUpdate ici : elles sont déjà envoyées quand ça change.
-}
-
+      // --- PUSH ÉTAT TEMPS-RÉEL ---
+      io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+      io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
+      io.to('lobby' + game.id).emit('currentRound', game.currentRound);
+      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+      io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
 
       // --- Régénération basée sur le vrai deltaTime ---
       for (const pid in game.players) {
