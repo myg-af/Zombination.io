@@ -1177,29 +1177,6 @@ function drawZombies() {
   }
 }
 
-function drawBullets() {
-  const now = performance.now();
-
-  ctx.lineWidth = 3;
-
-  for (const id in bullets) {
-    const b = bullets[id];
-    const pos = getSmoothPos(b, now);
-
-    // couleur par appartenance
-    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-
-    const x1 = pos.x - cameraX;
-    const y1 = pos.y - cameraY;
-    const x2 = x1 - (b.dx || 0) * 8;
-    const y2 = y1 - (b.dy || 0) * 8;
-
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  }
-}
 
 function drawBullets() {
   const now = performance.now();
@@ -1224,7 +1201,6 @@ function drawBullets() {
     ctx.stroke();
   }
 }
-
 
 
 
