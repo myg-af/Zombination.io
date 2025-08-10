@@ -648,19 +648,23 @@ window.addEventListener('mousedown', e => {
 
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
-      mousePos = { x: e.clientX, y: e.clientY };
-      if (!isMobileDevice && myId && playersHealth[myId]) {
-        const player = playersHealth[myId];
-		aimDir = {
-		  x: (cameraX + mousePos.x / renderScale) - player.x,
-		  y: (cameraY + mousePos.y / renderScale) - player.y
-		};
-        let len = Math.hypot(aimDir.x, aimDir.y);
-        if (len > 0) {
-          aimDir.x /= len;
-          aimDir.y /= len;
-        }
-      }
+  mousePos = { x: e.clientX, y: e.clientY };
+  if (!isMobileDevice && myId && playersHealth[myId]) {
+    const p = playersHealth[myId];
+    const px = (p.renderX != null ? p.renderX : p.x);
+    const py = (p.renderY != null ? p.renderY : p.y);
+
+    aimDir = {
+      x: (cameraX + mousePos.x / renderScale) - px,
+      y: (cameraY + mousePos.y / renderScale) - py
+    };
+    let len = Math.hypot(aimDir.x, aimDir.y);
+    if (len > 0) {
+      aimDir.x /= len;
+      aimDir.y /= len;
+    }
+  }
+
     });
     function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
     window.addEventListener('resize', resizeCanvas);
@@ -1105,23 +1109,17 @@ function drawStructures() {
 
 
 
+
 function drawPlayers() {
   const now = performance.now();
   for (const id in playersHealth) {
     const p = playersHealth[id];
     if (!p.alive) continue;
 
-    let px = p.x, py = p.y;
-    if (id !== myId) {
-      const pos = getSmoothPos(p, now);
-      px = pos.x; py = pos.y;
-    } else {
-      // moi : pas d’interpolation pour garder la sensation “input = immédiat”
-      px = p.x; py = p.y;
-    }
-
-    const screenX = px - cameraX;
-    const screenY = py - cameraY;
+    // 👉 TOUS les joueurs (y compris moi) passent par l’interpolation
+    const pos = getSmoothPos(p, now);
+    const screenX = pos.x - cameraX;
+    const screenY = pos.y - cameraY;
 
     ctx.beginPath();
     ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
@@ -1143,6 +1141,9 @@ function drawPlayers() {
     );
   }
 }
+
+
+
 
 function drawZombies() {
   const now = performance.now();
@@ -1224,12 +1225,14 @@ function drawBullets() {
 
 function drawAimLine() {
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-  const player = playersHealth[myId];
+  const p = playersHealth[myId];
+  const px = (p.renderX != null ? p.renderX : p.x);
+  const py = (p.renderY != null ? p.renderY : p.y);
+
   let dir = { x: 1, y: 0 };
   let show = false;
 
   if (isMobileDevice) {
-    // 👉 même logique que le tir mobile (avec curve)
     let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
     if (len > 0.06) {
       let ax = aimJoyVal.x / (len || 1);
@@ -1237,13 +1240,13 @@ function drawAimLine() {
       ax = curve(ax);
       ay = curve(ay);
       const n = Math.hypot(ax, ay);
-      if (n > 0.0001) dir = { x: ax / n, y: ay / n }; // on renormalise pour tracer une ligne propre
+      if (n > 0.0001) dir = { x: ax / n, y: ay / n };
       show = true;
     }
   } else {
     if (mouseDown) {
-      let dx = (cameraX + mousePos.x / renderScale) - player.x;
-      let dy = (cameraY + mousePos.y / renderScale) - player.y;
+      let dx = (cameraX + mousePos.x / renderScale) - px;
+      let dy = (cameraY + mousePos.y / renderScale) - py;
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > 3) {
         dir = { x: dx / dist, y: dy / dist };
@@ -1255,8 +1258,8 @@ function drawAimLine() {
   if (!show) return;
 
   const length = 440;
-  const screenX = player.x - cameraX;
-  const screenY = player.y - cameraY;
+  const screenX = px - cameraX;
+  const screenY = py - cameraY;
 
   ctx.save();
   ctx.beginPath();
@@ -1270,68 +1273,12 @@ function drawAimLine() {
   ctx.restore();
 }
 
-
 	
-	function update(deltaTime) {
-	  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-	  let player = playersHealth[myId];
-	  let move = { x:0, y:0 };
 
-	  // ---- MOUVEMENT ----
-	  if (!isMobileDevice) {
-		if (keys['arrowup'] || keys['w']) move.y -= 1;
-		if (keys['arrowdown'] || keys['s']) move.y += 1;
-		if (keys['arrowleft'] || keys['a']) move.x -= 1;
-		if (keys['arrowright'] || keys['d']) move.x += 1;
-	  } else {
-		const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
-		if (len > 0.06) {
-		  let mx = moveJoyVal.x / (len || 1);
-		  let my = moveJoyVal.y / (len || 1);
-		  move.x = curve(mx);
-		  move.y = curve(my);
-		}
-	  }
 
-	  socket.emit('moveDir', move);
 
-	  // ---- TIR ----
-	  let shooting = false;
-	  let shootDir = { x:1, y:0 };
 
-	  if (!isMobileDevice) {
-		// ✅ corrige avec / renderScale
-		let dx = (cameraX + mousePos.x / renderScale) - player.x;
-		let dy = (cameraY + mousePos.y / renderScale) - player.y;
-		let len = Math.hypot(dx, dy);
-		if (len > 3) shootDir = { x: dx/len, y: dy/len };
-		shooting = mouseDown;
-	  } else {
-		const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-		if (len > 0.06) {
-		  let ax = aimJoyVal.x / (len || 1);
-		  let ay = aimJoyVal.y / (len || 1);
-		  ax = curve(ax);
-		  ay = curve(ay);
-		  shootDir = { x: ax, y: ay };
-		  shooting = true;
-		}
-	  }
 
-	  if (shooting) {
-		const n = Math.hypot(shootDir.x, shootDir.y);
-		if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
-	  }
-
-	  if (shooting && !shootBlocked) {
-		shootBlocked = true;
-		socket.emit('shoot', {
-		  targetX: player.x + shootDir.x * 120,
-		  targetY: player.y + shootDir.y * 120
-		});
-		setTimeout(() => { shootBlocked = false; }, 300);
-	  }
-	}
 
 if (isMobileDevice) {
   canvas.addEventListener('pointerdown', (e) => {
@@ -1340,21 +1287,25 @@ if (isMobileDevice) {
     if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
     const p = playersHealth[myId];
-    const dx = (cameraX + e.clientX / renderScale) - p.x;
-    const dy = (cameraY + e.clientY / renderScale) - p.y;
+    const px = (p.renderX != null ? p.renderX : p.x);
+    const py = (p.renderY != null ? p.renderY : p.y);
+
+    const dx = (cameraX + e.clientX / renderScale) - px;
+    const dy = (cameraY + e.clientY / renderScale) - py;
     const d  = Math.hypot(dx, dy);
     const dir = d > 4 ? { x: dx / d, y: dy / d } : lastAimDir;
 
     if (!shootBlocked) {
       shootBlocked = true;
       socket.emit('shoot', {
-        targetX: p.x + dir.x * 120,
-        targetY: p.y + dir.y * 120
+        targetX: px + dir.x * 120,
+        targetY: py + dir.y * 120
       });
       setTimeout(() => { shootBlocked = false; }, 300);
     }
   }, { passive: true });
 }
+
 
 
 // ---- Aide : écran -> monde -> tuile ----
@@ -1471,19 +1422,90 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 
 
 
-	function updateCamera() {
-	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-	  let player = playersHealth[myId];
+function updateCamera() {
+  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  const p = playersHealth[myId];
 
-	  const viewW = canvas.width / renderScale;
-	  const viewH = canvas.height / renderScale;
+  const px = (p.renderX != null ? p.renderX : p.x);
+  const py = (p.renderY != null ? p.renderY : p.y);
 
-	  cameraX = player.x - viewW / 2;
-	  cameraY = player.y - viewH / 2;
+  const viewW = canvas.width / renderScale;
+  const viewH = canvas.height / renderScale;
 
-	  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
-	  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
-	}
+  cameraX = px - viewW / 2;
+  cameraY = py - viewH / 2;
+
+  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
+  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
+}
+
+
+
+function update(deltaTime) {
+  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  const player = playersHealth[myId];
+
+  // 👉 Utiliser la position lissée pour cohérence visuelle/visée
+  const px = (player.renderX != null ? player.renderX : player.x);
+  const py = (player.renderY != null ? player.renderY : player.y);
+
+  let move = { x:0, y:0 };
+
+  // ---- MOUVEMENT ----
+  if (!isMobileDevice) {
+    if (keys['arrowup'] || keys['w']) move.y -= 1;
+    if (keys['arrowdown'] || keys['s']) move.y += 1;
+    if (keys['arrowleft'] || keys['a']) move.x -= 1;
+    if (keys['arrowright'] || keys['d']) move.x += 1;
+  } else {
+    const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
+    if (len > 0.06) {
+      let mx = moveJoyVal.x / (len || 1);
+      let my = moveJoyVal.y / (len || 1);
+      move.x = curve(mx);
+      move.y = curve(my);
+    }
+  }
+
+  socket.emit('moveDir', move);
+
+  // ---- TIR ----
+  let shooting = false;
+  let shootDir = { x:1, y:0 };
+
+  if (!isMobileDevice) {
+    let dx = (cameraX + mousePos.x / renderScale) - px;
+    let dy = (cameraY + mousePos.y / renderScale) - py;
+    let len = Math.hypot(dx, dy);
+    if (len > 3) shootDir = { x: dx/len, y: dy/len };
+    shooting = mouseDown;
+  } else {
+    const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+    if (len > 0.06) {
+      let ax = aimJoyVal.x / (len || 1);
+      let ay = aimJoyVal.y / (len || 1);
+      ax = curve(ax);
+      ay = curve(ay);
+      shootDir = { x: ax, y: ay };
+      shooting = true;
+    }
+  }
+
+  if (shooting) {
+    const n = Math.hypot(shootDir.x, shootDir.y);
+    if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
+  }
+
+  if (shooting && !shootBlocked) {
+    shootBlocked = true;
+    socket.emit('shoot', {
+      targetX: px + shootDir.x * 120,
+      targetY: py + shootDir.y * 120
+    });
+    setTimeout(() => { shootBlocked = false; }, 300);
+  }
+}
+
 
 
 	function drawHUD() {
@@ -1647,6 +1669,7 @@ socket.on('bulletsUpdate', (bNew) => {
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
 
+
 socket.on('playersHealthUpdate', (players) => {
   const now = performance.now();
 
@@ -1655,30 +1678,25 @@ socket.on('playersHealthUpdate', (players) => {
     if (!playersHealth[id]) playersHealth[id] = {};
     const dst = playersHealth[id];
 
-    // champs “état”
+    // état
     dst.health = src.health;
     dst.alive  = src.alive;
     dst.pseudo = src.pseudo || "Joueur";
     dst.money  = src.money || 0;
     dst.maxHealth = src.maxHealth || 100;
 
-    // positions : on interpole pour les autres joueurs uniquement
-    if (id === myId) {
-      // moi : on garde la position serveur telle quelle (réactivité tir/visée)
-      dst.x = src.x;
-      dst.y = src.y;
-      dst.renderX = src.x; // garde synchro avec getSmoothPos si jamais appelé
-      dst.renderY = src.y;
-      dst.t0 = performance.now(); dst.td = 1;
+    // init position si première fois
+    if (dst.x == null) {
+      dst.x = src.x; dst.y = src.y;
+      dst.renderX = src.x; dst.renderY = src.y;
+      dst.t0 = now; dst.td = 1;
       dst.sx = src.x; dst.sy = src.y; dst.tx = src.x; dst.ty = src.y;
-    } else {
-      // autres joueurs : lissage
-      if (dst.x == null) { dst.x = src.x; dst.y = src.y; }
-      setSmoothTarget(dst, src.x, src.y, SMOOTH_MS_P, now);
     }
+
+    // 👉 TOUJOURS lisser, même pour mon joueur
+    setSmoothTarget(dst, src.x, src.y, SMOOTH_MS_P, now);
   }
 
-  // Optionnel : pas de purge ici, côté serveur on envoie un disconnect dédié
   const me = players[socket.id];
   if (me) {
     playerHealth = me.health;
@@ -1689,6 +1707,7 @@ socket.on('playersHealthUpdate', (players) => {
 
   updateBuildTilesState();
 });
+
 
 
 
