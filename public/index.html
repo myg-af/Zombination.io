@@ -16,7 +16,6 @@
   touch-action: none;
 }
 
-on: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
 	.joystick-base, .joystick-stick { touch-action: none; }
 	html, body { overscroll-behavior: none; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
@@ -408,7 +407,7 @@ on: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
 	  if (socket && socket.connected) {
 		socket.emit('clientPing');
 	  }
-	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
+	}, 10000);
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const hudAlive = document.getElementById('hudAlive');
@@ -712,19 +711,41 @@ function createJoystick(container, baseX, baseY, id) {
 
 
 
+// --- À mettre une seule fois (global) ---
+let _pointerWindowBound = false;
+const _pointerActive = { id: null, joy: null, which: null, center: null, radius: 0, stickRadius: 0, setVec: null };
+
+function _globalPointerMove(e) {
+  if (_pointerActive.id !== e.pointerId) return;
+  const r = _pointerActive.joy.joyDiv.getBoundingClientRect();
+  const px = e.clientX - r.left;
+  const py = e.clientY - r.top;
+  _pointerActive.setVec(px - _pointerActive.center.x, py - _pointerActive.center.y);
+  e.preventDefault();
+}
+
+function _globalPointerUp(e) {
+  if (_pointerActive.id !== e.pointerId) return;
+  try { _pointerActive.joy.joyDiv.releasePointerCapture(_pointerActive.id); } catch {}
+  // reset visuel et valeurs
+  _pointerActive.setVec(0, 0);
+  _pointerActive.id = null;
+  _pointerActive.joy = null;
+  e.preventDefault();
+}
+
+// --- Remplace ta fonction par celle-ci ---
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
   const radius = size / 2;
   const stickRadius = (size * 0.52) / 2;
   const center = { x: radius, y: radius };
 
-  let activeId = null;
-
   function setVec(dx, dy) {
     const max = radius - stickRadius;
     const len = Math.hypot(dx, dy);
 
-    // clamp visuel
+    // clamp du stick
     let nx = dx, ny = dy;
     if (len > max && len > 0) {
       nx = dx * (max / len);
@@ -735,57 +756,49 @@ function addJoystickHandlers(joy, which) {
     joy.stick.style.left = (center.x - stickRadius + nx) + "px";
     joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
 
-    // vecteur normalisé [-1..1]
+    // vecteur normalisé [-1..1] -> met à jour tes valeurs globales
     const out = (max > 0) ? { x: nx / max, y: ny / max } : { x: 0, y: 0 };
     if (which === "move") moveJoyVal = out;
     else aimJoyVal = out;
   }
 
-  function reset() {
-    activeId = null;
-    setVec(0, 0);
-  }
+  function localDown(e) {
+    if (_pointerActive.id !== null) return; // déjà un joystick actif
+    _pointerActive.id = e.pointerId;
+    _pointerActive.joy = joy;
+    _pointerActive.which = which;
+    _pointerActive.center = center;
+    _pointerActive.radius = radius;
+    _pointerActive.stickRadius = stickRadius;
+    _pointerActive.setVec = setVec;
 
-  function localCoords(clientX, clientY) {
+    joy.joyDiv.setPointerCapture(_pointerActive.id);
+
     const r = joy.joyDiv.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
-  }
-
-  function onDown(e) {
-    if (activeId !== null) return;
-    activeId = e.pointerId;
-    joy.joyDiv.setPointerCapture(activeId);
-    const p = localCoords(e.clientX, e.clientY);
-    setVec(p.x - center.x, p.y - center.y);
+    const px = e.clientX - r.left;
+    const py = e.clientY - r.top;
+    setVec(px - center.x, py - center.y);
     e.preventDefault();
   }
 
-  function onMove(e) {
-    if (e.pointerId !== activeId) return;
-    const p = localCoords(e.clientX, e.clientY);
-    setVec(p.x - center.x, p.y - center.y);
-    e.preventDefault();
+  // down sur toute la zone du joystick
+  joy.joyDiv.addEventListener('pointerdown', localDown, { passive: false });
+  joy.base.addEventListener('pointerdown', localDown, { passive: false });
+  joy.stick.addEventListener('pointerdown', localDown, { passive: false });
+
+  // bind global window une seule fois
+  if (!_pointerWindowBound) {
+    window.addEventListener('pointermove', _globalPointerMove, { passive: false });
+    window.addEventListener('pointerup', _globalPointerUp, { passive: false });
+    window.addEventListener('pointercancel', _globalPointerUp, { passive: false });
+    _pointerWindowBound = true;
   }
 
-  function onUp(e) {
-    if (e.pointerId !== activeId) return;
-    try { joy.joyDiv.releasePointerCapture(activeId); } catch {}
-    reset();
-    e.preventDefault();
-  }
-
-  // down sur toute la zone
-  joy.joyDiv.addEventListener('pointerdown', onDown, { passive: false });
-  joy.base.addEventListener('pointerdown', onDown, { passive: false });
-  joy.stick.addEventListener('pointerdown', onDown, { passive: false });
-
-  // move/up globaux
-  window.addEventListener('pointermove', onMove, { passive: false });
-  window.addEventListener('pointerup', onUp, { passive: false });
-  window.addEventListener('pointercancel', onUp, { passive: false });
-
-  reset();
+  // position neutre au départ
+  setVec(0, 0);
 }
+
+
 
 
 	function addJoystickTouchHandlers(joy, which) {
