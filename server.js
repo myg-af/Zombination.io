@@ -17,11 +17,10 @@ const gameMapModule = require('./game/gameMap');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
-  pingInterval: 10000, // laisse 10s
-  pingTimeout: 60000,  // passe à 60s (au lieu de 30s par défaut)
-  perMessageDeflate: {
-    threshold: 1024 // compresse seulement les gros messages
-  }
+  pingInterval: 10000,
+  pingTimeout: 60000,
+  perMessageDeflate: { threshold: 1024 },
+  transports: ['websocket'] // optionnel, si ton client le supporte
 });
 
 const {
