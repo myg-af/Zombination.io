@@ -599,7 +599,7 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 150;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
-const BROADCAST_HZ = 15;
+const BROADCAST_HZ = 30;
 const BROADCAST_INTERVAL_MS = Math.floor(1000 / BROADCAST_HZ);
 
 
@@ -1750,15 +1750,16 @@ function gameLoop() {
       moveBullets(game,       deltaTime);
       handleZombieAttacks(game);
 
-// --- PUSH ÉTAT TEMPS-RÉEL (throttlé) ---
+// --- PUSH ÉTAT TEMPS-RÉEL (throttlé + VOLATILE) ---
 if (!game._lastBroadcastAt) game._lastBroadcastAt = nowGlobal;
 if (nowGlobal - game._lastBroadcastAt >= BROADCAST_INTERVAL_MS) {
   game._lastBroadcastAt = nowGlobal;
 
-  io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
-  io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
-  io.to('lobby' + game.id).emit('currentRound', game.currentRound);
-  io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+  // volatile: si le client est en retard, ces frames peuvent être ignorées
+  io.volatile.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+  io.volatile.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
+  io.volatile.to('lobby' + game.id).emit('currentRound', game.currentRound);
+  io.volatile.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
   // ⚠️ Pas de structuresUpdate ici : elles sont déjà envoyées quand ça change.
 }
 
