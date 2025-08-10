@@ -1302,21 +1302,26 @@ function moveZombies(game, deltaTime) {
     return !!isSolidForZombie(s);
   }
 
-  // Détecte la "porte" diagonale fermée : on veut empêcher le passage
+  // ✅ Nouvelle version : détecte correctement une "porte diagonale" fermée
+  // en regardant les tuiles atteintes par le RAYON côté X et côté Y (front tiles).
   function diagonalGateClosed(cx, cy, dirx, diry) {
-    // si pas un mouvement diagonal → jamais une gate diagonale
-    if (Math.abs(dirx) < 1e-6 || Math.abs(diry) < 1e-6) return false;
+    if (Math.abs(dirx) < 1e-6 || Math.abs(diry) < 1e-6) return false; // pas un mouvement diagonal
 
-    const { tx, ty } = worldToTile(cx, cy);
     const sx = Math.sign(dirx);
     const sy = Math.sign(diry);
 
-    // cases adjacentes sur l'axe X et Y depuis la TUILE COURANTE
-    const sideA = tileSolidForZombie(tx + sx, ty);
-    const sideB = tileSolidForZombie(tx, ty + sy);
+    // Tuile courante du centre
+    const { tx, ty } = worldToTile(cx, cy);
 
-    // si les deux sont solides, la diagonale est "fermée"
-    return sideA && sideB;
+    // Tuiles "devant" le cercle : on avance jusqu’au bord du disque
+    const frontX = Math.floor((cx + sx * (ZOMBIE_RADIUS - 0.5)) / TILE_SIZE);
+    const frontY = Math.floor((cy + sy * (ZOMBIE_RADIUS - 0.5)) / TILE_SIZE);
+
+    // Ces deux tuiles représentent les “montants” de la porte diagonale
+    const sideAlongX = tileSolidForZombie(frontX, ty);
+    const sideAlongY = tileSolidForZombie(tx, frontY);
+
+    return sideAlongX && sideAlongY;
   }
 
   // petite rotation 2D
@@ -1351,7 +1356,7 @@ function moveZombies(game, deltaTime) {
       continue;
     }
 
-    // 1) choisir la cible : joueur vivant le + proche, sinon tourelle
+    // 1) choisir la cible
     let target = null, bestDist = Infinity;
     for (const p of Object.values(game.players)) {
       if (!p || !p.alive) continue;
@@ -1409,7 +1414,7 @@ function moveZombies(game, deltaTime) {
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
-    // 4) watchdog anti-bloqué (même logique que ta version)
+    // 4) watchdog anti-bloqué
     if (now - z._lastTrackAt >= 450) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
@@ -1454,10 +1459,8 @@ function moveZombies(game, deltaTime) {
 
       let advanced = false;
 
-      // ⚠️ Si la "porte" diagonale est fermée, on interdit ce pas diagonal
-      // et on force un slide prioritaire sur l'axe libre.
+      // ⚠️ Interdit le pas diagonal si la "porte" est fermée (calculée avec la face du rayon)
       if (diagonalGateClosed(z.x, z.y, dx, dy)) {
-        // essaie d'abord l'axe X puis Y (ou l'inverse selon wallSide)
         const preferXFirst = (z._wallSide || 1) > 0;
         if (preferXFirst) {
           let nx = z.x + Math.sign(dx) * step;
@@ -1476,7 +1479,6 @@ function moveZombies(game, deltaTime) {
         }
 
         if (!advanced) {
-          // petit nudge selon l'axe le plus prometteur
           if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
             z.x += Math.sign(dx) * NUDGE; advanced = true;
           } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
@@ -1502,14 +1504,13 @@ function moveZombies(game, deltaTime) {
             if (!blockedAt(z.x, ny, radiusNow)) {
               z.y = ny; advanced = true;
             } else {
-              // nudge
+              // nudge + rotations
               if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
                 z.x += Math.sign(dx) * NUDGE; advanced = true;
               } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
                 z.y += Math.sign(dy) * NUDGE; advanced = true;
               } else {
-                // rotations ±20°, ±45°, puis ±90°
-                const turn = (Math.PI / 9) * (z._wallSide || 1);
+                const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
                 let r1 = rotated(dx, dy, turn);
                 nx = z.x + r1.x * step; ny = z.y + r1.y * step;
                 if (!blockedAt(nx, ny, radiusNow)) {
@@ -1520,7 +1521,7 @@ function moveZombies(game, deltaTime) {
                   if (!blockedAt(nx, ny, radiusNow)) {
                     z.x = nx; z.y = ny; advanced = true;
                   } else {
-                    const turnStrong = (Math.PI / 4) * (z._wallSide || 1);
+                    const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
                     const stepStrong = step * 0.8;
                     let r3 = rotated(dx, dy, turnStrong);
                     nx = z.x + r3.x * stepStrong; ny = z.y + r3.y * stepStrong;
@@ -1532,7 +1533,7 @@ function moveZombies(game, deltaTime) {
                       if (!blockedAt(nx, ny, radiusNow)) {
                         z.x = nx; z.y = ny; advanced = true;
                       } else {
-                        const turnPerp = (Math.PI / 2) * (z._wallSide || 1);
+                        const turnPerp = (Math.PI / 2) * (z._wallSide || 1); // 90°
                         const stepPerp = step * 0.6;
                         let r5 = rotated(dx, dy, turnPerp);
                         nx = z.x + r5.x * stepPerp; ny = z.y + r5.y * stepPerp;
