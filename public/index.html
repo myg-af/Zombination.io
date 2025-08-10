@@ -7,8 +7,16 @@
   <title>Zombination.io</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
-    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
-	#gameCanvas { touch-action: none; }
+    #gameCanvas {
+  display: block;
+  background: #222;
+  position: absolute;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+  touch-action: none;
+}
+
+on: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
 	.joystick-base, .joystick-stick { touch-action: none; }
 	html, body { overscroll-behavior: none; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
@@ -1670,26 +1678,7 @@ socket.on('playersHealthUpdate', (players) => {
 });
 
 
-	for (const id in players) {
-	  if (!playersHealth[id]) playersHealth[id] = {};
-	  playersHealth[id].health = players[id].health;
-	  playersHealth[id].alive = players[id].alive;
-	  playersHealth[id].x = players[id].x;
-	  playersHealth[id].y = players[id].y;
-	  playersHealth[id].pseudo = players[id].pseudo || "Joueur";
-	  playersHealth[id].money = players[id].money || 0;
-	  playersHealth[id].maxHealth = players[id].maxHealth || 100;  // <--- AJOUTE CETTE LIGNE
-	}
 
-	  // Mets à jour les variables du joueur local
-	const me = players[socket.id];
-	if (me) {
-	  playerHealth = me.health;
-	  myMoney = me.money || 0;
-	  updateBuildTilesState();
-	  playersHealth[myId].maxHealth = me.maxHealth || 100; // <--- aussi ici pour être sûr
-	}
-	});
 
     socket.on('youDied', (data) => {
       isDead = true;
@@ -1753,7 +1742,7 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 	});
 
     setInterval(drawHUD, 150);
-    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
+    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 1000);
 
 	// --- SHOP BTN LOGIC ---
 	const shopBtn = document.getElementById('shopBtn');
