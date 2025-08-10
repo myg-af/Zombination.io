@@ -334,14 +334,15 @@ function tickTurrets(game) {
 
 
 
+
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
 
-  // Échantillonnage un peu plus fin + test "cercle"
-  // -> évite que le zombie "croit" voir un passage dans une pointe de coin.
-  const stepLen = Math.max(3, Math.min(8, TILE_SIZE / 4)); // ~3..8 px
+  // Pas d'échantillonnage plus fin et surtout test "cercle" (rayon zombie)
+  // pour empêcher les tentatives de passage en diagonale entre 2 blocs.
+  const stepLen = Math.max(4, Math.min(8, TILE_SIZE / 3)); // ~4..8 px
   const steps = Math.ceil(dist / stepLen);
 
   for (let s = 1; s < steps; s++) {
@@ -351,7 +352,7 @@ function losBlockedForZombie(game, x0, y0, x1, y1) {
     // Mur de la MAP (avec rayon)
     if (isCircleColliding(game.map, ix, iy, ZOMBIE_RADIUS)) return true;
 
-    // Structures solides pour zombies (barricades/portes/tourelles) avec rayon
+    // Structures solides pour zombies (barricades, portes, tourelles) avec rayon
     if (circleBlockedByStructures(game, ix, iy, ZOMBIE_RADIUS, isSolidForZombie)) return true;
   }
   return false;
@@ -1260,8 +1261,6 @@ function moveBots(game, deltaTime) {
 }
 
 
-
-
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;      // micro-pas (px)
   const BASE_NUDGE = 1.6;  // anti-coin normal
@@ -1284,7 +1283,7 @@ function moveZombies(game, deltaTime) {
     }
   }
 
-  // --- Helpers (locaux à la fonction) ---
+  // --- Helpers avec rayon paramétrable (pour réduire le rayon en "unstuck") ---
   const collidesPlayerAtR = (x, y, r) =>
     Object.values(game.players).some(p =>
       p && p.alive && entitiesCollide(x, y, r, p.x, p.y, PLAYER_RADIUS, 0)
@@ -1293,38 +1292,9 @@ function moveZombies(game, deltaTime) {
   const blockedAt = (x, y, r) =>
     isCircleColliding(game.map, x, y, r) ||
     circleBlockedByStructures(game, x, y, r, isSolidForZombie) ||
-    collidesPlayerAtR(x, y, r); // pas de collision zombie-zombie
+    collidesPlayerAtR(x, y, r); // <-- pas de collision zombie-zombie
 
-  function tileSolidForZombie(tx, ty) {
-    if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return true;
-    if (game.map[ty][tx] === 1) return true;
-    const s = getStruct(game, tx, ty);
-    return !!isSolidForZombie(s);
-  }
-
-  // ✅ Nouvelle version : détecte correctement une "porte diagonale" fermée
-  // en regardant les tuiles atteintes par le RAYON côté X et côté Y (front tiles).
-  function diagonalGateClosed(cx, cy, dirx, diry) {
-    if (Math.abs(dirx) < 1e-6 || Math.abs(diry) < 1e-6) return false; // pas un mouvement diagonal
-
-    const sx = Math.sign(dirx);
-    const sy = Math.sign(diry);
-
-    // Tuile courante du centre
-    const { tx, ty } = worldToTile(cx, cy);
-
-    // Tuiles "devant" le cercle : on avance jusqu’au bord du disque
-    const frontX = Math.floor((cx + sx * (ZOMBIE_RADIUS - 0.5)) / TILE_SIZE);
-    const frontY = Math.floor((cy + sy * (ZOMBIE_RADIUS - 0.5)) / TILE_SIZE);
-
-    // Ces deux tuiles représentent les “montants” de la porte diagonale
-    const sideAlongX = tileSolidForZombie(frontX, ty);
-    const sideAlongY = tileSolidForZombie(tx, frontY);
-
-    return sideAlongX && sideAlongY;
-  }
-
-  // petite rotation 2D
+  // petite fonction de rotation 2D
   const rotated = (vx, vy, rad) => {
     const c = Math.cos(rad), s = Math.sin(rad);
     return { x: vx * c - vy * s, y: vx * s + vy * c };
@@ -1333,18 +1303,18 @@ function moveZombies(game, deltaTime) {
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
 
-    // --- init états anti-bloqué ---
+    // 0) init états “anti-bloqué”
     if (z._lastTrackAt == null) {
       z._lastTrackAt = now;
       z._lastTrackX = z.x;
       z._lastTrackY = z.y;
       z._stuckAccum = 0;
       z._unstuckUntil = 0;
-      z._wallSide = (Math.random() < 0.5 ? -1 : 1);
-      z._localBlockStrikes = 0;
+      z._wallSide = (Math.random() < 0.5 ? -1 : 1); // gauche/droite
+      z._localBlockStrikes = 0;                      // blocage local (étape 3)
     }
 
-    // freeze après attaque
+    // 1) freeze après attaque
     if (z.attackFreezeUntil && now < z.attackFreezeUntil) {
       if (now - z._lastTrackAt >= 450) {
         z._lastTrackAt = now;
@@ -1356,7 +1326,7 @@ function moveZombies(game, deltaTime) {
       continue;
     }
 
-    // 1) choisir la cible
+    // 2) choisir la cible (joueur vivant le + proche, sinon tourelle)
     let target = null, bestDist = Infinity;
     for (const p of Object.values(game.players)) {
       if (!p || !p.alive) continue;
@@ -1371,25 +1341,29 @@ function moveZombies(game, deltaTime) {
 
     const speed = z.speed || 40;
 
-    // 2) LOS directe sinon path + repath périodique
+    // 3) déterminer vers où marcher (LOS directe sinon pathfinding) + repath périodique
     let tx, ty, usingPath = false;
 
     if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
+      // ligne de vue claire → marche directe
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
-      if (!z.nextRepathAt) z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+      if (!z.nextRepathAt) {
+        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+      }
     } else {
-      const due = now >= (z.nextRepathAt || 0);
-      const need =
-        due ||
+      const dueForPeriodicRepath = now >= (z.nextRepathAt || 0);
+
+      const needNewPath =
+        dueForPeriodicRepath ||
         !z.path || !z.pathTarget ||
-        Math.abs((z.pathTarget.x || 0) - target.x) > 12 ||
-        Math.abs((z.pathTarget.y || 0) - target.y) > 12 ||
+        Math.abs(z.pathTarget.x - target.x) > 12 ||
+        Math.abs(z.pathTarget.y - target.y) > 12 ||
         z.path.length < 2 ||
         z.pathStep == null ||
         z.pathStep >= z.path.length;
 
-      if (need) {
+      if (needNewPath) {
         z.path = findPath(game, z.x, z.y, target.x, target.y);
         z.pathStep = 1;
         z.pathTarget = { x: target.x, y: target.y };
@@ -1402,19 +1376,20 @@ function moveZombies(game, deltaTime) {
         ty = n.y * TILE_SIZE + TILE_SIZE / 2;
         usingPath = true;
       } else {
+        // petit jitter si aucun chemin
         const a = Math.random() * Math.PI * 2;
         tx = z.x + Math.cos(a) * 14;
         ty = z.y + Math.sin(a) * 14;
       }
     }
 
-    // 3) direction de base
+    // 4) calcul direction de base
     let dx = tx - z.x, dy = ty - z.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
-    // 4) watchdog anti-bloqué
+    // 5) watchdog anti-bloqué
     if (now - z._lastTrackAt >= 450) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
@@ -1429,13 +1404,13 @@ function moveZombies(game, deltaTime) {
       z._lastTrackY = z.y;
 
       if (z._stuckAccum >= 2000 && now >= z._unstuckUntil) {
-        z._unstuckUntil = now + 600;
-        z._wallSide = -z._wallSide;
-        z._stuckAccum = 900;
+        z._unstuckUntil = now + 600;              // 0.6s d’unlock
+        z._wallSide = -z._wallSide;               // alterner le côté
+        z._stuckAccum = 900;                      // évite retrigger instant
       }
     }
 
-    // 5) wall-follow doux pendant l'unstuck
+    // 6) “wall-follow” doux pendant l’unstuck
     if (now < z._unstuckUntil) {
       const side = z._wallSide || 1;
       const px = side * (-dy);
@@ -1446,11 +1421,14 @@ function moveZombies(game, deltaTime) {
       if (n > 0.0001) { dx = mixX / n; dy = mixY / n; }
     }
 
-    // 6) déplacement micro-pas avec anti-diagonale fermée
+    // 7) déplacement par micro-pas avec slides (+ micro-repath sur blocage local)
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
     const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
+
+    // rayon collision temporairement réduit de 1 px pendant l’unstuck
     const radiusNow = (now < z._unstuckUntil) ? Math.max(1, ZOMBIE_RADIUS - 1) : ZOMBIE_RADIUS;
 
+    // réinitialise le compteur de blocage local au début de l’itération
     z._localBlockStrikes = 0;
 
     while (remaining > 0.0001) {
@@ -1459,94 +1437,62 @@ function moveZombies(game, deltaTime) {
 
       let advanced = false;
 
-      // ⚠️ Interdit le pas diagonal si la "porte" est fermée (calculée avec la face du rayon)
-      if (diagonalGateClosed(z.x, z.y, dx, dy)) {
-        const preferXFirst = (z._wallSide || 1) > 0;
-        if (preferXFirst) {
-          let nx = z.x + Math.sign(dx) * step;
-          if (!blockedAt(nx, z.y, radiusNow)) { z.x = nx; advanced = true; }
-          else {
-            let ny = z.y + Math.sign(dy) * step;
-            if (!blockedAt(z.x, ny, radiusNow)) { z.y = ny; advanced = true; }
-          }
-        } else {
-          let ny = z.y + Math.sign(dy) * step;
-          if (!blockedAt(z.x, ny, radiusNow)) { z.y = ny; advanced = true; }
-          else {
-            let nx = z.x + Math.sign(dx) * step;
-            if (!blockedAt(nx, z.y, radiusNow)) { z.x = nx; advanced = true; }
-          }
-        }
+      // tentative 1 : direction principale
+      let nx = z.x + dx * step;
+      let ny = z.y + dy * step;
 
-        if (!advanced) {
-          if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
-            z.x += Math.sign(dx) * NUDGE; advanced = true;
-          } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
-            z.y += Math.sign(dy) * NUDGE; advanced = true;
-          }
-        }
+      if (!blockedAt(nx, ny, radiusNow)) {
+        z.x = nx; z.y = ny;
+        advanced = true;
       } else {
-        // chemin normal
-        let nx = z.x + dx * step;
-        let ny = z.y + dy * step;
-
-        if (!blockedAt(nx, ny, radiusNow)) {
-          z.x = nx; z.y = ny;
+        // tentative 2 : slide X
+        nx = z.x + Math.sign(dx) * step;
+        if (!blockedAt(nx, z.y, radiusNow)) {
+          z.x = nx;
           advanced = true;
         } else {
-          // slide X
-          nx = z.x + Math.sign(dx) * step;
-          if (!blockedAt(nx, z.y, radiusNow)) {
-            z.x = nx; advanced = true;
+          // tentative 3 : slide Y
+          ny = z.y + Math.sign(dy) * step;
+          if (!blockedAt(z.x, ny, radiusNow)) {
+            z.y = ny;
+            advanced = true;
           } else {
-            // slide Y
-            ny = z.y + Math.sign(dy) * step;
-            if (!blockedAt(z.x, ny, radiusNow)) {
-              z.y = ny; advanced = true;
+            // tentative 4 : NUDGE
+            if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
+              z.x += Math.sign(dx) * NUDGE;
+              advanced = true;
+            } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
+              z.y += Math.sign(dy) * NUDGE;
+              advanced = true;
             } else {
-              // nudge + rotations
-              if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
-                z.x += Math.sign(dx) * NUDGE; advanced = true;
-              } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
-                z.y += Math.sign(dy) * NUDGE; advanced = true;
+              // tentative 5 : direction Tournée (±20°) pour contourner les coins
+              const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
+              let r1 = rotated(dx, dy, turn);
+              nx = z.x + r1.x * step; ny = z.y + r1.y * step;
+              if (!blockedAt(nx, ny, radiusNow)) {
+                z.x = nx; z.y = ny;
+                advanced = true;
               } else {
-                const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
-                let r1 = rotated(dx, dy, turn);
-                nx = z.x + r1.x * step; ny = z.y + r1.y * step;
+                let r2 = rotated(dx, dy, -turn);
+                nx = z.x + r2.x * step; ny = z.y + r2.y * step;
                 if (!blockedAt(nx, ny, radiusNow)) {
-                  z.x = nx; z.y = ny; advanced = true;
+                  z.x = nx; z.y = ny;
+                  advanced = true;
                 } else {
-                  let r2 = rotated(dx, dy, -turn);
-                  nx = z.x + r2.x * step; ny = z.y + r2.y * step;
+                  // 🔥 ESCALADE SUPPLÉMENTAIRE : si toujours bloqué, tente ±45° (pas 80%)
+                  const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
+                  const stepStrong = step * 0.8;
+                  let r3 = rotated(dx, dy, turnStrong);
+                  nx = z.x + r3.x * stepStrong; ny = z.y + r3.y * stepStrong;
                   if (!blockedAt(nx, ny, radiusNow)) {
-                    z.x = nx; z.y = ny; advanced = true;
+                    z.x = nx; z.y = ny;
+                    advanced = true;
                   } else {
-                    const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
-                    const stepStrong = step * 0.8;
-                    let r3 = rotated(dx, dy, turnStrong);
-                    nx = z.x + r3.x * stepStrong; ny = z.y + r3.y * stepStrong;
+                    let r4 = rotated(dx, dy, -turnStrong);
+                    nx = z.x + r4.x * stepStrong; ny = z.y + r4.y * stepStrong;
                     if (!blockedAt(nx, ny, radiusNow)) {
-                      z.x = nx; z.y = ny; advanced = true;
-                    } else {
-                      let r4 = rotated(dx, dy, -turnStrong);
-                      nx = z.x + r4.x * stepStrong; ny = z.y + r4.y * stepStrong;
-                      if (!blockedAt(nx, ny, radiusNow)) {
-                        z.x = nx; z.y = ny; advanced = true;
-                      } else {
-                        const turnPerp = (Math.PI / 2) * (z._wallSide || 1); // 90°
-                        const stepPerp = step * 0.6;
-                        let r5 = rotated(dx, dy, turnPerp);
-                        nx = z.x + r5.x * stepPerp; ny = z.y + r5.y * stepPerp;
-                        if (!blockedAt(nx, ny, radiusNow)) {
-                          z.x = nx; z.y = ny; advanced = true;
-                        } else {
-                          let r6 = rotated(dx, dy, -turnPerp);
-                          nx = z.x + r6.x * stepPerp; ny = z.y + r6.y * stepPerp;
-                          if (!blockedAt(nx, ny, radiusNow)) {
-                            z.x = nx; z.y = ny; advanced = true;
-                          }
-                        }
-                      }
+                      z.x = nx; z.y = ny;
+                      advanced = true;
                     }
                   }
                 }
@@ -1561,8 +1507,9 @@ function moveZombies(game, deltaTime) {
         continue;
       }
 
-      // micro-repath immédiat si blocages consécutifs
+      // === Micro-repath immédiat sur blocage local ===
       z._localBlockStrikes++;
+
       if (z._localBlockStrikes >= 2) {
         const tgtX = target.x, tgtY = target.y;
         const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
@@ -1572,6 +1519,7 @@ function moveZombies(game, deltaTime) {
           z.pathTarget = { x: tgtX, y: tgtY };
           z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
 
+          // tente immédiatement un micro-pas vers le prochain nœud
           const n = newPath[1];
           const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
           const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
@@ -1590,13 +1538,14 @@ function moveZombies(game, deltaTime) {
             continue;
           }
         }
-        break;
+
+        break; // micro-repath n’a pas aidé → on stoppe ce tick
       }
 
-      break;
+      break; // échec simple (1er strike) → stop pour ce tick
     }
 
-    // progression du path
+    // 8) progression du path (si on suit un chemin)
     if (z.path && z.path.length > z.pathStep) {
       const n = z.path[z.pathStep];
       const nodeX = n.x * TILE_SIZE + TILE_SIZE / 2;
