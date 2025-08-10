@@ -1696,38 +1696,42 @@ function checkGameEnd(game) {
 
 function gameLoop() {
   try {
+    const nowGlobal = Date.now();
+
     for (const game of activeGames) {
       if (!game.lobby.started) continue;
-      const deltaTime = 1 / 30;
 
-      movePlayers(game, deltaTime);
-      moveBots(game, deltaTime);
-      moveZombies(game, deltaTime);
+      // --- deltaTime basé sur l'horloge réelle (indépendant du tick rate) ---
+      if (!game._lastTick) game._lastTick = nowGlobal;
+      let deltaTime = (nowGlobal - game._lastTick) / 1000; // en secondes
+      game._lastTick = nowGlobal;
+
+      // bornes anti-explosions : min ~1/120, max 0.10s
+      if (deltaTime < 1 / 120) deltaTime = 1 / 120;
+      if (deltaTime > 0.10)    deltaTime = 0.10;
+
+      // === Simulation ===
+      movePlayers(game,       deltaTime);
+      moveBots(game,          deltaTime);
+      moveZombies(game,       deltaTime);
       tickTurrets(game);
-      moveBullets(game, deltaTime);
+      moveBullets(game,       deltaTime);
       handleZombieAttacks(game);
 
       // --- PUSH ÉTAT TEMPS-RÉEL ---
-      // 1) Zombies & balles (déjà fait avant)
       io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
       io.to('lobby' + game.id).emit('bulletsUpdate', game.bullets);
-
-      // 2) Vague courante (déjà fait avant)
       io.to('lobby' + game.id).emit('currentRound', game.currentRound);
-
-      // 3) HP joueurs (déjà fait avant)
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-
-      // 4) ✅ NOUVEAU : push systématique des structures/tourelles (HP inclus)
       io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
 
-      // Regen joueurs
+      // --- Régénération basée sur le vrai deltaTime ---
       for (const pid in game.players) {
         const p = game.players[pid];
         if (!p || !p.alive) continue;
         const stats = getPlayerStats(p);
         if (stats.regen > 0 && p.health < p.maxHealth) {
-          p.health += stats.regen * (1 / 30);
+          p.health += stats.regen * deltaTime; // ⬅️ était * (1/30)
           fixHealth(p);
           io.to(pid).emit('healthUpdate', p.health);
         }
@@ -1739,8 +1743,10 @@ function gameLoop() {
   } catch (err) {
     console.error("Erreur dans la boucle principale gameLoop :", err);
   }
+  // On peut garder le rythme cible à 30 Hz : la vitesse ne dépend plus du tick réel
   setTimeout(gameLoop, 1000 / 30);
 }
+
 
 
 
