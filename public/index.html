@@ -484,6 +484,18 @@ const UPGRADES = [
 
     const waveMessage = document.getElementById('waveMessage');
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
+	let zombiesRemaining = 0;
+// --- Compteurs de vague ---
+let waveTotalZombies = 0;      // total prévu pour la manche (inclut ceux pas encore spawns)
+let waveKilledThisWave = 0;    // tués depuis le début de la manche
+
+function resetWaveCounters(total = 0) {
+  waveTotalZombies   = Number(total) || 0;
+  waveKilledThisWave = 0;
+  zombiesRemaining   = waveTotalZombies; // au départ, il reste tout le monde
+  drawHUD();
+}
+
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let shootBlocked = false;
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
@@ -520,6 +532,7 @@ const UPGRADES = [
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
+	const CLIENT_VIEW_RADIUS = 420;
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
 	let structures = null;
 
@@ -1070,18 +1083,41 @@ function drawStructures() {
 		);
 	  }
 	}
-    function drawZombies() {
-      for (const id in zombies) {
-        const z = zombies[id];
-        const screenX = z.x - cameraX;
-        const screenY = z.y - cameraY;
-        ctx.beginPath();
-        ctx.fillStyle = 'red';
-        ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
-      }
-    }
+	
+	
+function drawZombies() {
+  if (!myId || !playersHealth[myId]) return;
+  const me = playersHealth[myId];
+  const vx = me.x;
+  const vy = me.y;
+
+  // Petite marge pour éviter le "clignotement" sur le bord du cercle
+  const VIEW_MARGIN = 8;
+  const R2 = (CLIENT_VIEW_RADIUS - VIEW_MARGIN) * (CLIENT_VIEW_RADIUS - VIEW_MARGIN);
+
+  for (const id in zombies) {
+    const z = zombies[id];
+
+    // ❌ N’AFFICHE PAS les zombies au-delà de la zone visible
+    const dx = z.x - vx;
+    const dy = z.y - vy;
+    if ((dx * dx + dy * dy) > R2) continue;
+
+    const screenX = z.x - cameraX;
+    const screenY = z.y - cameraY;
+    ctx.beginPath();
+    ctx.fillStyle = 'red';
+    ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Barre de vie
+    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
+  }
+}
+
+
+
+
     function drawBullets() {
       for (const id in bullets) {
         const b = bullets[id];
@@ -1190,8 +1226,37 @@ function drawAimLine() {
   ctx.restore();
 }
 
+function drawLightMask() {
+  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
-	
+  // Centre du joueur en coordonnées écran (on tient compte du zoom)
+  const p = playersHealth[myId];
+  const screenX = (p.x - cameraX) * renderScale;
+  const screenY = (p.y - cameraY) * renderScale;
+
+  // On dessine l’overlay en coordonnées écran
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  ctx.save();
+  // Couleur d’assombrissement de l’extérieur du halo
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+
+  // Un seul chemin : un grand rectangle + un cercle au centre
+  // puis on remplit avec la règle 'evenodd' => trou net dans le halo.
+  ctx.beginPath();
+  ctx.rect(0, 0, canvas.width, canvas.height);
+  ctx.moveTo(screenX + CLIENT_VIEW_RADIUS, screenY); // facultatif, pour éviter une ligne
+  ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2, true);
+  ctx.fill('evenodd');
+
+  ctx.restore();
+
+  // On remet la transform monde pour le reste du rendu
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+}
+
+
+
 	function update(deltaTime) {
 	  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 	  let player = playersHealth[myId];
@@ -1406,19 +1471,32 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 	}
 
 
-	function drawHUD() {
-	  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-	  const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
-	  hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
-	  hudMoney.textContent = `Money : $${myMoney}`; // <-- AJOUT ICI
-	  hudZombies.textContent = `${tr.zombiesLeft}: ${Object.keys(zombies).length}`;
-	  hudKills.textContent = `${tr.kills}: ${myKills}`;
-	  hudRound.textContent = `${tr.round}: ${currentRound}`;
-		const me = playersHealth[myId];
-		hudHP.textContent = me && me.maxHealth
-		  ? `${tr.health}: ${Math.round(me.health)} / ${me.maxHealth}`
-		  : `${tr.health}: ${Math.round(me ? me.health : 0)}`;
-	}
+
+function drawHUD() {
+  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+  const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
+
+  hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
+  hudMoney.textContent = `Money : $${myMoney}`;
+
+  // ⚠️ Libellé imposé : "Zombies left" (pas de fallback "Active zombies")
+  const labelZ = 'Zombies left';
+
+  // Compteur : priorise zombiesRemaining, sinon on compte les zombies actifs
+  const countZ = (Number.isFinite(zombiesRemaining) && zombiesRemaining >= 0)
+    ? zombiesRemaining
+    : (zombies && typeof zombies === 'object' ? Object.keys(zombies).length : 0);
+
+  hudZombies.textContent = `${labelZ}: ${countZ}`;
+
+  hudKills.textContent = `${tr.kills}: ${myKills}`;
+  hudRound.textContent = `${tr.round}: ${currentRound}`;
+
+  const me = playersHealth[myId];
+  hudHP.textContent = me && me.maxHealth
+    ? `${tr.health}: ${Math.round(me.health)} / ${me.maxHealth}`
+    : `${tr.health}: ${Math.round(me ? me.health : 0)}`;
+}
 
 
     function showDeathScreen(kills = myKills, round = currentRound) {
@@ -1447,6 +1525,7 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 		drawMoneyFloatingTexts();
 		drawPlayers();
 		drawAimLine();
+		drawLightMask();
 
 		// IMPORTANT : le HUD est en DOM, pas sur le canvas — tu peux le laisser tel quel
 		drawHUD();
@@ -1510,6 +1589,13 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 	updateBuildTilesState(); // rafraîchir les étiquettes + disabled
     });
 
+
+
+socket.on('waveStarted', ({ totalZombies }) => {
+  resetWaveCounters(totalZombies);
+});
+
+
 	socket.on('structuresUpdate', (grid) => {
 	  structures = grid;
 	});
@@ -1521,8 +1607,19 @@ socket.on('structurePricesUpdate', (prices) => {
 
 
     socket.on('zombiesUpdate', (z) => { zombies = z; });
+	socket.on('zombiesRemaining', (n) => {
+	  zombiesRemaining = Number(n) || 0;
+	  drawHUD();
+	});
     socket.on('bulletsUpdate', (b) => { bullets = b; });
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
+	
+socket.on('zombieDied', () => {
+  if (zombiesRemaining > 0) zombiesRemaining--;
+  waveKilledThisWave++;
+  drawHUD();
+});
+	
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
 
 	socket.on('playersHealthUpdate', (players) => {
