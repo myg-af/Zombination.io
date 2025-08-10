@@ -334,15 +334,14 @@ function tickTurrets(game) {
 
 
 
-
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
 
-  // Pas d'échantillonnage plus fin et surtout test "cercle" (rayon zombie)
-  // pour empêcher les tentatives de passage en diagonale entre 2 blocs.
-  const stepLen = Math.max(4, Math.min(8, TILE_SIZE / 3)); // ~4..8 px
+  // Échantillonnage un peu plus fin + test "cercle"
+  // -> évite que le zombie "croit" voir un passage dans une pointe de coin.
+  const stepLen = Math.max(3, Math.min(8, TILE_SIZE / 4)); // ~3..8 px
   const steps = Math.ceil(dist / stepLen);
 
   for (let s = 1; s < steps; s++) {
@@ -352,7 +351,7 @@ function losBlockedForZombie(game, x0, y0, x1, y1) {
     // Mur de la MAP (avec rayon)
     if (isCircleColliding(game.map, ix, iy, ZOMBIE_RADIUS)) return true;
 
-    // Structures solides pour zombies (barricades, portes, tourelles) avec rayon
+    // Structures solides pour zombies (barricades/portes/tourelles) avec rayon
     if (circleBlockedByStructures(game, ix, iy, ZOMBIE_RADIUS, isSolidForZombie)) return true;
   }
   return false;
@@ -1261,6 +1260,7 @@ function moveBots(game, deltaTime) {
 }
 
 
+
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;      // micro-pas (px)
   const BASE_NUDGE = 1.6;  // anti-coin normal
@@ -1479,7 +1479,7 @@ function moveZombies(game, deltaTime) {
                   z.x = nx; z.y = ny;
                   advanced = true;
                 } else {
-                  // 🔥 ESCALADE SUPPLÉMENTAIRE : si toujours bloqué, tente ±45° (pas 80%)
+                  // tentative 6 : ±45° (pas 80%)
                   const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
                   const stepStrong = step * 0.8;
                   let r3 = rotated(dx, dy, turnStrong);
@@ -1493,6 +1493,23 @@ function moveZombies(game, deltaTime) {
                     if (!blockedAt(nx, ny, radiusNow)) {
                       z.x = nx; z.y = ny;
                       advanced = true;
+                    } else {
+                      // 🚀 NOUVEAU : essai ±90° (suivre le mur "franc" le long de l’axe)
+                      const turnPerp = (Math.PI / 2) * (z._wallSide || 1); // 90°
+                      const stepPerp = step * 0.6;
+                      let r5 = rotated(dx, dy, turnPerp);
+                      nx = z.x + r5.x * stepPerp; ny = z.y + r5.y * stepPerp;
+                      if (!blockedAt(nx, ny, radiusNow)) {
+                        z.x = nx; z.y = ny;
+                        advanced = true;
+                      } else {
+                        let r6 = rotated(dx, dy, -turnPerp);
+                        nx = z.x + r6.x * stepPerp; ny = z.y + r6.y * stepPerp;
+                        if (!blockedAt(nx, ny, radiusNow)) {
+                          z.x = nx; z.y = ny;
+                          advanced = true;
+                        }
+                      }
                     }
                   }
                 }
