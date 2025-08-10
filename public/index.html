@@ -7,15 +7,8 @@
   <title>Zombination.io</title>
   <style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
-    #gameCanvas {
-  display: block;
-  background: #222;
-  position: absolute;
-  top: 0; left: 0;
-  width: 100vw; height: 100vh;
-  touch-action: none;
-}
-
+    #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+	#gameCanvas { touch-action: none; }
 	.joystick-base, .joystick-stick { touch-action: none; }
 	html, body { overscroll-behavior: none; }
     #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
@@ -407,7 +400,7 @@
 	  if (socket && socket.connected) {
 		socket.emit('clientPing');
 	  }
-	}, 10000);
+	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const hudAlive = document.getElementById('hudAlive');
@@ -491,51 +484,6 @@ const UPGRADES = [
 
     const waveMessage = document.getElementById('waveMessage');
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
-// --- Interpolation helpers (client smoothing) ---
-const SMOOTH_MS_ZB = 80;   // zombies/bullets ~80ms
-const SMOOTH_MS_P   = 220; // autres joueurs ~140ms
-
-function lerp(a, b, t) { return a + (b - a) * t; }
-function clamp01(v) { return Math.max(0, Math.min(1, v)); }
-
-// prépare (si absent) le state d'interpolation
-function ensureSmoothState(obj, now) {
-  if (!obj) return;
-  if (obj.t0 == null) {
-    obj.sx = obj.x; obj.sy = obj.y;
-    obj.tx = obj.x; obj.ty = obj.y;
-    obj.t0 = now;   obj.td = 1;
-  }
-}
-
-// enregistre une nouvelle cible d'interpolation
-function setSmoothTarget(obj, nx, ny, durMs, now) {
-  ensureSmoothState(obj, now);
-  // point de départ = dernière position rendue si connue
-  const rx = (obj.renderX != null) ? obj.renderX : obj.x;
-  const ry = (obj.renderY != null) ? obj.renderY : obj.y;
-  obj.sx = rx; obj.sy = ry;
-  obj.tx = nx; obj.ty = ny;
-  obj.t0 = now; obj.td = Math.max(1, durMs);
-}
-
-
-function getSmoothPos(obj, now) {
-  ensureSmoothState(obj, now);
-  const t = clamp01((now - obj.t0) / obj.td);
-  const rx = lerp(obj.sx, obj.tx, t);
-  const ry = lerp(obj.sy, obj.ty, t);
-  obj.renderX = rx; obj.renderY = ry;
-  // réutilise un unique objet partagé (évite une alloc par appel)
-  _TMP_POS.x = rx;
-  _TMP_POS.y = ry;
-  return _TMP_POS;
-}
-
-
-
-
-
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let shootBlocked = false;
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
@@ -572,19 +520,6 @@ function getSmoothPos(obj, now) {
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
-	
-// Caches de paths (dessin sans recalculer l'arc à chaque fois)
-const PLAYER_CIRCLE = new Path2D();
-PLAYER_CIRCLE.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
-
-const ZOMBIE_CIRCLE = new Path2D();
-ZOMBIE_CIRCLE.arc(0, 0, ZOMBIE_RADIUS, 0, Math.PI * 2);
-
-// Temp object pour éviter d'allocer {x,y} à chaque getSmoothPos()
-const _TMP_POS = { x: 0, y: 0 };
-
-	
-	
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
 	let structures = null;
 
@@ -668,23 +603,19 @@ window.addEventListener('mousedown', e => {
 
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
-  mousePos = { x: e.clientX, y: e.clientY };
-  if (!isMobileDevice && myId && playersHealth[myId]) {
-    const p = playersHealth[myId];
-    const px = (p.renderX != null ? p.renderX : p.x);
-    const py = (p.renderY != null ? p.renderY : p.y);
-
-    aimDir = {
-      x: (cameraX + mousePos.x / renderScale) - px,
-      y: (cameraY + mousePos.y / renderScale) - py
-    };
-    let len = Math.hypot(aimDir.x, aimDir.y);
-    if (len > 0) {
-      aimDir.x /= len;
-      aimDir.y /= len;
-    }
-  }
-
+      mousePos = { x: e.clientX, y: e.clientY };
+      if (!isMobileDevice && myId && playersHealth[myId]) {
+        const player = playersHealth[myId];
+		aimDir = {
+		  x: (cameraX + mousePos.x / renderScale) - player.x,
+		  y: (cameraY + mousePos.y / renderScale) - player.y
+		};
+        let len = Math.hypot(aimDir.x, aimDir.y);
+        if (len > 0) {
+          aimDir.x /= len;
+          aimDir.y /= len;
+        }
+      }
     });
     function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
     window.addEventListener('resize', resizeCanvas);
@@ -734,79 +665,81 @@ function createJoystick(container, baseX, baseY, id) {
 }
 
 
+
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
   const radius = size / 2;
   const stickRadius = (size * 0.52) / 2;
   const center = { x: radius, y: radius };
 
-  // pointeur actif POUR CE JOYSTICK UNIQUEMENT
-  joy._pid = null;
+  let activeId = null;
 
   function setVec(dx, dy) {
     const max = radius - stickRadius;
     const len = Math.hypot(dx, dy);
+
+    // clamp visuel
     let nx = dx, ny = dy;
     if (len > max && len > 0) {
       nx = dx * (max / len);
       ny = dy * (max / len);
     }
 
-    // rendu visuel
+    // position visuelle
     joy.stick.style.left = (center.x - stickRadius + nx) + "px";
     joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
 
-    // vecteur normalisé [-1..1] vers les valeurs globales
+    // vecteur normalisé [-1..1]
     const out = (max > 0) ? { x: nx / max, y: ny / max } : { x: 0, y: 0 };
     if (which === "move") moveJoyVal = out;
     else aimJoyVal = out;
   }
 
-  function onPointerDown(e) {
-    // ce joystick peut être pris même si l’autre l’est déjà
-    if (joy._pid !== null) return; // déjà actif
-    joy._pid = e.pointerId;
-    try { joy.joyDiv.setPointerCapture(joy._pid); } catch {}
-
-    const r = joy.joyDiv.getBoundingClientRect();
-    const px = e.clientX - r.left;
-    const py = e.clientY - r.top;
-    setVec(px - center.x, py - center.y);
-    e.preventDefault();
-  }
-
-  function onPointerMove(e) {
-    if (e.pointerId !== joy._pid) return;
-    const r = joy.joyDiv.getBoundingClientRect();
-    const px = e.clientX - r.left;
-    const py = e.clientY - r.top;
-    setVec(px - center.x, py - center.y);
-    e.preventDefault();
-  }
-
-  function onPointerUp(e) {
-    if (e.pointerId !== joy._pid) return;
-    try { joy.joyDiv.releasePointerCapture(joy._pid); } catch {}
-    joy._pid = null;
+  function reset() {
+    activeId = null;
     setVec(0, 0);
+  }
+
+  function localCoords(clientX, clientY) {
+    const r = joy.joyDiv.getBoundingClientRect();
+    return { x: clientX - r.left, y: clientY - r.top };
+  }
+
+  function onDown(e) {
+    if (activeId !== null) return;
+    activeId = e.pointerId;
+    joy.joyDiv.setPointerCapture(activeId);
+    const p = localCoords(e.clientX, e.clientY);
+    setVec(p.x - center.x, p.y - center.y);
     e.preventDefault();
   }
 
-  // down sur toute la zone du joystick
-  joy.joyDiv.addEventListener('pointerdown', onPointerDown, { passive: false });
-  joy.base.addEventListener('pointerdown', onPointerDown, { passive: false });
-  joy.stick.addEventListener('pointerdown', onPointerDown, { passive: false });
+  function onMove(e) {
+    if (e.pointerId !== activeId) return;
+    const p = localCoords(e.clientX, e.clientY);
+    setVec(p.x - center.x, p.y - center.y);
+    e.preventDefault();
+  }
 
-  // listeners globaux (fonctionnent en parallèle pour les 2 joysticks)
-  window.addEventListener('pointermove', onPointerMove, { passive: false });
-  window.addEventListener('pointerup', onPointerUp, { passive: false });
-  window.addEventListener('pointercancel', onPointerUp, { passive: false });
+  function onUp(e) {
+    if (e.pointerId !== activeId) return;
+    try { joy.joyDiv.releasePointerCapture(activeId); } catch {}
+    reset();
+    e.preventDefault();
+  }
 
-  // position neutre par défaut
-  setVec(0, 0);
+  // down sur toute la zone
+  joy.joyDiv.addEventListener('pointerdown', onDown, { passive: false });
+  joy.base.addEventListener('pointerdown', onDown, { passive: false });
+  joy.stick.addEventListener('pointerdown', onDown, { passive: false });
+
+  // move/up globaux
+  window.addEventListener('pointermove', onMove, { passive: false });
+  window.addEventListener('pointerup', onUp, { passive: false });
+  window.addEventListener('pointercancel', onUp, { passive: false });
+
+  reset();
 }
-
-
 
 
 	function addJoystickTouchHandlers(joy, which) {
@@ -1113,96 +1046,59 @@ function drawStructures() {
 
 
 
-
-function drawPlayers() {
-  const now = performance.now();
-
-  for (const id in playersHealth) {
-    const p = playersHealth[id];
-    if (!p.alive) continue;
-
-    const pos = getSmoothPos(p, now);
-    const screenX = pos.x - cameraX;
-    const screenY = pos.y - cameraY;
-
-    // Couleur en fonction de moi/les autres
-    ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
-
-    ctx.save();
-    ctx.translate(screenX, screenY);
-    ctx.fill(PLAYER_CIRCLE);
-    ctx.restore();
-
-    // Pseudo
-    ctx.font = "bold 17px Arial";
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#aad8ff";
-    ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-
-    // Barre de vie (largeur fixe 30)
-    drawHealthBar(
-      screenX,
-      screenY - PLAYER_RADIUS - 13,
-      p.health,
-      p.maxHealth || 100,
-      30
-    );
-  }
-}
-
-
-function drawZombies() {
-  const now = performance.now();
-
-  for (const id in zombies) {
-    const z = zombies[id];
-    const pos = getSmoothPos(z, now);
-
-    const screenX = pos.x - cameraX;
-    const screenY = pos.y - cameraY;
-
-    // Couleur zombie : toujours rouge
-    ctx.save();
-    ctx.translate(screenX, screenY);
-    ctx.fillStyle = 'red';
-    ctx.fill(ZOMBIE_CIRCLE);
-    ctx.restore();
-
-    // Barre de PV au-dessus du zombie
-    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
-  }
-}
-
-
-
-
-function drawBullets() {
-  const now = performance.now();
-
-  ctx.lineWidth = 3;
-
-  for (const id in bullets) {
-    const b = bullets[id];
-    const pos = getSmoothPos(b, now);
-
-    // couleur par appartenance
-    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-
-    const x1 = pos.x - cameraX;
-    const y1 = pos.y - cameraY;
-    const x2 = x1 - (b.dx || 0) * 8;
-    const y2 = y1 - (b.dy || 0) * 8;
-
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  }
-}
-
-
-
-
+	function drawPlayers() {
+	  for (const id in playersHealth) {
+		const p = playersHealth[id];
+		if (!p.alive) continue;
+		const screenX = p.x - cameraX;
+		const screenY = p.y - cameraY;
+		ctx.beginPath();
+		ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
+		ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.font = "bold 17px Arial";
+		ctx.textAlign = "center";
+		ctx.fillStyle = "#aad8ff";
+		ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
+		// <-- largeur fixe 30 pour joueur
+		drawHealthBar(
+		  screenX,
+		  screenY - PLAYER_RADIUS - 13,
+		  p.health,
+		  p.maxHealth || 100,
+		  30
+		);
+	  }
+	}
+    function drawZombies() {
+      for (const id in zombies) {
+        const z = zombies[id];
+        const screenX = z.x - cameraX;
+        const screenY = z.y - cameraY;
+        ctx.beginPath();
+        ctx.fillStyle = 'red';
+        ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
+      }
+    }
+    function drawBullets() {
+      for (const id in bullets) {
+        const b = bullets[id];
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+        ctx.lineWidth = 3;
+        ctx.moveTo(b.x - cameraX, b.y - cameraY);
+        ctx.lineTo(
+          b.x - cameraX - b.dx * 8,
+          b.y - cameraY - b.dy * 8
+        );
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+	
 	function drawMoneyFloatingTexts() {
 	  const now = Date.now();
 	  for (let i = moneyFloatingTexts.length - 1; i >= 0; i--) {
@@ -1248,14 +1144,12 @@ function drawBullets() {
 
 function drawAimLine() {
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-  const p = playersHealth[myId];
-  const px = (p.renderX != null ? p.renderX : p.x);
-  const py = (p.renderY != null ? p.renderY : p.y);
-
+  const player = playersHealth[myId];
   let dir = { x: 1, y: 0 };
   let show = false;
 
   if (isMobileDevice) {
+    // 👉 même logique que le tir mobile (avec curve)
     let len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
     if (len > 0.06) {
       let ax = aimJoyVal.x / (len || 1);
@@ -1263,13 +1157,13 @@ function drawAimLine() {
       ax = curve(ax);
       ay = curve(ay);
       const n = Math.hypot(ax, ay);
-      if (n > 0.0001) dir = { x: ax / n, y: ay / n };
+      if (n > 0.0001) dir = { x: ax / n, y: ay / n }; // on renormalise pour tracer une ligne propre
       show = true;
     }
   } else {
     if (mouseDown) {
-      let dx = (cameraX + mousePos.x / renderScale) - px;
-      let dy = (cameraY + mousePos.y / renderScale) - py;
+      let dx = (cameraX + mousePos.x / renderScale) - player.x;
+      let dy = (cameraY + mousePos.y / renderScale) - player.y;
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > 3) {
         dir = { x: dx / dist, y: dy / dist };
@@ -1281,8 +1175,8 @@ function drawAimLine() {
   if (!show) return;
 
   const length = 440;
-  const screenX = px - cameraX;
-  const screenY = py - cameraY;
+  const screenX = player.x - cameraX;
+  const screenY = player.y - cameraY;
 
   ctx.save();
   ctx.beginPath();
@@ -1296,12 +1190,68 @@ function drawAimLine() {
   ctx.restore();
 }
 
+
 	
+	function update(deltaTime) {
+	  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+	  let player = playersHealth[myId];
+	  let move = { x:0, y:0 };
 
+	  // ---- MOUVEMENT ----
+	  if (!isMobileDevice) {
+		if (keys['arrowup'] || keys['w']) move.y -= 1;
+		if (keys['arrowdown'] || keys['s']) move.y += 1;
+		if (keys['arrowleft'] || keys['a']) move.x -= 1;
+		if (keys['arrowright'] || keys['d']) move.x += 1;
+	  } else {
+		const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
+		if (len > 0.06) {
+		  let mx = moveJoyVal.x / (len || 1);
+		  let my = moveJoyVal.y / (len || 1);
+		  move.x = curve(mx);
+		  move.y = curve(my);
+		}
+	  }
 
+	  socket.emit('moveDir', move);
 
+	  // ---- TIR ----
+	  let shooting = false;
+	  let shootDir = { x:1, y:0 };
 
+	  if (!isMobileDevice) {
+		// ✅ corrige avec / renderScale
+		let dx = (cameraX + mousePos.x / renderScale) - player.x;
+		let dy = (cameraY + mousePos.y / renderScale) - player.y;
+		let len = Math.hypot(dx, dy);
+		if (len > 3) shootDir = { x: dx/len, y: dy/len };
+		shooting = mouseDown;
+	  } else {
+		const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+		if (len > 0.06) {
+		  let ax = aimJoyVal.x / (len || 1);
+		  let ay = aimJoyVal.y / (len || 1);
+		  ax = curve(ax);
+		  ay = curve(ay);
+		  shootDir = { x: ax, y: ay };
+		  shooting = true;
+		}
+	  }
 
+	  if (shooting) {
+		const n = Math.hypot(shootDir.x, shootDir.y);
+		if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
+	  }
+
+	  if (shooting && !shootBlocked) {
+		shootBlocked = true;
+		socket.emit('shoot', {
+		  targetX: player.x + shootDir.x * 120,
+		  targetY: player.y + shootDir.y * 120
+		});
+		setTimeout(() => { shootBlocked = false; }, 300);
+	  }
+	}
 
 if (isMobileDevice) {
   canvas.addEventListener('pointerdown', (e) => {
@@ -1310,25 +1260,21 @@ if (isMobileDevice) {
     if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
     const p = playersHealth[myId];
-    const px = (p.renderX != null ? p.renderX : p.x);
-    const py = (p.renderY != null ? p.renderY : p.y);
-
-    const dx = (cameraX + e.clientX / renderScale) - px;
-    const dy = (cameraY + e.clientY / renderScale) - py;
+    const dx = (cameraX + e.clientX / renderScale) - p.x;
+    const dy = (cameraY + e.clientY / renderScale) - p.y;
     const d  = Math.hypot(dx, dy);
     const dir = d > 4 ? { x: dx / d, y: dy / d } : lastAimDir;
 
     if (!shootBlocked) {
       shootBlocked = true;
       socket.emit('shoot', {
-        targetX: px + dir.x * 120,
-        targetY: py + dir.y * 120
+        targetX: p.x + dir.x * 120,
+        targetY: p.y + dir.y * 120
       });
       setTimeout(() => { shootBlocked = false; }, 300);
     }
   }, { passive: true });
 }
-
 
 
 // ---- Aide : écran -> monde -> tuile ----
@@ -1445,90 +1391,19 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 
 
 
-function updateCamera() {
-  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-  const p = playersHealth[myId];
+	function updateCamera() {
+	  if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+	  let player = playersHealth[myId];
 
-  const px = (p.renderX != null ? p.renderX : p.x);
-  const py = (p.renderY != null ? p.renderY : p.y);
+	  const viewW = canvas.width / renderScale;
+	  const viewH = canvas.height / renderScale;
 
-  const viewW = canvas.width / renderScale;
-  const viewH = canvas.height / renderScale;
+	  cameraX = player.x - viewW / 2;
+	  cameraY = player.y - viewH / 2;
 
-  cameraX = px - viewW / 2;
-  cameraY = py - viewH / 2;
-
-  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
-  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
-}
-
-
-
-function update(deltaTime) {
-  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-  const player = playersHealth[myId];
-
-  // 👉 Utiliser la position lissée pour cohérence visuelle/visée
-  const px = (player.renderX != null ? player.renderX : player.x);
-  const py = (player.renderY != null ? player.renderY : player.y);
-
-  let move = { x:0, y:0 };
-
-  // ---- MOUVEMENT ----
-  if (!isMobileDevice) {
-    if (keys['arrowup'] || keys['w']) move.y -= 1;
-    if (keys['arrowdown'] || keys['s']) move.y += 1;
-    if (keys['arrowleft'] || keys['a']) move.x -= 1;
-    if (keys['arrowright'] || keys['d']) move.x += 1;
-  } else {
-    const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
-    if (len > 0.06) {
-      let mx = moveJoyVal.x / (len || 1);
-      let my = moveJoyVal.y / (len || 1);
-      move.x = curve(mx);
-      move.y = curve(my);
-    }
-  }
-
-  socket.emit('moveDir', move);
-
-  // ---- TIR ----
-  let shooting = false;
-  let shootDir = { x:1, y:0 };
-
-  if (!isMobileDevice) {
-    let dx = (cameraX + mousePos.x / renderScale) - px;
-    let dy = (cameraY + mousePos.y / renderScale) - py;
-    let len = Math.hypot(dx, dy);
-    if (len > 3) shootDir = { x: dx/len, y: dy/len };
-    shooting = mouseDown;
-  } else {
-    const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-    if (len > 0.06) {
-      let ax = aimJoyVal.x / (len || 1);
-      let ay = aimJoyVal.y / (len || 1);
-      ax = curve(ax);
-      ay = curve(ay);
-      shootDir = { x: ax, y: ay };
-      shooting = true;
-    }
-  }
-
-  if (shooting) {
-    const n = Math.hypot(shootDir.x, shootDir.y);
-    if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
-  }
-
-  if (shooting && !shootBlocked) {
-    shootBlocked = true;
-    socket.emit('shoot', {
-      targetX: px + shootDir.x * 120,
-      targetY: py + shootDir.y * 120
-    });
-    setTimeout(() => { shootBlocked = false; }, 300);
-  }
-}
-
+	  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
+	  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
+	}
 
 
 	function drawHUD() {
@@ -1553,39 +1428,31 @@ function update(deltaTime) {
     }
     btnReplay.onclick = () => { location.reload(); };
 
+    let lastTime = 0;
+    function gameLoop(timestamp = 0) {
+      const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
+      lastTime = timestamp;
+      update(deltaTime);
+      updateCamera();
+		// Remet la transform, clear, puis applique le scale (zoom)
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
+		drawMap();
+		drawBuildPreview();
+		drawStructures();
+		drawBullets();
+		drawZombies();
+		drawMoneyFloatingTexts();
+		drawPlayers();
+		drawAimLine();
 
-let lastTime = 0;
-function gameLoop(timestamp = 0) {
-  const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
-  lastTime = timestamp;
+		// IMPORTANT : le HUD est en DOM, pas sur le canvas — tu peux le laisser tel quel
+		drawHUD();
 
-  update(deltaTime);
-  updateCamera();
-
-  // Reset transform, clear, puis scale (zoom)
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
-
-  // Ordre de dessin
-  drawMap();
-  drawBuildPreview();
-  drawStructures();
-  drawBullets();
-  drawZombies();
-  drawMoneyFloatingTexts();
-  drawPlayers();
-  drawAimLine();
-
-  // ❌ plus de drawHUD() ici (gardé via setInterval)
-
-  if (!isDead) requestAnimationFrame(gameLoop);
-}
-
-
-
-
+      if (!isDead) requestAnimationFrame(gameLoop);
+    }
 
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
@@ -1653,95 +1520,33 @@ socket.on('structurePricesUpdate', (prices) => {
 });
 
 
-socket.on('zombiesUpdate', (zNew) => {
-  const now = performance.now();
-
-  // conserve / met à jour existants
-  for (const id in zNew) {
-    const nz = zNew[id];
-    const oz = zombies[id] || { };
-    // copie champs non-pos (hp, maxHp) + set cible interp
-    oz.hp = nz.hp; oz.maxHp = nz.maxHp;
-    oz.x = (oz.x == null) ? nz.x : oz.x;
-    oz.y = (oz.y == null) ? nz.y : oz.y;
-    setSmoothTarget(oz, nz.x, nz.y, SMOOTH_MS_ZB, now);
-    zombies[id] = oz;
-  }
-
-  // supprime ceux qui n’existent plus
-  for (const id in zombies) {
-    if (!zNew[id]) delete zombies[id];
-  }
-});
-
-socket.on('bulletsUpdate', (bNew) => {
-  const now = performance.now();
-
-  for (const id in bNew) {
-    const nb = bNew[id];
-    const ob = bullets[id] || { };
-    // copie métadonnées utiles
-    ob.owner = nb.owner;
-    ob.dx = nb.dx; ob.dy = nb.dy;
-    ob.createdAt = nb.createdAt;
-    ob.originTx = nb.originTx; ob.originTy = nb.originTy;
-
-    ob.x = (ob.x == null) ? nb.x : ob.x;
-    ob.y = (ob.y == null) ? nb.y : ob.y;
-    setSmoothTarget(ob, nb.x, nb.y, SMOOTH_MS_ZB, now);
-    bullets[id] = ob;
-  }
-
-  for (const id in bullets) {
-    if (!bNew[id]) delete bullets[id];
-  }
-});
-
+    socket.on('zombiesUpdate', (z) => { zombies = z; });
+    socket.on('bulletsUpdate', (b) => { bullets = b; });
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
 
+	socket.on('playersHealthUpdate', (players) => {
+	  // Met à jour toutes les infos reçues pour tous les joueurs
+	for (const id in players) {
+	  if (!playersHealth[id]) playersHealth[id] = {};
+	  playersHealth[id].health = players[id].health;
+	  playersHealth[id].alive = players[id].alive;
+	  playersHealth[id].x = players[id].x;
+	  playersHealth[id].y = players[id].y;
+	  playersHealth[id].pseudo = players[id].pseudo || "Joueur";
+	  playersHealth[id].money = players[id].money || 0;
+	  playersHealth[id].maxHealth = players[id].maxHealth || 100;  // <--- AJOUTE CETTE LIGNE
+	}
 
-socket.on('playersHealthUpdate', (players) => {
-  const now = performance.now();
-
-  for (const id in players) {
-    const src = players[id];
-    if (!playersHealth[id]) playersHealth[id] = {};
-    const dst = playersHealth[id];
-
-    // état
-    dst.health = src.health;
-    dst.alive  = src.alive;
-    dst.pseudo = src.pseudo || "Joueur";
-    dst.money  = src.money || 0;
-    dst.maxHealth = src.maxHealth || 100;
-
-    // init position si première fois
-    if (dst.x == null) {
-      dst.x = src.x; dst.y = src.y;
-      dst.renderX = src.x; dst.renderY = src.y;
-      dst.t0 = now; dst.td = 1;
-      dst.sx = src.x; dst.sy = src.y; dst.tx = src.x; dst.ty = src.y;
-    }
-
-    // 👉 TOUJOURS lisser, même pour mon joueur
-    setSmoothTarget(dst, src.x, src.y, SMOOTH_MS_P, now);
-  }
-
-  const me = players[socket.id];
-  if (me) {
-    playerHealth = me.health;
-    myMoney = me.money || 0;
-    if (!playersHealth[myId]) playersHealth[myId] = {};
-    playersHealth[myId].maxHealth = me.maxHealth || 100;
-  }
-
-  updateBuildTilesState();
-});
-
-
-
-
+	  // Mets à jour les variables du joueur local
+	const me = players[socket.id];
+	if (me) {
+	  playerHealth = me.health;
+	  myMoney = me.money || 0;
+	  updateBuildTilesState();
+	  playersHealth[myId].maxHealth = me.maxHealth || 100; // <--- aussi ici pour être sûr
+	}
+	});
 
     socket.on('youDied', (data) => {
       isDead = true;
@@ -1805,7 +1610,7 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 	});
 
     setInterval(drawHUD, 150);
-    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 1000);
+    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
 
 	// --- SHOP BTN LOGIC ---
 	const shopBtn = document.getElementById('shopBtn');
