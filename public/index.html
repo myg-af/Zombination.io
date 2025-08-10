@@ -395,7 +395,30 @@
     renderLangFlags(); initLobbyTexts();
 
     // --- JEU ---
-    const socket = io();
+    const socket = io({ transports: ['websocket'] });
+	
+let currentRound = 1;
+let playersHealth = {};
+let zombies = {};
+let bullets = {};
+let zombiesRemaining = 0;
+let waveTotalZombies = 0;
+let waveKilledThisWave = 0;
+let structures = null;
+
+// Remplace entièrement l'ancien handler
+socket.on('stateUpdate', (payload) => {
+  if (!payload) return;
+  if (payload.zombies)    zombies = payload.zombies;
+  if (payload.bullets)    bullets = payload.bullets;
+  if (payload.playersHealth) playersHealth = payload.playersHealth;
+  if (typeof payload.round === 'number') currentRound = payload.round;
+  if (payload.structures) structures = payload.structures;
+  // petit rafraîchissement d'UI
+  drawHUD();
+});
+
+	
 	setInterval(() => {
 	  if (socket && socket.connected) {
 		socket.emit('clientPing');
@@ -482,12 +505,8 @@ const UPGRADES = [
 	  goldGain: 0
 	};
 
-    const waveMessage = document.getElementById('waveMessage');
-    let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
-	let zombiesRemaining = 0;
-// --- Compteurs de vague ---
-let waveTotalZombies = 0;      // total prévu pour la manche (inclut ceux pas encore spawns)
-let waveKilledThisWave = 0;    // tués depuis le début de la manche
+const waveMessage = document.getElementById('waveMessage');
+
 
 function resetWaveCounters(total = 0) {
   waveTotalZombies   = Number(total) || 0;
@@ -534,7 +553,6 @@ function resetWaveCounters(total = 0) {
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 420;
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
-	let structures = null;
 
 // === Helpers map/structures (client) ===
 function worldToTile(x, y) {
@@ -1596,9 +1614,6 @@ socket.on('waveStarted', ({ totalZombies }) => {
 });
 
 
-	socket.on('structuresUpdate', (grid) => {
-	  structures = grid;
-	});
 
 socket.on('structurePricesUpdate', (prices) => {
   STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...prices };
@@ -1606,12 +1621,12 @@ socket.on('structurePricesUpdate', (prices) => {
 });
 
 
-    socket.on('zombiesUpdate', (z) => { zombies = z; });
+   
 	socket.on('zombiesRemaining', (n) => {
 	  zombiesRemaining = Number(n) || 0;
 	  drawHUD();
 	});
-    socket.on('bulletsUpdate', (b) => { bullets = b; });
+
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
 	
 socket.on('zombieDied', () => {
@@ -1620,30 +1635,8 @@ socket.on('zombieDied', () => {
   drawHUD();
 });
 	
-    socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
 
-	socket.on('playersHealthUpdate', (players) => {
-	  // Met à jour toutes les infos reçues pour tous les joueurs
-	for (const id in players) {
-	  if (!playersHealth[id]) playersHealth[id] = {};
-	  playersHealth[id].health = players[id].health;
-	  playersHealth[id].alive = players[id].alive;
-	  playersHealth[id].x = players[id].x;
-	  playersHealth[id].y = players[id].y;
-	  playersHealth[id].pseudo = players[id].pseudo || "Joueur";
-	  playersHealth[id].money = players[id].money || 0;
-	  playersHealth[id].maxHealth = players[id].maxHealth || 100;  // <--- AJOUTE CETTE LIGNE
-	}
 
-	  // Mets à jour les variables du joueur local
-	const me = players[socket.id];
-	if (me) {
-	  playerHealth = me.health;
-	  myMoney = me.money || 0;
-	  updateBuildTilesState();
-	  playersHealth[myId].maxHealth = me.maxHealth || 100; // <--- aussi ici pour être sûr
-	}
-	});
 
     socket.on('youDied', (data) => {
       isDead = true;
@@ -1707,7 +1700,6 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 	});
 
     setInterval(drawHUD, 150);
-    setInterval(() => { if(lobbyStarted) socket.emit('requestZombies'); }, 500);
 
 	// --- SHOP BTN LOGIC ---
 	const shopBtn = document.getElementById('shopBtn');

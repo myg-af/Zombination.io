@@ -11,15 +11,20 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
+const compression = require('compression');
 
 const gameMapModule = require('./game/gameMap');
 
 const app = express();
+app.use(compression());
 const server = http.createServer(app);
 const io = socketIo(server, {
-  pingInterval: 10000, // laisse 10s
-  pingTimeout: 60000   // passe à 60s (au lieu de 30s par défaut)
+  pingInterval: 10000,
+  pingTimeout: 60000,
+  perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
+  transports: ['websocket'],
 });
+
 
 const {
   MAP_ROWS,
@@ -82,17 +87,19 @@ function createNewGame() {
     currentRound: 1,
     totalZombiesToSpawn: 50,
     zombiesSpawnedThisWave: 0,
-    zombiesKilledThisWave: 0, // <-- ajouté
+    zombiesKilledThisWave: 0, // compteur de kills/vague
     map: null,
     spawnInterval: null,
     spawningActive: false,
+
+    // --- NOUVEAU : throttle réseau par joueur
+    _lastNetSend: {} // { [socketId]: timestampDernierEnvoi }
   };
   game.map = createEmptyMap(MAP_ROWS, MAP_COLS);
   placeObstacles(game.map, OBSTACLE_COUNT);
   activeGames.push(game);
   return game;
 }
-
 
 function buildCentralEnclosure(game, spacingTiles = 1) {
   // 1) Init grille structures
@@ -661,6 +668,13 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 150;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
+const NET_SEND_HZ = 30;
+const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
+const TICK_HZ = 60;
+const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
+const MAX_STEPS = 5;              // anti-spirale si gros retard
+let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+let accumulator = 0;
 
 
 function broadcastLobby(game) {
@@ -873,6 +887,7 @@ io.on('connection', socket => {
     console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
     delete game.lobby.players[socket.id];
     delete game.players[socket.id];
+	if (game._lastNetSend) delete game._lastNetSend[socket.id];
 	delete socketToGame[socket.id];
     io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
     broadcastLobby(game);
@@ -1903,10 +1918,9 @@ function moveBullets(game, deltaTime) {
             }
           }
 
-          // ------ NOUVEAU : compteur et events "left" ------
+          // ------ Garde uniquement "zombiesRemaining" ------
           game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
           const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
-          io.to('lobby' + game.id).emit('zombieDied');
           io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
           // --------------------------------------------------
 
@@ -1923,7 +1937,6 @@ function moveBullets(game, deltaTime) {
 }
 
 
-
 // PATCH: log de fin de partie
 function checkGameEnd(game) {
   const allDead = Object.values(game.players).filter(p => p.alive).length === 0;
@@ -1938,75 +1951,87 @@ function checkGameEnd(game) {
   }
 }
 
+function stepOnce(dt) {
+  for (const game of activeGames) {
+    if (!game.lobby.started) continue;
+
+    // === Simulation à dt fixe ===
+    movePlayers(game,       dt);
+    moveBots(game,          dt);
+    moveZombies(game,       dt);
+    tickTurrets(game);
+    moveBullets(game,       dt);
+    handleZombieAttacks(game);
+
+    // --- PUSH ÉTAT TEMPS-RÉEL (inchangé) ---
+    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    if (room) {
+      for (const sid of room) {
+        const p = game.players[sid];
+        if (!p) continue;
+
+        const cx = p.x || 0;
+        const cy = p.y || 0;
+
+        const zSnap  = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
+        const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
+        const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
+
+        const now = Date.now();
+        const last = game._lastNetSend[sid] || 0;
+        if (now - last >= NET_INTERVAL_MS) {
+          io.to(sid).volatile.emit('stateUpdate', {
+            zombies: zSnap,
+            bullets: bSnap,
+            playersHealth: phSnap,
+            round: game.currentRound
+          });
+          game._lastNetSend[sid] = now;
+        }
+      }
+    }
+
+    // --- Régénération ---
+    for (const pid in game.players) {
+      const p = game.players[pid];
+      if (!p || !p.alive) continue;
+      const stats = getPlayerStats(p);
+      if (stats.regen > 0 && p.health < p.maxHealth) {
+        p.health += stats.regen * dt;
+        fixHealth(p);
+        io.to(pid).emit('healthUpdate', p.health);
+      }
+    }
+
+    checkWaveEnd(game);
+    checkGameEnd(game);
+  }
+}
+
 
 function gameLoop() {
   try {
-    const nowGlobal = Date.now();
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+    let frameTime = now - lastTime;
+    lastTime = now;
 
-    for (const game of activeGames) {
-      if (!game.lobby.started) continue;
+    // On limite l’accumulation (ex : process gelé / pause)
+    if (frameTime > 0.25) frameTime = 0.25;
 
-      // --- deltaTime basé sur l'horloge réelle (indépendant du tick rate) ---
-      if (!game._lastTick) game._lastTick = nowGlobal;
-      let deltaTime = (nowGlobal - game._lastTick) / 1000; // en secondes
-      game._lastTick = nowGlobal;
+    accumulator += frameTime;
 
-      // bornes anti-explosions : min ~1/120, max 0.10s
-      if (deltaTime < 1 / 120) deltaTime = 1 / 120;
-      if (deltaTime > 0.10)    deltaTime = 0.10;
-
-      // === Simulation ===
-      movePlayers(game,       deltaTime);
-      moveBots(game,          deltaTime);
-      moveZombies(game,       deltaTime);
-      tickTurrets(game);
-      moveBullets(game,       deltaTime);
-      handleZombieAttacks(game);
-
-      // --- PUSH ÉTAT TEMPS-RÉEL (filtré par joueur) ---
-      // On récupère tous les sockets dans la room "lobby{id}"
-      const room = io.sockets.adapter.rooms.get('lobby' + game.id);
-      if (room) {
-        for (const sid of room) {
-          const p = game.players[sid];
-          if (!p) continue; // ignore les sockets pas (ou plus) dans game.players
-
-          const cx = p.x || 0;
-          const cy = p.y || 0;
-
-          const zSnap = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
-          const bSnap = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
-          const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
-
-          io.to(sid).emit('zombiesUpdate', zSnap);
-          io.to(sid).emit('bulletsUpdate', bSnap);
-          io.to(sid).emit('playersHealthUpdate', phSnap);
-          io.to(sid).emit('currentRound', game.currentRound);
-          // Structures : on garde le broadcast complet pour ne rien casser
-          io.to(sid).emit('structuresUpdate', game.structures);
-        }
-      }
-
-      // --- Régénération basée sur le vrai deltaTime ---
-      for (const pid in game.players) {
-        const p = game.players[pid];
-        if (!p || !p.alive) continue;
-        const stats = getPlayerStats(p);
-        if (stats.regen > 0 && p.health < p.maxHealth) {
-          p.health += stats.regen * deltaTime;
-          fixHealth(p);
-          io.to(pid).emit('healthUpdate', p.health);
-        }
-      }
-
-      checkWaveEnd(game);
-      checkGameEnd(game);
+    let steps = 0;
+    while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
+      stepOnce(FIXED_DT);
+      accumulator -= FIXED_DT;
+      steps++;
     }
   } catch (err) {
-    console.error("Erreur dans la boucle principale gameLoop :", err);
+    console.error("Erreur dans gameLoop :", err);
   }
-  // Rythme cible 30 Hz
-  setTimeout(gameLoop, 1000 / 30);
+
+  // cadence nominale 60 Hz (le fixe est garanti par l'accumulateur)
+  setTimeout(gameLoop, 1000 / TICK_HZ);
 }
 
 
