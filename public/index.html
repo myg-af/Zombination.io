@@ -519,15 +519,22 @@ function setSmoothTarget(obj, nx, ny, durMs, now) {
   obj.t0 = now; obj.td = Math.max(1, durMs);
 }
 
-// renvoie la position à dessiner (et la mémorise dans renderX/Y)
+
 function getSmoothPos(obj, now) {
   ensureSmoothState(obj, now);
   const t = clamp01((now - obj.t0) / obj.td);
   const rx = lerp(obj.sx, obj.tx, t);
   const ry = lerp(obj.sy, obj.ty, t);
   obj.renderX = rx; obj.renderY = ry;
-  return { x: rx, y: ry };
+  // réutilise un unique objet partagé (évite une alloc par appel)
+  _TMP_POS.x = rx;
+  _TMP_POS.y = ry;
+  return _TMP_POS;
 }
+
+
+
+
 
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let shootBlocked = false;
@@ -565,6 +572,19 @@ function getSmoothPos(obj, now) {
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
+	
+// Caches de paths (dessin sans recalculer l'arc à chaque fois)
+const PLAYER_CIRCLE = new Path2D();
+PLAYER_CIRCLE.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
+
+const ZOMBIE_CIRCLE = new Path2D();
+ZOMBIE_CIRCLE.arc(0, 0, ZOMBIE_RADIUS, 0, Math.PI * 2);
+
+// Temp object pour éviter d'allocer {x,y} à chaque getSmoothPos()
+const _TMP_POS = { x: 0, y: 0 };
+
+	
+	
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
 	let structures = null;
 
@@ -714,69 +734,39 @@ function createJoystick(container, baseX, baseY, id) {
 }
 
 
-
-// --- À mettre une seule fois (global) ---
-let _pointerWindowBound = false;
-const _pointerActive = { id: null, joy: null, which: null, center: null, radius: 0, stickRadius: 0, setVec: null };
-
-function _globalPointerMove(e) {
-  if (_pointerActive.id !== e.pointerId) return;
-  const r = _pointerActive.joy.joyDiv.getBoundingClientRect();
-  const px = e.clientX - r.left;
-  const py = e.clientY - r.top;
-  _pointerActive.setVec(px - _pointerActive.center.x, py - _pointerActive.center.y);
-  e.preventDefault();
-}
-
-function _globalPointerUp(e) {
-  if (_pointerActive.id !== e.pointerId) return;
-  try { _pointerActive.joy.joyDiv.releasePointerCapture(_pointerActive.id); } catch {}
-  // reset visuel et valeurs
-  _pointerActive.setVec(0, 0);
-  _pointerActive.id = null;
-  _pointerActive.joy = null;
-  e.preventDefault();
-}
-
-// --- Remplace ta fonction par celle-ci ---
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
   const radius = size / 2;
   const stickRadius = (size * 0.52) / 2;
   const center = { x: radius, y: radius };
 
+  // pointeur actif POUR CE JOYSTICK UNIQUEMENT
+  joy._pid = null;
+
   function setVec(dx, dy) {
     const max = radius - stickRadius;
     const len = Math.hypot(dx, dy);
-
-    // clamp du stick
     let nx = dx, ny = dy;
     if (len > max && len > 0) {
       nx = dx * (max / len);
       ny = dy * (max / len);
     }
 
-    // position visuelle
+    // rendu visuel
     joy.stick.style.left = (center.x - stickRadius + nx) + "px";
     joy.stick.style.top  = (center.y - stickRadius + ny) + "px";
 
-    // vecteur normalisé [-1..1] -> met à jour tes valeurs globales
+    // vecteur normalisé [-1..1] vers les valeurs globales
     const out = (max > 0) ? { x: nx / max, y: ny / max } : { x: 0, y: 0 };
     if (which === "move") moveJoyVal = out;
     else aimJoyVal = out;
   }
 
-  function localDown(e) {
-    if (_pointerActive.id !== null) return; // déjà un joystick actif
-    _pointerActive.id = e.pointerId;
-    _pointerActive.joy = joy;
-    _pointerActive.which = which;
-    _pointerActive.center = center;
-    _pointerActive.radius = radius;
-    _pointerActive.stickRadius = stickRadius;
-    _pointerActive.setVec = setVec;
-
-    joy.joyDiv.setPointerCapture(_pointerActive.id);
+  function onPointerDown(e) {
+    // ce joystick peut être pris même si l’autre l’est déjà
+    if (joy._pid !== null) return; // déjà actif
+    joy._pid = e.pointerId;
+    try { joy.joyDiv.setPointerCapture(joy._pid); } catch {}
 
     const r = joy.joyDiv.getBoundingClientRect();
     const px = e.clientX - r.left;
@@ -785,20 +775,34 @@ function addJoystickHandlers(joy, which) {
     e.preventDefault();
   }
 
-  // down sur toute la zone du joystick
-  joy.joyDiv.addEventListener('pointerdown', localDown, { passive: false });
-  joy.base.addEventListener('pointerdown', localDown, { passive: false });
-  joy.stick.addEventListener('pointerdown', localDown, { passive: false });
-
-  // bind global window une seule fois
-  if (!_pointerWindowBound) {
-    window.addEventListener('pointermove', _globalPointerMove, { passive: false });
-    window.addEventListener('pointerup', _globalPointerUp, { passive: false });
-    window.addEventListener('pointercancel', _globalPointerUp, { passive: false });
-    _pointerWindowBound = true;
+  function onPointerMove(e) {
+    if (e.pointerId !== joy._pid) return;
+    const r = joy.joyDiv.getBoundingClientRect();
+    const px = e.clientX - r.left;
+    const py = e.clientY - r.top;
+    setVec(px - center.x, py - center.y);
+    e.preventDefault();
   }
 
-  // position neutre au départ
+  function onPointerUp(e) {
+    if (e.pointerId !== joy._pid) return;
+    try { joy.joyDiv.releasePointerCapture(joy._pid); } catch {}
+    joy._pid = null;
+    setVec(0, 0);
+    e.preventDefault();
+  }
+
+  // down sur toute la zone du joystick
+  joy.joyDiv.addEventListener('pointerdown', onPointerDown, { passive: false });
+  joy.base.addEventListener('pointerdown', onPointerDown, { passive: false });
+  joy.stick.addEventListener('pointerdown', onPointerDown, { passive: false });
+
+  // listeners globaux (fonctionnent en parallèle pour les 2 joysticks)
+  window.addEventListener('pointermove', onPointerMove, { passive: false });
+  window.addEventListener('pointerup', onPointerUp, { passive: false });
+  window.addEventListener('pointercancel', onPointerUp, { passive: false });
+
+  // position neutre par défaut
   setVec(0, 0);
 }
 
@@ -1112,26 +1116,30 @@ function drawStructures() {
 
 function drawPlayers() {
   const now = performance.now();
+
   for (const id in playersHealth) {
     const p = playersHealth[id];
     if (!p.alive) continue;
 
-    // 👉 TOUS les joueurs (y compris moi) passent par l’interpolation
     const pos = getSmoothPos(p, now);
     const screenX = pos.x - cameraX;
     const screenY = pos.y - cameraY;
 
-    ctx.beginPath();
+    // Couleur en fonction de moi/les autres
     ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
-    ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
 
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.fill(PLAYER_CIRCLE);
+    ctx.restore();
+
+    // Pseudo
     ctx.font = "bold 17px Arial";
     ctx.textAlign = "center";
     ctx.fillStyle = "#aad8ff";
     ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
 
-    // largeur fixe 30 pour joueur
+    // Barre de vie (largeur fixe 30)
     drawHealthBar(
       screenX,
       screenY - PLAYER_RADIUS - 13,
@@ -1147,39 +1155,80 @@ function drawPlayers() {
 
 function drawZombies() {
   const now = performance.now();
+
+  // Prépare l’état commun
+  ctx.fillStyle = 'red';
+
   for (const id in zombies) {
     const z = zombies[id];
     const pos = getSmoothPos(z, now);
+
     const screenX = pos.x - cameraX;
     const screenY = pos.y - cameraY;
-    ctx.beginPath();
-    ctx.fillStyle = 'red';
-    ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+
+    // Dessin du cercle via Path2D + translate local
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.fill(ZOMBIE_CIRCLE);
+    ctx.restore();
+
+    // Barre de PV (fonction existante)
     drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
   }
 }
 
 function drawBullets() {
   const now = performance.now();
+
+  ctx.lineWidth = 3;
+
   for (const id in bullets) {
     const b = bullets[id];
     const pos = getSmoothPos(b, now);
-    ctx.save();
-    ctx.beginPath();
+
+    // couleur par appartenance
     ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-    ctx.lineWidth = 3;
-    ctx.moveTo(pos.x - cameraX, pos.y - cameraY);
-    ctx.lineTo(
-      pos.x - cameraX - (b.dx || 0) * 8,
-      pos.y - cameraY - (b.dy || 0) * 8
-    );
+
+    const x1 = pos.x - cameraX;
+    const y1 = pos.y - cameraY;
+    const x2 = x1 - (b.dx || 0) * 8;
+    const y2 = y1 - (b.dy || 0) * 8;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
     ctx.stroke();
-    ctx.restore();
   }
 }
 
-	
+function drawBullets() {
+  const now = performance.now();
+
+  ctx.lineWidth = 3;
+
+  for (const id in bullets) {
+    const b = bullets[id];
+    const pos = getSmoothPos(b, now);
+
+    // couleur par appartenance
+    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+
+    const x1 = pos.x - cameraX;
+    const y1 = pos.y - cameraY;
+    const x2 = x1 - (b.dx || 0) * 8;
+    const y2 = y1 - (b.dy || 0) * 8;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+}
+
+
+
+
+
 	function drawMoneyFloatingTexts() {
 	  const now = Date.now();
 	  for (let i = moneyFloatingTexts.length - 1; i >= 0; i--) {
@@ -1530,31 +1579,39 @@ function update(deltaTime) {
     }
     btnReplay.onclick = () => { location.reload(); };
 
-    let lastTime = 0;
-    function gameLoop(timestamp = 0) {
-      const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
-      lastTime = timestamp;
-      update(deltaTime);
-      updateCamera();
-		// Remet la transform, clear, puis applique le scale (zoom)
-		ctx.setTransform(1, 0, 0, 1, 0, 0);
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
-		drawMap();
-		drawBuildPreview();
-		drawStructures();
-		drawBullets();
-		drawZombies();
-		drawMoneyFloatingTexts();
-		drawPlayers();
-		drawAimLine();
 
-		// IMPORTANT : le HUD est en DOM, pas sur le canvas — tu peux le laisser tel quel
-		drawHUD();
+let lastTime = 0;
+function gameLoop(timestamp = 0) {
+  const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
+  lastTime = timestamp;
 
-      if (!isDead) requestAnimationFrame(gameLoop);
-    }
+  update(deltaTime);
+  updateCamera();
+
+  // Reset transform, clear, puis scale (zoom)
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+
+  // Ordre de dessin
+  drawMap();
+  drawBuildPreview();
+  drawStructures();
+  drawBullets();
+  drawZombies();
+  drawMoneyFloatingTexts();
+  drawPlayers();
+  drawAimLine();
+
+  // ❌ plus de drawHUD() ici (gardé via setInterval)
+
+  if (!isDead) requestAnimationFrame(gameLoop);
+}
+
+
+
+
 
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
