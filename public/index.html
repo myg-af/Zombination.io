@@ -484,6 +484,44 @@ const UPGRADES = [
 
     const waveMessage = document.getElementById('waveMessage');
     let currentRound = 1, playersHealth = {}, zombies = {}, bullets = {};
+// --- Interpolation helpers (client smoothing) ---
+const SMOOTH_MS_ZB = 80;   // zombies/bullets ~80ms
+const SMOOTH_MS_P   = 140; // autres joueurs ~140ms
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+// prépare (si absent) le state d'interpolation
+function ensureSmoothState(obj, now) {
+  if (!obj) return;
+  if (obj.t0 == null) {
+    obj.sx = obj.x; obj.sy = obj.y;
+    obj.tx = obj.x; obj.ty = obj.y;
+    obj.t0 = now;   obj.td = 1;
+  }
+}
+
+// enregistre une nouvelle cible d'interpolation
+function setSmoothTarget(obj, nx, ny, durMs, now) {
+  ensureSmoothState(obj, now);
+  // point de départ = dernière position rendue si connue
+  const rx = (obj.renderX != null) ? obj.renderX : obj.x;
+  const ry = (obj.renderY != null) ? obj.renderY : obj.y;
+  obj.sx = rx; obj.sy = ry;
+  obj.tx = nx; obj.ty = ny;
+  obj.t0 = now; obj.td = Math.max(1, durMs);
+}
+
+// renvoie la position à dessiner (et la mémorise dans renderX/Y)
+function getSmoothPos(obj, now) {
+  ensureSmoothState(obj, now);
+  const t = clamp01((now - obj.t0) / obj.td);
+  const rx = lerp(obj.sx, obj.tx, t);
+  const ry = lerp(obj.sy, obj.ty, t);
+  obj.renderX = rx; obj.renderY = ry;
+  return { x: rx, y: ry };
+}
+
     let myId = null, playerHealth = 100, isDead = false, myKills = 0, myPseudo = "";
 	let shootBlocked = false;
 	let moneyFloatingTexts = []; // Pour stocker les "+$" à afficher
@@ -1046,58 +1084,79 @@ function drawStructures() {
 
 
 
-	function drawPlayers() {
-	  for (const id in playersHealth) {
-		const p = playersHealth[id];
-		if (!p.alive) continue;
-		const screenX = p.x - cameraX;
-		const screenY = p.y - cameraY;
-		ctx.beginPath();
-		ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
-		ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.font = "bold 17px Arial";
-		ctx.textAlign = "center";
-		ctx.fillStyle = "#aad8ff";
-		ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-		// <-- largeur fixe 30 pour joueur
-		drawHealthBar(
-		  screenX,
-		  screenY - PLAYER_RADIUS - 13,
-		  p.health,
-		  p.maxHealth || 100,
-		  30
-		);
-	  }
-	}
-    function drawZombies() {
-      for (const id in zombies) {
-        const z = zombies[id];
-        const screenX = z.x - cameraX;
-        const screenY = z.y - cameraY;
-        ctx.beginPath();
-        ctx.fillStyle = 'red';
-        ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
-        ctx.fill();
-        drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
-      }
+function drawPlayers() {
+  const now = performance.now();
+  for (const id in playersHealth) {
+    const p = playersHealth[id];
+    if (!p.alive) continue;
+
+    let px = p.x, py = p.y;
+    if (id !== myId) {
+      const pos = getSmoothPos(p, now);
+      px = pos.x; py = pos.y;
+    } else {
+      // moi : pas d’interpolation pour garder la sensation “input = immédiat”
+      px = p.x; py = p.y;
     }
-    function drawBullets() {
-      for (const id in bullets) {
-        const b = bullets[id];
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-        ctx.lineWidth = 3;
-        ctx.moveTo(b.x - cameraX, b.y - cameraY);
-        ctx.lineTo(
-          b.x - cameraX - b.dx * 8,
-          b.y - cameraY - b.dy * 8
-        );
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
+
+    const screenX = px - cameraX;
+    const screenY = py - cameraY;
+
+    ctx.beginPath();
+    ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
+    ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.font = "bold 17px Arial";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#aad8ff";
+    ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
+
+    // largeur fixe 30 pour joueur
+    drawHealthBar(
+      screenX,
+      screenY - PLAYER_RADIUS - 13,
+      p.health,
+      p.maxHealth || 100,
+      30
+    );
+  }
+}
+
+function drawZombies() {
+  const now = performance.now();
+  for (const id in zombies) {
+    const z = zombies[id];
+    const pos = getSmoothPos(z, now);
+    const screenX = pos.x - cameraX;
+    const screenY = pos.y - cameraY;
+    ctx.beginPath();
+    ctx.fillStyle = 'red';
+    ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
+  }
+}
+
+function drawBullets() {
+  const now = performance.now();
+  for (const id in bullets) {
+    const b = bullets[id];
+    const pos = getSmoothPos(b, now);
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+    ctx.lineWidth = 3;
+    ctx.moveTo(pos.x - cameraX, pos.y - cameraY);
+    ctx.lineTo(
+      pos.x - cameraX - (b.dx || 0) * 8,
+      pos.y - cameraY - (b.dy || 0) * 8
+    );
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 	
 	function drawMoneyFloatingTexts() {
 	  const now = Date.now();
@@ -1520,13 +1579,97 @@ socket.on('structurePricesUpdate', (prices) => {
 });
 
 
-    socket.on('zombiesUpdate', (z) => { zombies = z; });
-    socket.on('bulletsUpdate', (b) => { bullets = b; });
+socket.on('zombiesUpdate', (zNew) => {
+  const now = performance.now();
+
+  // conserve / met à jour existants
+  for (const id in zNew) {
+    const nz = zNew[id];
+    const oz = zombies[id] || { };
+    // copie champs non-pos (hp, maxHp) + set cible interp
+    oz.hp = nz.hp; oz.maxHp = nz.maxHp;
+    oz.x = (oz.x == null) ? nz.x : oz.x;
+    oz.y = (oz.y == null) ? nz.y : oz.y;
+    setSmoothTarget(oz, nz.x, nz.y, SMOOTH_MS_ZB, now);
+    zombies[id] = oz;
+  }
+
+  // supprime ceux qui n’existent plus
+  for (const id in zombies) {
+    if (!zNew[id]) delete zombies[id];
+  }
+});
+
+socket.on('bulletsUpdate', (bNew) => {
+  const now = performance.now();
+
+  for (const id in bNew) {
+    const nb = bNew[id];
+    const ob = bullets[id] || { };
+    // copie métadonnées utiles
+    ob.owner = nb.owner;
+    ob.dx = nb.dx; ob.dy = nb.dy;
+    ob.createdAt = nb.createdAt;
+    ob.originTx = nb.originTx; ob.originTy = nb.originTy;
+
+    ob.x = (ob.x == null) ? nb.x : ob.x;
+    ob.y = (ob.y == null) ? nb.y : ob.y;
+    setSmoothTarget(ob, nb.x, nb.y, SMOOTH_MS_ZB, now);
+    bullets[id] = ob;
+  }
+
+  for (const id in bullets) {
+    if (!bNew[id]) delete bullets[id];
+  }
+});
+
     socket.on('killsUpdate', (kills) => { myKills = kills; drawHUD(); });
     socket.on('currentRound', (round) => { currentRound = round; drawHUD(); });
 
-	socket.on('playersHealthUpdate', (players) => {
-	  // Met à jour toutes les infos reçues pour tous les joueurs
+socket.on('playersHealthUpdate', (players) => {
+  const now = performance.now();
+
+  for (const id in players) {
+    const src = players[id];
+    if (!playersHealth[id]) playersHealth[id] = {};
+    const dst = playersHealth[id];
+
+    // champs “état”
+    dst.health = src.health;
+    dst.alive  = src.alive;
+    dst.pseudo = src.pseudo || "Joueur";
+    dst.money  = src.money || 0;
+    dst.maxHealth = src.maxHealth || 100;
+
+    // positions : on interpole pour les autres joueurs uniquement
+    if (id === myId) {
+      // moi : on garde la position serveur telle quelle (réactivité tir/visée)
+      dst.x = src.x;
+      dst.y = src.y;
+      dst.renderX = src.x; // garde synchro avec getSmoothPos si jamais appelé
+      dst.renderY = src.y;
+      dst.t0 = performance.now(); dst.td = 1;
+      dst.sx = src.x; dst.sy = src.y; dst.tx = src.x; dst.ty = src.y;
+    } else {
+      // autres joueurs : lissage
+      if (dst.x == null) { dst.x = src.x; dst.y = src.y; }
+      setSmoothTarget(dst, src.x, src.y, SMOOTH_MS_P, now);
+    }
+  }
+
+  // Optionnel : pas de purge ici, côté serveur on envoie un disconnect dédié
+  const me = players[socket.id];
+  if (me) {
+    playerHealth = me.health;
+    myMoney = me.money || 0;
+    if (!playersHealth[myId]) playersHealth[myId] = {};
+    playersHealth[myId].maxHealth = me.maxHealth || 100;
+  }
+
+  updateBuildTilesState();
+});
+
+
 	for (const id in players) {
 	  if (!playersHealth[id]) playersHealth[id] = {};
 	  playersHealth[id].health = players[id].health;
