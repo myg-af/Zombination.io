@@ -1456,20 +1456,50 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
   const { tx, ty } = screenToWorldTile(clientX, clientY);
 
   // bornes / murs
-  if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) return;
-  if (isWallAt(tx, ty)) return;
+  if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) {
+    console.debug('[build] Hors carte', { tx, ty });
+    return;
+  }
+  if (isWallAt(tx, ty)) {
+    console.debug('[build] Case murale', { tx, ty });
+    return;
+  }
 
   // bloc déjà occupé par une structure ?
-  if (structures?.[ty]?.[tx]) return;
+  if (structures?.[ty]?.[tx]) {
+    console.debug('[build] Case déjà occupée par une structure', { tx, ty, existing: structures[ty][tx] });
+    return;
+  }
 
-  // envoie au serveur
-  socket.emit('buyStructure', { type: buildMode, tx, ty });
+  // payload (on envoie aussi centre monde pour aider le serveur s'il en a besoin)
+  const payload = {
+    type: buildMode,
+    tx,
+    ty,
+    x: tx * TILE_SIZE + TILE_SIZE / 2,
+    y: ty * TILE_SIZE + TILE_SIZE / 2
+  };
 
-  // on sort du mode placement (une seule pose par clic)
-  buildMode = null;
-  buildHover = { tx: -1, ty: -1 };
+  console.debug('[emit] buyStructure', payload);
+
+  // ↘️ on attend l’ACK du serveur pour savoir si on sort du mode placement
+  try {
+    socket.emit('buyStructure', payload, (ack) => {
+      console.debug('[ack] buyStructure', ack);
+      if (ack && ack.ok) {
+        // succès confirmé → sortir du mode placement
+        buildMode = null;
+        buildHover = { tx: -1, ty: -1 };
+      } else {
+        // refus: on reste en mode placement pour réessayer ailleurs
+        const reason = ack && ack.reason ? ack.reason : 'unknown';
+        console.warn('[build] Refusé par le serveur:', reason);
+      }
+    });
+  } catch (err) {
+    console.error('[emit] buyStructure error:', err);
+  }
 }
-
 
 
 
@@ -1776,8 +1806,11 @@ socket.on('buildResult', (payload) => {
     tx,
     ty,
     newMoney,
-    structurePrices // <-- si le serveur renvoie des prix à jour
+    structurePrices,
+    hp: hpFromServer
   } = payload || {};
+
+  console.debug('[on] buildResult', payload);
 
   // Maj argent et éventuellement la table des prix
   if (typeof newMoney === 'number') {
@@ -1791,7 +1824,6 @@ socket.on('buildResult', (payload) => {
   drawHUD();
   updateBuildTilesState();
 
-  // Gestion des erreurs + feedback
   if (!ok) {
     let msg = '';
     switch (reason) {
@@ -1802,14 +1834,32 @@ socket.on('buildResult', (payload) => {
       case 'tile_blocked':     msg = "Case indisponible (mur, structure, autre joueur ou zombie)."; break;
       default:                 msg = "Achat impossible."; break;
     }
-    try { console.warn('[buildResult]', msg); } catch {}
+    console.warn('[buildResult] Refusé:', msg, { type, tx, ty });
+    // on reste en mode placement pour réessayer ailleurs
     return;
   }
 
-  // Succès
-  try { console.log(`[buildResult] Posé '${type}' en ${tx},${ty}`); } catch {}
-});
+  // ✅ Succès : on pose localement la structure pour l'afficher tout de suite
+  console.log(`[buildResult] OK: posé '${type}' en ${tx},${ty}`);
 
+  // S'assure que la grille existe
+  if (!structures) {
+    structures = Array.from({ length: MAP_ROWS }, () => Array(MAP_COLS).fill(null));
+  } else if (!structures[ty]) {
+    structures[ty] = [];
+  }
+
+  // HP par défaut si non fourni par le serveur
+  const defaultHp = (type === 'T') ? 500 : (type === 't' ? 200 : 200);
+  const hp = (typeof hpFromServer === 'number') ? hpFromServer : defaultHp;
+
+  // Place localement
+  structures[ty][tx] = { type, hp };
+
+  // Sort du mode placement
+  buildMode = null;
+  buildHover = { tx: -1, ty: -1 };
+});
 
 
 
