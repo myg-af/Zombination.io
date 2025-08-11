@@ -730,7 +730,7 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 500;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
-const TURRET_RANGE = 1000;
+const TURRET_RANGE = 500;
 const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
 // --- Anti-burst tourelles ---
 // Décalage aléatoire de cadence par tir, centré sur 0 (moyenne nulle) → ne change pas le DPS moyen
