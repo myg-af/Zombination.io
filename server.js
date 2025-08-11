@@ -694,7 +694,7 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const TURRET_SHOOT_INTERVAL = 150;
+const TURRET_SHOOT_INTERVAL = 250;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
