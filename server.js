@@ -81,7 +81,6 @@ function createNewGame() {
       timer: null,
     },
     players: {},
-    bots: {},
     zombies: {},
     bullets: {},
     currentRound: 1,
@@ -93,13 +92,20 @@ function createNewGame() {
     spawningActive: false,
 
     // --- NOUVEAU : throttle réseau par joueur
-    _lastNetSend: {} // { [socketId]: timestampDernierEnvoi }
+    _lastNetSend: {}, // { [socketId]: timestampDernierEnvoi }
+
+    // --- NOUVEAU : cadence zombies
+    _aiGroupTick: 0,     // groupe actif ce tick [0..AI_GROUPS-1]
+    _aiGroupCursor: 0,   // round-robin d’affectation des zombies aux groupes
+    _heavyBudget: 0,     // budget d'ops lourdes (LOS + path) pour ce tick
+    _repathsBudget: 0,   // budget de pathfinding (déjà exploité ailleurs)
   };
   game.map = createEmptyMap(MAP_ROWS, MAP_COLS);
   placeObstacles(game.map, OBSTACLE_COUNT);
   activeGames.push(game);
   return game;
 }
+
 
 function buildCentralEnclosure(game, spacingTiles = 1) {
   // 1) Init grille structures
@@ -187,7 +193,6 @@ const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 // === Interest management (zone de vue par joueur) ===
 const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
-const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
   const r2 = r * r;
@@ -254,7 +259,7 @@ function setStruct(game, tx, ty, s) {
   game.structures[ty][tx] = s;
 }
 
-function canPlaceStructureAt(game, tx, ty, buyerId) {
+function canPlaceStructureAt(game, tx, ty) {
   if (!game || !game.map) return false;
   if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return false;
 
@@ -459,24 +464,44 @@ function tickTurrets(game) {
 
 
 function losBlockedForZombie(game, x0, y0, x1, y1) {
+  // DDA par tuiles + prise en compte du "cercle" via isCircleColliding
+  const ts = TILE_SIZE;
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
 
-  // Pas d'échantillonnage plus fin et surtout test "cercle" (rayon zombie)
-  // pour empêcher les tentatives de passage en diagonale entre 2 blocs.
-  const stepLen = Math.max(4, Math.min(8, TILE_SIZE / 3)); // ~4..8 px
-  const steps = Math.ceil(dist / stepLen);
+  let cx = Math.floor(x0 / ts);
+  let cy = Math.floor(y0 / ts);
+  const tx = Math.floor(x1 / ts);
+  const ty = Math.floor(y1 / ts);
 
-  for (let s = 1; s < steps; s++) {
-    const ix = x0 + (dx * s / steps);
-    const iy = y0 + (dy * s / steps);
+  const stepX = dx > 0 ? 1 : -1;
+  const stepY = dy > 0 ? 1 : -1;
 
-    // Mur de la MAP (avec rayon)
-    if (isCircleColliding(game.map, ix, iy, ZOMBIE_RADIUS)) return true;
+  let tMaxX, tMaxY;
+  let tDeltaX, tDeltaY;
 
-    // Structures solides pour zombies (barricades, portes, tourelles) avec rayon
-    if (circleBlockedByStructures(game, ix, iy, ZOMBIE_RADIUS, isSolidForZombie)) return true;
+  const xBorder = (cx + (stepX > 0 ? 1 : 0)) * ts;
+  const yBorder = (cy + (stepY > 0 ? 1 : 0)) * ts;
+
+  tMaxX   = (dx !== 0) ? Math.abs((xBorder - x0) / dx) : Infinity;
+  tMaxY   = (dy !== 0) ? Math.abs((yBorder - y0) / dy) : Infinity;
+  tDeltaX = (dx !== 0) ? Math.abs(ts / dx) : Infinity;
+  tDeltaY = (dy !== 0) ? Math.abs(ts / dy) : Infinity;
+
+  // On marche de tuile en tuile jusqu’à atteindre la tuile de destination
+  while (true) {
+    // test cercle-vs-tuile solide sur le centre actuel (plus strict que point)
+    if (game.map[cy] && game.map[cy][cx] === 1) {
+      // le centre de la ligne passe dans cette tuile : vérifie le cercle zombie
+      const px = Math.max(cx * ts, Math.min(x0, (cx + 1) * ts));
+      const py = Math.max(cy * ts, Math.min(y0, (cy + 1) * ts));
+      if (isCircleColliding(game.map, px, py, ZOMBIE_RADIUS)) return true;
+    }
+    if (cx === tx && cy === ty) break;
+
+    if (tMaxX < tMaxY) { cx += stepX; tMaxX += tDeltaX; }
+    else               { cy += stepY; tMaxY += tDeltaY; }
   }
   return false;
 }
@@ -484,16 +509,38 @@ function losBlockedForZombie(game, x0, y0, x1, y1) {
 
 
 
-// LOS des tourelles : bloquée uniquement par les murs de la MAP (pas par barricades/portes)
 function losBlockedForTurret(game, x0, y0, x1, y1) {
+  // DDA ne bloque QUE sur les murs de la MAP (pas les structures)
+  const ts = TILE_SIZE;
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
-  const steps = Math.ceil(dist / 8);
-  for (let s = 1; s < steps; s++) {
-    const ix = x0 + (dx * s / steps);
-    const iy = y0 + (dy * s / steps);
-    if (isCollision(game.map, ix, iy)) return true; // ❗ ne bloque que sur les murs
+
+  let cx = Math.floor(x0 / ts);
+  let cy = Math.floor(y0 / ts);
+  const tx = Math.floor(x1 / ts);
+  const ty = Math.floor(y1 / ts);
+
+  const stepX = dx > 0 ? 1 : -1;
+  const stepY = dy > 0 ? 1 : -1;
+
+  let tMaxX, tMaxY;
+  let tDeltaX, tDeltaY;
+
+  const xBorder = (cx + (stepX > 0 ? 1 : 0)) * ts;
+  const yBorder = (cy + (stepY > 0 ? 1 : 0)) * ts;
+
+  tMaxX   = (dx !== 0) ? Math.abs((xBorder - x0) / dx) : Infinity;
+  tMaxY   = (dy !== 0) ? Math.abs((yBorder - y0) / dy) : Infinity;
+  tDeltaX = (dx !== 0) ? Math.abs(ts / dx) : Infinity;
+  tDeltaY = (dy !== 0) ? Math.abs(ts / dy) : Infinity;
+
+  while (true) {
+    if (game.map[cy] && game.map[cy][cx] === 1) return true;
+    if (cx === tx && cy === ty) break;
+
+    if (tMaxX < tMaxY) { cx += stepX; tMaxX += tDeltaX; }
+    else               { cy += stepY; tMaxY += tDeltaY; }
   }
   return false;
 }
@@ -506,6 +553,20 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   // <= au lieu de <
   return dist <= (aradius + bradius + bonus);
 }
+
+
+
+
+// Test collision cercle vs zombies (utilise la grille)
+function zombiesCircleCollision(game, x, y, radius, bonus = 0) {
+  const cand = queryZombiesInRadius(game, x, y, radius + ZOMBIE_RADIUS + bonus);
+  for (const z of cand) {
+    if (entitiesCollide(x, y, radius, z.x, z.y, ZOMBIE_RADIUS, bonus)) return true;
+  }
+  return false;
+}
+
+
 
 
 // Remplace TOUT le corps de isCircleColliding par ceci (dans server.js)
@@ -639,18 +700,6 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
 
 
 
-function isNearObstacle(map, cx, cy, radius, tileSize) {
-  const margin = Math.ceil(radius / tileSize);
-  for (let dx = -margin; dx <= margin; dx++) {
-    for (let dy = -margin; dy <= margin; dy++) {
-      const nx = cx + dx;
-      const ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= map[0].length || ny >= map.length) continue;
-      if (map[ny][nx] === 1) return true;
-    }
-  }
-  return false;
-}
 
 function findPath(game, startX, startY, endX, endY) {
   // On travaille en cases (grid)
@@ -741,9 +790,81 @@ const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon 
 
 // Événement de batch pour les lasers (un tableau de segments)
 const TURRET_LASER_BATCH_EVENT = 'laserBeams';
+// --- Stagger & cadence (zombies) ---
+const AI_GROUPS = 3;                   // on répartit les zombies en 3 groupes tournants
+const HEAVY_AI_BUDGET_PER_TICK = 120;  // budget d'opérations "lourdes" par tick (LOS/cache + path)
+
+// --- Grille spatiale & LOD ---
+const GRID_CELL_SIZE = Math.max(24, TILE_SIZE); // taille de cellule (>= tuile)
+
+// Cache LOS court déjà ajouté (tu l'as plus haut) : LOS_CACHE_MS
+
+class SpatialGrid {
+  constructor(cellSize) {
+    this.cs = cellSize;
+    this.map = new Map();   // key -> array of ids
+  }
+  _key(ix, iy) { return `${ix},${iy}`; }
+  clear() { this.map.clear(); }
+  insert(x, y, id) {
+    const ix = Math.floor(x / this.cs);
+    const iy = Math.floor(y / this.cs);
+    const k = this._key(ix, iy);
+    let arr = this.map.get(k);
+    if (!arr) { arr = []; this.map.set(k, arr); }
+    arr.push(id);
+  }
+  queryRadius(x, y, r, outArr) {
+    outArr.length = 0;
+    const cs = this.cs;
+    const ix0 = Math.floor((x - r) / cs), iy0 = Math.floor((y - r) / cs);
+    const ix1 = Math.floor((x + r) / cs), iy1 = Math.floor((y + r) / cs);
+    for (let iy = iy0; iy <= iy1; iy++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const arr = this.map.get(this._key(ix, iy));
+        if (arr && arr.length) {
+          for (let i = 0; i < arr.length; i++) outArr.push(arr[i]);
+        }
+      }
+    }
+    return outArr;
+  }
+}
+
+// Grilles rattachées au "game" (créées/reconstruites au début de chaque tick)
+function rebuildGrids(game) {
+  if (!game._zGrid) game._zGrid = new SpatialGrid(GRID_CELL_SIZE);
+  if (!game._pGrid) game._pGrid = new SpatialGrid(GRID_CELL_SIZE);
+  game._zGrid.clear();
+  game._pGrid.clear();
+  for (const [zid, z] of Object.entries(game.zombies)) {
+    if (z) game._zGrid.insert(z.x, z.y, zid);
+  }
+  for (const [pid, p] of Object.entries(game.players)) {
+    if (p && p.alive) game._pGrid.insert(p.x, p.y, pid);
+  }
+}
+
+// Recyclage de petits tableaux temporaires (anti-GC simple)
+const _nearIds = [];
+
+function queryZombiesInRadius(game, x, y, r, outArr = _nearIds) {
+  const ids = game._zGrid ? game._zGrid.queryRadius(x, y, r, outArr) : (outArr.length = 0, outArr);
+  const res = [];
+  for (let i = 0; i < ids.length; i++) {
+    const z = game.zombies[ids[i]];
+    if (z) res.push(z);
+  }
+  return res;
+}
+
+
+
 // --- Perf tuning (zombies) ---
 const MAX_REPATHS_PER_TICK = 25;  // nb max de BFS/repath par tick physique
 const LOS_CACHE_MS = 120;         // cache "ligne de vue" zombie → cible (ms)
+
+
 
 
 const NET_SEND_HZ = 30;
@@ -794,7 +915,7 @@ function spawnZombies(game, count) {
   const speedIncreasePercent = 0.05;
   const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
 
-  let spawnedCount = 0;
+
   for (let i = 0; i < count; i++) {
     if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) break;
     if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) break;
@@ -814,7 +935,6 @@ function spawnZombies(game, count) {
     const id = `zombie${Date.now()}_${Math.floor(Math.random()*1000000)}`;
     game.zombies[id] = z;
     game.zombiesSpawnedThisWave++;
-    spawnedCount++;
   }
 }
 
@@ -917,7 +1037,10 @@ function launchGame(game, readyPlayersArr = null) {
   startSpawning(game);
 }
 
-
+function getGameForSocket(socket) {
+  const gameId = socketToGame[socket.id];
+  return activeGames.find(g => g.id === gameId) || null;
+}
 
 
 io.on('connection', socket => {
@@ -938,87 +1061,98 @@ io.on('connection', socket => {
     started: game.lobby.started,
   });
 
-  socket.on('giveMillion', () => {
-    const player = game.players[socket.id];
-    if (player && player.pseudo === 'Myg') {
-      player.money = 1000000;
-      socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
-      socket.emit('upgradeBought', { upgId: null, newLevel: null, newMoney: player.money });
-    }
-  });
+socket.on('giveMillion', () => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  const player = game.players[socket.id];
+  if (player && player.pseudo === 'Myg') {
+    player.money = 1000000;
+    socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+    socket.emit('upgradeBought', { upgId: null, newLevel: null, newMoney: player.money });
+  }
+});
 
-  socket.on('setPseudoAndReady', (pseudo) => {
-    pseudo = (pseudo || '').trim().substring(0, 15);
-    pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
-    if (!pseudo) pseudo = 'Joueur';
-    game.lobby.players[socket.id] = { pseudo, ready: true };
-    broadcastLobby(game);
-    startLobbyTimer(game);
-  });
 
-  socket.on('leaveLobby', () => {
-    delete game.lobby.players[socket.id];
-    broadcastLobby(game);
-  });
+socket.on('setPseudoAndReady', (pseudo) => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+  if (!pseudo) pseudo = 'Joueur';
+  game.lobby.players[socket.id] = { pseudo, ready: true };
+  broadcastLobby(game);
+  startLobbyTimer(game);
+});
 
-  socket.on('disconnect', () => {
-    console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
+
+socket.on('leaveLobby', () => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  delete game.lobby.players[socket.id];
+  broadcastLobby(game);
+});
+
+socket.on('disconnect', () => {
+  const game = getGameForSocket(socket);
+  // si le socket n'était plus mappé, on continue quand même prudemment
+  if (game) {
     delete game.lobby.players[socket.id];
     delete game.players[socket.id];
-	if (game._lastNetSend) delete game._lastNetSend[socket.id];
-	delete socketToGame[socket.id];
+    if (game._lastNetSend) delete game._lastNetSend[socket.id];
     io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
     broadcastLobby(game);
     io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-  });
+  }
+  delete socketToGame[socket.id];
+});
 
-  socket.on('moveDir', (dir) => {
-    const player = game.players[socket.id];
-    if (!game.lobby.started || !player || !player.alive) return;
-    player.moveDir = dir; // dir.x et dir.y entre -1 et 1
-  });
 
-  socket.on('upgradeBuy', ({ upgId }) => {
-    const gameId = socketToGame[socket.id];
-    const game = activeGames.find(g => g.id === gameId);
-    if (!game) return;
-    const player = game.players[socket.id];
-    if (!player) return;
+socket.on('moveDir', (dir) => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  const player = game.players[socket.id];
+  if (!game.lobby.started || !player || !player.alive) return;
+  player.moveDir = dir; // dir.x et dir.y entre -1 et 1
+});
 
-    if (!player.upgrades) player.upgrades = { maxHp:0, speed:0, regen:0, damage:0, goldGain:0 };
 
-    const lvl = player.upgrades[upgId] || 0;
-    const price = getUpgradePrice(lvl + 1); // prix du prochain niveau
+socket.on('upgradeBuy', ({ upgId }) => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  const player = game.players[socket.id];
+  if (!player) return;
 
-    if (player.money >= price) {
-      player.money -= price;
-      player.upgrades[upgId] = lvl + 1;
+  const allowed = ['maxHp','speed','regen','damage','goldGain'];
+  if (!allowed.includes(upgId)) return; // sécurité légère
 
-      if (upgId === "maxHp") {
-        const oldMaxHp = player.maxHealth || 100;
-        const oldRatio = player.health / oldMaxHp;
-        const stats = getPlayerStats(player);
-        player.maxHealth = stats.maxHp;
-        player.health = Math.round(player.maxHealth * oldRatio);
-        fixHealth(player);
-      }
+  if (!player.upgrades) player.upgrades = { maxHp:0, speed:0, regen:0, damage:0, goldGain:0 };
 
-      socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
-      socket.emit('upgradeBought', {
-        upgId,
-        newLevel: player.upgrades[upgId],
-        newMoney: player.money
-      });
-    }
-  });
+  const lvl = player.upgrades[upgId] || 0;
+  const price = getUpgradePrice(lvl + 1);
+  if (player.money < price) return;
+
+  player.money -= price;
+  player.upgrades[upgId] = lvl + 1;
+
+  if (upgId === 'maxHp') {
+    const oldMax = player.maxHealth || 100;
+    const ratio = player.health / oldMax;
+    const stats = getPlayerStats(player);
+    player.maxHealth = stats.maxHp;
+    player.health = Math.round(player.maxHealth * ratio);
+    fixHealth(player);
+  }
+
+  socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+  socket.emit('upgradeBought', { upgId, newLevel: player.upgrades[upgId], newMoney: player.money });
+});
 
 
 socket.on('buyStructure', ({ type, tx, ty }) => {
-  const gameId = socketToGame[socket.id];
-  const game = activeGames.find(g => g.id === gameId);
+  const game = getGameForSocket(socket);
   if (!game || !game.lobby.started) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'game_not_running' });
     return;
+
   }
   const player = game.players[socket.id];
   if (!player || !player.alive) {
@@ -1045,7 +1179,7 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
   }
 
   // Vérifs de placement sur (tx, ty)
-  if (!canPlaceStructureAt(game, tx, ty, socket.id)) {
+if (!canPlaceStructureAt(game, tx, ty)) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'tile_blocked' });
     return;
   }
@@ -1078,63 +1212,83 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
 
 
 
-  socket.on('shoot', (data) => {
-    if (!game.lobby.started) return;
-    const player = game.players[socket.id];
-    if (!player || !player.alive) return;
-    const now = Date.now();
-    if (now - player.lastShot < SHOOT_INTERVAL) return;
-    player.lastShot = now;
+socket.on('shoot', (data) => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+  if (!game.lobby.started) return;
 
-    const dx = data.targetX - player.x;
-    const dy = data.targetY - player.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 1) return;
+  const player = game.players[socket.id];
+  if (!player || !player.alive) return;
 
-    const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    game.bullets[bulletId] = {
-      id: bulletId,
-      owner: socket.id,
-      x: player.x,
-      y: player.y,
-      dx: dx / dist,
-      dy: dy / dist,
-      createdAt: now
-    };
-  });
+  const now = Date.now();
+  if (now - player.lastShot < SHOOT_INTERVAL) return;
+  player.lastShot = now;
+
+  const dx = data.targetX - player.x;
+  const dy = data.targetY - player.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist < 1) return;
+
+  const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  game.bullets[bulletId] = {
+    id: bulletId, owner: socket.id,
+    x: player.x, y: player.y,
+    dx: dx / dist, dy: dy / dist,
+    createdAt: now
+  };
+});
 
 socket.on('requestZombies', () => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+
   const p = game.players[socket.id];
   if (!p) return;
+
   const zSnap = getZombiesFiltered(game, p.x || 0, p.y || 0, SERVER_VIEW_RADIUS);
   io.to(socket.id).emit('zombiesUpdate', zSnap);
 });
 
 
-  socket.on('playerDied', () => {
-    if (game.players[socket.id]) {
-      game.players[socket.id].alive = false;
-      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-    }
-  });
+
+socket.on('playerDied', () => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+
+  const me = game.players[socket.id];
+  if (!me) return;
+
+  me.alive = false;
+  io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+});
+
 
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
-  socket.on('killAllZombies', () => {
-    const player = game.players[socket.id];
-    if (!player || player.pseudo !== 'Myg') return;
-    game.zombies = {};
-    io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
-  });
+socket.on('killAllZombies', () => {
+  const game = getGameForSocket(socket);
+  if (!game) return;
+
+  const player = game.players[socket.id];
+  if (!player || player.pseudo !== 'Myg') return;
+
+  game.zombies = {};
+  io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+});
+
 });
 
 
 
+function getPlayerStats(p) {
+  const u = p?.upgrades || {};
+  const base = SHOP_CONST.base; // une seule source de vérité
 
-function getPlayerStats(player) {
-  const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 50, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  // Regen : linéaire jusqu'au niveau 10, puis légère expo
   const lvl = u.regen || 0;
-  const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
+  const per = SHOP_CONST.regenPerLevel; // 1 PV/s/niveau par défaut
+  const regen = (lvl <= 10)
+    ? per * lvl
+    : +(per * 10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
   return {
     maxHp: Math.round(base.maxHp * Math.pow(1.1, u.maxHp || 0)),
@@ -1151,41 +1305,29 @@ function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
     const p = game.players[id];
-	fixHealth(p);
+    if (!p) continue;        // ← garde anti-déconnexion pendant le tick
+    fixHealth(p);
     obj[id] = {
       health: p.health,
       alive: p.alive,
-      x: p.x,
-      y: p.y,
+      x: p.x, y: p.y,
       pseudo: p.pseudo,
       money: p.money,
-	  maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
+      maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
     };
   }
   return obj;
 }
 
-const zombieAttackCooldown = 350;
+
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
 const ATTACK_REACH_STRUCT = ZOMBIE_RADIUS + 2;    // contact (avant ~36)
 const ZOMBIE_ATTACK_COOLDOWN_MS = 300;            // avant 350
 const ZOMBIE_DAMAGE_BASE = 15;                                 // base dmg
 
 
-function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
-  // pousse doucement l’entity hors des zombies si chevauchement (spawn/lag)
-  for (const z of Object.values(game.zombies)) {
-    const dx = entity.x - z.x;
-    const dy = entity.y - z.y;
-    const d  = Math.hypot(dx, dy);
-    const minD = radiusSelf + ZOMBIE_RADIUS - 0.5; // petite marge anti-jitter
-    if (d > 0 && d < minD) {
-      const push = (minD - d) * 0.5;               // poussée douce
-      entity.x += (dx / d) * push;
-      entity.y += (dy / d) * push;
-    }
-  }
-}
+
+
 
 
 function movePlayers(game, deltaTime) {
@@ -1203,7 +1345,6 @@ function movePlayers(game, deltaTime) {
     let dirY = (p.moveDir?.y || 0);
     const len = Math.hypot(dirX, dirY);
     if (len < 1e-6) {
-      // Même si le joueur ne bouge pas, on vérifie s’il a quitté la tuile de grâce.
       if (p.graceTile) {
         const { tx, ty } = worldToTile(p.x, p.y);
         if (tx !== p.graceTile.tx || ty !== p.graceTile.ty) {
@@ -1216,12 +1357,8 @@ function movePlayers(game, deltaTime) {
 
     const blockedForPlayer = (x, y) =>
       isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
-      // ⚠️ tient compte d’une éventuelle tuile “grâce” pour CE joueur
       circleBlockedByStructuresForPlayer(game, x, y, PLAYER_RADIUS, p) ||
-      // ne traverse PAS les zombies
-      Object.values(game.zombies).some(z =>
-        entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
-      );
+      zombiesCircleCollision(game, x, y, PLAYER_RADIUS, 1);
 
     let remaining = distToTravel;
     while (remaining > 0.0001) {
@@ -1253,7 +1390,7 @@ function movePlayers(game, deltaTime) {
       break;
     }
 
-    // ✅ Si le joueur a quitté la tuile de grâce, on réactive la collision définitivement
+    // Quitte la tuile de grâce ?
     if (p.graceTile) {
       const { tx, ty } = worldToTile(p.x, p.y);
       if (tx !== p.graceTile.tx || ty !== p.graceTile.ty) {
@@ -1273,12 +1410,12 @@ function moveBots(game, deltaTime) {
   const shootingRange = 250;
 
   // ❗ Les BOTS ne traversent plus les portes : on utilise isSolidForZombie (tout struct hp>0 est solide)
-  const blockedForBot = (x, y) =>
-    isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
-    circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForZombie) ||
-    Object.values(game.zombies).some(z =>
-      entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
-    );
+const blockedForBot = (x, y) =>
+  isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
+  circleBlockedByStructures(game, x, y, PLAYER_RADIUS, isSolidForZombie) ||
+  // utilise le spatial hash
+  zombiesCircleCollision(game, x, y, PLAYER_RADIUS, 1);
+
 
   const canShoot = (fromX, fromY, tx, ty) => {
     const dx = tx - fromX, dy = ty - fromY;
@@ -1471,8 +1608,33 @@ function moveZombies(game, deltaTime) {
     return { x: vx * c - vy * s, y: vx * s + vy * c };
   };
 
+  // --- petite aide utilitaire : plus proche joueur/tourelle (distance² uniquement)
+  function getClosestTarget(zx, zy) {
+    let best = null, bestD2 = Infinity;
+
+    for (const p of Object.values(game.players)) {
+      if (!p || !p.alive) continue;
+      const dx = p.x - zx, dy = p.y - zy;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD2) { bestD2 = d2; best = { x: p.x, y: p.y }; }
+    }
+    for (const t of turretTargets) {
+      const dx = t.x - zx, dy = t.y - zy;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bestD2) { bestD2 = d2; best = { x: t.x, y: t.y }; }
+    }
+    return best;
+  }
+
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
+
+    // --- Affectation à un groupe si nécessaire (stagger) ---
+    if (z._aiGroup == null) {
+      z._aiGroup = game._aiGroupCursor;
+      game._aiGroupCursor = (game._aiGroupCursor + 1) % AI_GROUPS;
+    }
+    const isHeavyTick = (z._aiGroup === game._aiGroupTick);
 
     // 0) init états “anti-bloqué”
     if (z._lastTrackAt == null) {
@@ -1497,89 +1659,93 @@ function moveZombies(game, deltaTime) {
       continue;
     }
 
-    // 2) choisir la cible (joueur vivant le + proche, sinon tourelle)
-    let target = null, bestDist = Infinity;
-    for (const p of Object.values(game.players)) {
-      if (!p || !p.alive) continue;
-      const d = Math.hypot(p.x - z.x, p.y - z.y);
-      if (d < bestDist) { bestDist = d; target = { x: p.x, y: p.y }; }
-    }
-    for (const t of turretTargets) {
-      const d = Math.hypot(t.x - z.x, t.y - z.y);
-      if (d < bestDist) { bestDist = d; target = { x: t.x, y: t.y }; }
-    }
+    // 2) choisir la cible la plus proche (distance²)
+    const target = getClosestTarget(z.x, z.y);
     if (!target) continue;
 
     const speed = z.speed || 40;
 
-    // 3) déterminer vers où marcher (LOS directe sinon pathfinding) + repath périodique
+    // 3) déterminer vers où marcher
     let tx, ty, usingPath = false;
 
-    // --- cache LOS court (évite de rééchantillonner toutes les 1–2 ms) ---
-    let losClear;
-    const cacheOK =
-      z._losCache &&
-      now < z._losCache.until &&
-      Math.abs((z._losCache.tx || 0) - target.x) < 12 &&
-      Math.abs((z._losCache.ty || 0) - target.y) < 12;
+    if (isHeavyTick) {
+      // --- Tick "lourd" : autorisé à faire LOS + path dans la limite des budgets ---
+      // cache LOS court : on compte dans le budget uniquement quand on recalcule
+      let losClear;
+      const cacheOK =
+        z._losCache &&
+        now < z._losCache.until &&
+        Math.abs((z._losCache.tx || 0) - target.x) < 12 &&
+        Math.abs((z._losCache.ty || 0) - target.y) < 12;
 
-    if (cacheOK) {
-      losClear = z._losCache.clear === true;
-    } else {
-      losClear = !losBlockedForZombie(game, z.x, z.y, target.x, target.y);
-      // ⚠️ Utilise LOS_CACHE_MS (défini à l’étape 1)
-      z._losCache = { clear: losClear, tx: target.x, ty: target.y, until: now + LOS_CACHE_MS };
-    }
-
-    if (losClear) {
-      // ligne de vue claire → marche directe
-      tx = target.x; ty = target.y;
-      z.path = null; z.pathStep = 1; z.pathTarget = null;
-      if (!z.nextRepathAt) {
-        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+      if (cacheOK) {
+        losClear = z._losCache.clear === true;
+      } else {
+        if (game._heavyBudget > 0) {
+          losClear = !losBlockedForZombie(game, z.x, z.y, target.x, target.y);
+          game._heavyBudget--;
+        } else {
+          // pas de budget LOS : suppose bloqué (on évite l’ops coûteuse)
+          losClear = false;
+        }
+        z._losCache = { clear: losClear, tx: target.x, ty: target.y, until: now + LOS_CACHE_MS };
       }
-    } else {
-      const dueForPeriodicRepath = now >= (z.nextRepathAt || 0);
 
-      const needNewPath =
-        dueForPeriodicRepath ||
-        !z.path || !z.pathTarget ||
-        Math.abs(z.pathTarget.x - target.x) > 12 ||
-        Math.abs(z.pathTarget.y - target.y) > 12 ||
-        z.path.length < 2 ||
-        z.pathStep == null ||
-        z.pathStep >= z.path.length;
-
-      if (needNewPath) {
-        // ⚠️ Budget partagé par tick (init à l’étape 2)
-        if (game._repathsBudget > 0) {
-          const newPath = findPath(game, z.x, z.y, target.x, target.y);
-          game._repathsBudget--;
-          z.path = newPath;
-          z.pathStep = 1;
-          z.pathTarget = { x: target.x, y: target.y };
+      if (losClear) {
+        // ligne de vue claire → marche directe
+        tx = target.x; ty = target.y;
+        z.path = null; z.pathStep = 1; z.pathTarget = null;
+        if (!z.nextRepathAt) {
           z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
-        } else {
-          // Pas de budget : petit déplacement “probable” pour garder du mouvement
-          const a = Math.atan2(target.y - z.y, target.x - z.x) + (Math.random() - 0.5) * 0.6; // ±~34°
-          tx = z.x + Math.cos(a) * 40;
-          ty = z.y + Math.sin(a) * 40;
         }
-      }
+      } else {
+        const dueForPeriodicRepath = now >= (z.nextRepathAt || 0);
 
-      if (tx === undefined) {
-        if (z.path && z.path.length > z.pathStep) {
-          const n = z.path[z.pathStep];
-          tx = n.x * TILE_SIZE + TILE_SIZE / 2;
-          ty = n.y * TILE_SIZE + TILE_SIZE / 2;
-          usingPath = true;
-        } else {
-          // petit jitter si aucun chemin disponible
-          const a = Math.random() * Math.PI * 2;
-          tx = z.x + Math.cos(a) * 14;
-          ty = z.y + Math.sin(a) * 14;
+        const needNewPath =
+          dueForPeriodicRepath ||
+          !z.path || !z.pathTarget ||
+          Math.abs(z.pathTarget.x - target.x) > 12 ||
+          Math.abs(z.pathTarget.y - target.y) > 12 ||
+          z.path.length < 2 ||
+          z.pathStep == null ||
+          z.pathStep >= z.path.length;
+
+        if (needNewPath) {
+          if (game._repathsBudget > 0 && game._heavyBudget > 0) {
+            const newPath = findPath(game, z.x, z.y, target.x, target.y);
+            game._repathsBudget--;
+            game._heavyBudget--; // on compte ce path dans le budget "lourd"
+            z.path = newPath;
+            z.pathStep = 1;
+            z.pathTarget = { x: target.x, y: target.y };
+            z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+          } else {
+            // Pas de budget : petit déplacement “probable”
+            const a = Math.atan2(target.y - z.y, target.x - z.x) + (Math.random() - 0.5) * 0.6;
+            tx = z.x + Math.cos(a) * 40;
+            ty = z.y + Math.sin(a) * 40;
+          }
+        }
+
+        if (tx === undefined) {
+          if (z.path && z.path.length > z.pathStep) {
+            const n = z.path[z.pathStep];
+            tx = n.x * TILE_SIZE + TILE_SIZE / 2;
+            ty = n.y * TILE_SIZE + TILE_SIZE / 2;
+            usingPath = true;
+          } else {
+            // petit jitter si aucun chemin dispo
+            const a = Math.random() * Math.PI * 2;
+            tx = z.x + Math.cos(a) * 14;
+            ty = z.y + Math.sin(a) * 14;
+          }
         }
       }
+    } else {
+      // --- Tick "léger" : pas de LOS/pathfinding, on se dirige simplement vers la cible ---
+      const a = Math.atan2(target.y - z.y, target.x - z.x);
+      tx = z.x + Math.cos(a) * 40;
+      ty = z.y + Math.sin(a) * 40;
     }
 
     // 4) calcul direction de base
@@ -1588,11 +1754,16 @@ function moveZombies(game, deltaTime) {
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
-    // 5) watchdog anti-bloqué
-    if (now - z._lastTrackAt >= 450) {
+    // 5) watchdog anti-bloqué (uniquement pertinent sur tick lourd)
+    if (isHeavyTick && (now - z._lastTrackAt >= 450)) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
-      const losBlocked = losBlockedForZombie(game, z.x, z.y, target.x, target.y);
+      // si on a du budget, on peut vérifier le LOS pour affiner le stuck
+      let losBlocked = false;
+      if (game._heavyBudget > 0) {
+        losBlocked = losBlockedForZombie(game, z.x, z.y, target.x, target.y);
+        game._heavyBudget--;
+      }
       if (nearlyStill && losBlocked) {
         z._stuckAccum = Math.min(2500, z._stuckAccum + (now - z._lastTrackAt));
       } else {
@@ -1620,7 +1791,7 @@ function moveZombies(game, deltaTime) {
       if (n > 0.0001) { dx = mixX / n; dy = mixY / n; }
     }
 
-    // 7) déplacement par micro-pas avec slides (+ micro-repath sur blocage local)
+    // 7) déplacement par micro-pas avec slides (+ micro-repath sur blocage local — seulement sur tick lourd)
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
     const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
 
@@ -1663,8 +1834,8 @@ function moveZombies(game, deltaTime) {
             } else if (!blockedAt(z.x, z.y + Math.sign(dy) * NUDGE, radiusNow)) {
               z.y += Math.sign(dy) * NUDGE;
               advanced = true;
-            } else {
-              // tentative 5 : direction Tournée (±20°) pour contourner les coins
+            } else if (isHeavyTick) {
+              // tentative 5 : direction Tournée (±20°) pour contourner les coins (tick lourd seulement)
               const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
               let r1 = rotated(dx, dy, turn);
               nx = z.x + r1.x * step; ny = z.y + r1.y * step;
@@ -1678,7 +1849,7 @@ function moveZombies(game, deltaTime) {
                   z.x = nx; z.y = ny;
                   advanced = true;
                 } else {
-                  // 🔥 ESCALADE SUPPLÉMENTAIRE : si toujours bloqué, tente ±45° (pas 80%)
+                  // ESCALADE : ±45° (pas 80%) — tick lourd seulement
                   const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
                   const stepStrong = step * 0.8;
                   let r3 = rotated(dx, dy, turnStrong);
@@ -1706,45 +1877,47 @@ function moveZombies(game, deltaTime) {
         continue;
       }
 
-      // === Micro-repath immédiat sur blocage local ===
-      z._localBlockStrikes++;
+      // === Micro-repath immédiat sur blocage local — seulement si tick lourd et budget dispo ===
+      if (isHeavyTick) {
+        z._localBlockStrikes++;
 
-      if (z._localBlockStrikes >= 2) {
-        const tgtX = target.x, tgtY = target.y;
-        // respecte le budget global par tick (initialisé ailleurs)
-        if (game._repathsBudget > 0) {
-          const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
-          game._repathsBudget--;
-          if (newPath && newPath.length > 1) {
-            z.path = newPath;
-            z.pathStep = 1;
-            z.pathTarget = { x: tgtX, y: tgtY };
-            z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        if (z._localBlockStrikes >= 2) {
+          const tgtX = target.x, tgtY = target.y;
+          if (game._repathsBudget > 0 && game._heavyBudget > 0) {
+            const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
+            game._repathsBudget--;
+            game._heavyBudget--;
+            if (newPath && newPath.length > 1) {
+              z.path = newPath;
+              z.pathStep = 1;
+              z.pathTarget = { x: tgtX, y: tgtY };
+              z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
 
-            // tente immédiatement un micro-pas vers le prochain nœud
-            const n = newPath[1];
-            const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
-            const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
+              // tente immédiatement un micro-pas vers le prochain nœud
+              const n = newPath[1];
+              const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
+              const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
 
-            let rdx = nwx - z.x, rdy = nwy - z.y;
-            const rd = Math.hypot(rdx, rdy);
-            if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
+              let rdx = nwx - z.x, rdy = nwy - z.y;
+              const rd = Math.hypot(rdx, rdy);
+              if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
 
-            const step2 = Math.min(MAX_STEP, remaining + step);
-            let nx2 = z.x + rdx * step2;
-            let ny2 = z.y + rdy * step2;
+              const step2 = Math.min(MAX_STEP, remaining + step);
+              let nx2 = z.x + rdx * step2;
+              let ny2 = z.y + rdy * step2;
 
-            if (!blockedAt(nx2, ny2, radiusNow)) {
-              z.x = nx2; z.y = ny2;
-              z._localBlockStrikes = 0;
-              continue;
+              if (!blockedAt(nx2, ny2, radiusNow)) {
+                z.x = nx2; z.y = ny2;
+                z._localBlockStrikes = 0;
+                continue;
+              }
             }
           }
+          break; // micro-repath n’a pas aidé ou pas de budget → on stoppe ce tick
         }
-        break; // micro-repath n’a pas aidé → on stoppe ce tick
       }
 
-      break; // échec simple (1er strike) → stop pour ce tick
+      break; // échec simple (tick léger ou 1er strike) → stop pour ce tick
     }
 
     // 8) progression du path (si on suit un chemin)
@@ -1758,7 +1931,6 @@ function moveZombies(game, deltaTime) {
     }
   }
 }
-
 
 
 
@@ -1962,7 +2134,6 @@ function fixHealth(p) {
 }
 
 
-
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
     const bullet = game.bullets[id];
@@ -1987,52 +2158,41 @@ function moveBullets(game, deltaTime) {
       continue;
     }
 
-    // collision avec zombies
-    for (const zid in game.zombies) {
-      const z = game.zombies[zid];
+    // collision avec zombies (candidats via grille spatiale -> objets)
+    const candidates = queryZombiesInRadius(game, bullet.x, bullet.y, ZOMBIE_RADIUS + 6);
+    for (const z of candidates) {
       if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
         const shooterIsPlayer = !!game.players[bullet.owner];
         const statsShooter = shooterIsPlayer ? getPlayerStats(game.players[bullet.owner]) : {};
         const bulletDamage = shooterIsPlayer ? (statsShooter.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
 
         z.hp -= bulletDamage;
-
         const killed = z.hp <= 0;
+
         if (killed) {
-          // --- Attribution des gains d'argent ---
           if (shooterIsPlayer) {
-            game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
-            io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+            const shooter = game.players[bullet.owner];
+            shooter.kills = (shooter.kills || 0) + 1;
+            io.to(bullet.owner).emit('killsUpdate', shooter.kills);
 
             const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
             const moneyEarned = Math.round(baseMoney * ((statsShooter.goldGain || 10) / 10));
-            game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
+            shooter.money = (shooter.money || 0) + moneyEarned;
             io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
-
-          } else if (typeof bullet.owner === 'string' && bullet.owner.startsWith('turret_')) {
-            const tx = bullet.originTx, ty = bullet.originTy;
-            const s = getStruct(game, tx, ty);
-            if (s && (s.type === 'T' || s.type === 't') && s.placedBy) {
-              const ownerId = s.placedBy;
-              const ownerPlayer = game.players[ownerId];
-              if (ownerPlayer) {
-                const ownerStats = getPlayerStats(ownerPlayer);
-                const baseMoney = Math.floor(Math.random() * 11) + 10;
-                const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
-                ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
-                io.to(ownerId).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
-              }
-            }
           }
 
-          // ------ Garde uniquement "zombiesRemaining" ------
+          // compteur vague (toujours quand un zombie meurt)
           game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
           const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
           io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
-          // --------------------------------------------------
 
-          // suppression du zombie tué
-          delete game.zombies[zid];
+          // supprime le zombie tué (on le retrouve par identité)
+          for (const zid in game.zombies) {
+            if (game.zombies[zid] === z) {
+              delete game.zombies[zid];
+              break;
+            }
+          }
         }
 
         // La balle s'arrête sur impact
@@ -2061,15 +2221,25 @@ function checkGameEnd(game) {
 function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
-	game._repathsBudget = MAX_REPATHS_PER_TICK;
 
-    // === Simulation à dt fixe ===
-    movePlayers(game,       dt);
-    moveBots(game,          dt);
-    moveZombies(game,       dt);
-    tickTurrets(game);
-    moveBullets(game,       dt);
-    handleZombieAttacks(game);
+    // --- (NOUVEAU) budgets et groupe actif ce tick ---
+    game._repathsBudget = MAX_REPATHS_PER_TICK;
+    game._heavyBudget   = HEAVY_AI_BUDGET_PER_TICK;
+    game._aiGroupTick   = (game._aiGroupTick + 1) % AI_GROUPS;
+	
+	rebuildGrids(game);
+
+// === Simulation à dt fixe ===
+movePlayers(game, dt);
+moveBots(game, dt);
+moveZombies(game, dt);
+
+// ⚠️ AJOUT : la grille reflet des positions ACTUELLES des zombies
+rebuildGrids(game);
+
+tickTurrets(game);
+moveBullets(game, dt);
+handleZombieAttacks(game);
 
     // --- PUSH ÉTAT TEMPS-RÉEL (inchangé) ---
     const room = io.sockets.adapter.rooms.get('lobby' + game.id);
