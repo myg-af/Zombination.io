@@ -818,7 +818,7 @@ function spawnZombies(game, count) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
   if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) return;
 
-	const hp = Math.round(10 * Math.pow(1.1, game.currentRound - 1));
+	const hp = Math.round(10 * Math.pow(1.15, game.currentRound - 1));
   const baseSpeed = 40;
   const speedIncreasePercent = 0.05;
   const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
