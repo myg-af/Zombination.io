@@ -1543,6 +1543,9 @@ function drawLightMask() {
   const screenX = (p.x - cameraX) * renderScale;
   const screenY = (p.y - cameraY) * renderScale;
 
+  // ★ rayon du halo en pixels ÉCRAN (monde 420 * zoom écran)
+  const r = CLIENT_VIEW_RADIUS * renderScale; // ★ AJOUT
+
   // on passe en coordonnées écran pour l’overlay (identique PC)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
@@ -1557,22 +1560,20 @@ function drawLightMask() {
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath();
     ctx.rect(0, 0, canvas.width, canvas.height);
-    ctx.moveTo(screenX + CLIENT_VIEW_RADIUS, screenY);
-    ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2, true);
+    ctx.moveTo(screenX + r, screenY);                 // ★ remplace CLIENT_VIEW_RADIUS par r
+    ctx.arc(screenX, screenY, r, 0, Math.PI * 2, true); // ★ idem
     ctx.fill('evenodd');
     ctx.restore();
   } else {
     // 🔁 fallback mobile (visuellement identique) : on “perfore” le trou
     ctx.save();
-    // on peint l’ombre
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // on découpe le trou
     const prevOp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2);
+    ctx.arc(screenX, screenY, r, 0, Math.PI * 2);      // ★ idem
     ctx.fill();
     ctx.globalCompositeOperation = prevOp;
     ctx.restore();
@@ -1581,7 +1582,6 @@ function drawLightMask() {
   // on remet l’espace monde
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 }
-
 
 
 function update(deltaTime) {
