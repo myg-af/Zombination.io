@@ -427,6 +427,31 @@ let zombies = {};
 let bullets = {};
 let turretLasers = [];
 const turretAngleCache = new Map(); // key: "turret_c_r" -> { ang, t }
+
+// ---- Perf caches (par frame) ----
+let FRAME_ID = 0;
+let ZOMBIES_FRAME = [];
+let ZOMBIES_FRAME_ID = -1;
+
+// portée max (monde) à laquelle une tourelle cherche une cible
+const TURRET_TARGET_MAX_DIST = 720;
+const TURRET_TARGET_MAX_DIST2 = TURRET_TARGET_MAX_DIST * TURRET_TARGET_MAX_DIST;
+
+// Met à jour la liste plate des zombies une seule fois par frame
+function refreshZombiesFrame() {
+  if (ZOMBIES_FRAME_ID !== FRAME_ID) {
+    // Array “plat” (évite Object.values(...) X fois)
+    ZOMBIES_FRAME = [];
+    for (const z of Object.values(zombies)) {
+      // on peut ignorer les morts si jamais présents
+      if (!z || z.hp <= 0) continue;
+      ZOMBIES_FRAME.push(z);
+    }
+    ZOMBIES_FRAME_ID = FRAME_ID;
+  }
+}
+
+
 const TURRET_ANGLE_TTL_MS = 180;    // durée de cache (ms)
 let zombiesRemaining = 0;
 let waveTotalZombies = 0;
@@ -695,25 +720,43 @@ function losBlockedForZombieClient(x0, y0, x1, y1) {
 
 
 
-// Version avec cache (clé = id tourelle) pour éviter de rescanner tous les zombies à chaque frame
+// Version optimisée :
+// - lit une liste ZOMBIES_FRAME rafraîchie une fois par frame
+// - filtre par distance max avant de tester la LOS
 function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   const now = performance.now();
-  // 1) Si on a un angle récent en cache → le réutiliser
+
+  // 1) Cache angle récent
   const cached = turretAngleCache.get(turretKey);
   if (cached && (now - cached.t) <= TURRET_ANGLE_TTL_MS) {
     return cached.ang;
   }
 
-  // 2) Sinon on fait un scan (comme avant), puis on met en cache
-  let best = null, bestDist = Infinity, bdx = 1, bdy = 0;
-  for (const z of Object.values(zombies)) {
+  // 2) S'assure que la liste des zombies est rafraîchie pour ce frame
+  refreshZombiesFrame();
+
+  // 3) Cherche la cible la plus proche dans la portée
+  let bestDist2 = Infinity;
+  let bdx = 1, bdy = 0;
+
+  for (let i = 0; i < ZOMBIES_FRAME.length; i++) {
+    const z = ZOMBIES_FRAME[i];
     const dx = z.x - cxWorld;
     const dy = z.y - cyWorld;
-    const d = Math.hypot(dx, dy);
-    if (d < bestDist && !losBlockedForZombieClient(cxWorld, cyWorld, z.x, z.y)) {
-      best = z; bestDist = d; bdx = dx; bdy = dy;
+    const d2 = dx*dx + dy*dy;
+
+    // filtre distance (très bon gain)
+    if (d2 > TURRET_TARGET_MAX_DIST2) continue;
+
+    // on ne paie la LOS que si d2 est déjà meilleur
+    if (d2 < bestDist2) {
+      if (!losBlockedForZombieClient(cxWorld, cyWorld, z.x, z.y)) {
+        bestDist2 = d2;
+        bdx = dx; bdy = dy;
+      }
     }
   }
+
   const ang = Math.atan2(bdy, bdx);
   turretAngleCache.set(turretKey, { ang, t: now });
   return ang;
@@ -1127,30 +1170,29 @@ function drawMap() {
 function drawStructures() {
   if (!structures) return;
 
-  // Helper robuste pour récupérer l'HP (gère axes inversés)
+  // HP helpers
   function getHP(r, c, type, cell) {
     const defaultMax = (type === 'T') ? 500 : (type === 't' ? 200 : 200);
     const hpFromObj  = (typeof cell === 'object') ? cell.hp : undefined;
-
     const hpNorm = (structHPGrid && structHPGrid[r]) ? structHPGrid[r][c] : undefined;
     const hpSwap = (structHPGrid && structHPGrid[c]) ? structHPGrid[c][r] : undefined;
-
     if (typeof hpNorm === 'number') return hpNorm;
     if (typeof hpFromObj === 'number') return hpFromObj;
     if (typeof hpSwap === 'number') return hpSwap;
     return defaultMax;
   }
-
-  // Helper pour supprimer proprement une cellule (et ses miroirs HP) quand HP ≤ 0
   function destroyCell(r, c) {
     if (structures?.[r]) structures[r][c] = null;
     if (structHPGrid) {
       if (!structHPGrid[r]) structHPGrid[r] = [];
       structHPGrid[r][c] = 0;
       if (!structHPGrid[c]) structHPGrid[c] = [];
-      structHPGrid[c][r] = 0; // miroir pour axes inversés
+      structHPGrid[c][r] = 0;
     }
   }
+
+  // Liste des zombies : 1 rafraîchissement par frame
+  refreshZombiesFrame();
 
   const viewW = canvas.width / renderScale;
   const viewH = canvas.height / renderScale;
@@ -1167,14 +1209,11 @@ function drawStructures() {
       let cell = structures[row]?.[col];
       if (!cell) continue;
 
-      // type + hp
       let type, hp;
       if (typeof cell === 'object') type = cell.type; else type = cell;
       if (!type) continue;
 
       hp = getHP(row, col, type, cell);
-
-      // HP ≤ 0 → on supprime
       if (!(hp > 0)) {
         destroyCell(row, col);
         continue;
@@ -1210,7 +1249,7 @@ function drawStructures() {
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-        // Canon orienté (sans parcourir toutes les balles)
+        // Canon orienté
         const cx = x + TILE_SIZE / 2;
         const cy = y + TILE_SIZE / 2;
         const cxW = col * TILE_SIZE + TILE_SIZE / 2;
@@ -1289,23 +1328,34 @@ function drawZombies() {
 
 
 
-    function drawBullets() {
-      for (const id in bullets) {
-        const b = bullets[id];
-        ctx.save();
-        ctx.beginPath();
-        ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-        ctx.lineWidth = 3;
-        ctx.moveTo(b.x - cameraX, b.y - cameraY);
-        ctx.lineTo(
-          b.x - cameraX - b.dx * 8,
-          b.y - cameraY - b.dy * 8
-        );
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-	
+function drawBullets() {
+  const viewW = canvas.width / renderScale;
+  const viewH = canvas.height / renderScale;
+
+  // marge pour éviter pop-in/out
+  const M = 40;
+  const minX = cameraX - M, maxX = cameraX + viewW + M;
+  const minY = cameraY - M, maxY = cameraY + viewH + M;
+
+  for (const id in bullets) {
+    const b = bullets[id];
+    // culling rapide
+    if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+    ctx.lineWidth = 3;
+    ctx.moveTo(b.x - cameraX, b.y - cameraY);
+    ctx.lineTo(
+      b.x - cameraX - b.dx * 8,
+      b.y - cameraY - b.dy * 8
+    );
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 
 
 
@@ -1754,33 +1804,38 @@ function drawHUD() {
     }
     btnReplay.onclick = () => { location.reload(); };
 
-    let lastTime = 0;
-    function gameLoop(timestamp = 0) {
-      const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
-      lastTime = timestamp;
-      update(deltaTime);
-      updateCamera();
-		// Remet la transform, clear, puis applique le scale (zoom)
-		ctx.setTransform(1, 0, 0, 1, 0, 0);
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
-		ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+let lastTime = 0;
+function gameLoop(timestamp = 0) {
+  FRAME_ID++; // <- important : identifie le frame courant pour nos caches
 
-		drawMap();
-		drawBuildPreview();
-		drawStructures();
-		drawBullets();
-		drawTurretLasers();
-		drawZombies();
-		drawMoneyFloatingTexts();
-		drawPlayers();
-		drawAimLine();
-		drawLightMask();
+  const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
+  lastTime = timestamp;
 
-		// IMPORTANT : le HUD est en DOM, pas sur le canvas — tu peux le laisser tel quel
-		drawHUD();
+  update(deltaTime);
+  updateCamera();
 
-      if (!isDead) requestAnimationFrame(gameLoop);
-    }
+  // Remet la transform, clear, puis applique le scale (zoom)
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+
+  drawMap();
+  drawBuildPreview();
+  drawStructures();        // utilise refreshZombiesFrame() (1x/frame)
+  drawBullets();           // culling
+  drawTurretLasers();
+  drawZombies();
+  drawMoneyFloatingTexts();
+  drawPlayers();
+  drawAimLine();
+  drawLightMask();
+
+  drawHUD();
+
+  if (!isDead) requestAnimationFrame(gameLoop);
+}
+
+
 
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
