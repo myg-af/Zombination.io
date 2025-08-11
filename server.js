@@ -411,7 +411,7 @@ function tickTurrets(game) {
       s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS; // [-J/2, +J/2]
 
       // Dégâts (inchangés)
-      const dmg = BULLET_DAMAGE;
+      const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
       best.hp -= dmg;
 
       // Batch du laser (pas d'emit unitaire ici)
@@ -728,7 +728,7 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const TURRET_SHOOT_INTERVAL = 250;
+const TURRET_SHOOT_INTERVAL = 500;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
 const TURRET_RANGE = 1000;
 const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;

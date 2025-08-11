@@ -434,7 +434,7 @@ let ZOMBIES_FRAME = [];
 let ZOMBIES_FRAME_ID = -1;
 
 // portée max (monde) à laquelle une tourelle cherche une cible
-const TURRET_TARGET_MAX_DIST = 1000;
+const TURRET_TARGET_MAX_DIST = 650;
 const TURRET_TARGET_MAX_DIST2 = TURRET_TARGET_MAX_DIST * TURRET_TARGET_MAX_DIST;
 
 // Met à jour la liste plate des zombies une seule fois par frame
@@ -452,7 +452,9 @@ function refreshZombiesFrame() {
 }
 
 
-const TURRET_ANGLE_TTL_MS = 180;    // durée de cache (ms)
+const TURRET_ANGLE_TTL_MS = 350;    // (était 180) — moins d'oscillation des canons
+const TURRET_RECALC_MIN_MS = 120;   // throttle: pas plus d'un recalcul/120 ms par tourelle
+const turretAngleNextAt = new Map(); // key: "turret_c_r" -> timestamp autorisé pour prochain calcul
 let zombiesRemaining = 0;
 let waveTotalZombies = 0;
 let waveKilledThisWave = 0;
@@ -702,17 +704,24 @@ function isSolidForZombieClient(struct) {
   return struct && struct.hp > 0; // B, D, T…
 }
 function losBlockedForZombieClient(x0, y0, x1, y1) {
+  // Échantillonnage plus grossier (≈ 1 pas par tuile) : bien plus léger en rafale
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
-  const steps = Math.ceil(dist / 8);
+
+  // Un pas ≈ taille de tuile (évite ~5–8x plus d'itérations qu'avant)
+  const STEP = TILE_SIZE; // 40px chez toi
+  const steps = Math.max(1, Math.ceil(dist / STEP));
+
   for (let s = 1; s < steps; s++) {
     const ix = x0 + (dx * s / steps);
     const iy = y0 + (dy * s / steps);
     const { tx, ty } = worldToTile(ix, iy);
+
     if (isWallAt(tx, ty)) return true;
+
     const st = structures?.[ty]?.[tx];
-    if (isSolidForZombieClient(st)) return true;
+    if (st && st.hp > 0) return true; // toute structure avec PV bloque
   }
   return false;
 }
@@ -720,35 +729,35 @@ function losBlockedForZombieClient(x0, y0, x1, y1) {
 
 
 
-// Version optimisée :
-// - lit une liste ZOMBIES_FRAME rafraîchie une fois par frame
-// - filtre par distance max avant de tester la LOS
 function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   const now = performance.now();
 
-  // 1) Cache angle récent
+  // 1) Si on a un angle récent, on le réutilise (cache TTL)
   const cached = turretAngleCache.get(turretKey);
   if (cached && (now - cached.t) <= TURRET_ANGLE_TTL_MS) {
     return cached.ang;
   }
 
-  // 2) S'assure que la liste des zombies est rafraîchie pour ce frame
-  refreshZombiesFrame();
+  // 2) Throttle: on n'autorise un recalcul complet qu'à partir d'un certain moment
+  const nextAt = turretAngleNextAt.get(turretKey) || 0;
+  if (now < nextAt && cached) {
+    // encore trop tôt → on garde l'angle précédent
+    return cached.ang;
+  }
 
-  // 3) Cherche la cible la plus proche dans la portée
+  // 3) Cherche la cible la plus proche dans la portée, LOS avec pas par tuile
   let bestDist2 = Infinity;
   let bdx = 1, bdy = 0;
 
+  // ZOMBIES_FRAME est rafraîchi une fois par frame (cf. étape 4 plus bas)
   for (let i = 0; i < ZOMBIES_FRAME.length; i++) {
     const z = ZOMBIES_FRAME[i];
     const dx = z.x - cxWorld;
     const dy = z.y - cyWorld;
     const d2 = dx*dx + dy*dy;
 
-    // filtre distance (très bon gain)
     if (d2 > TURRET_TARGET_MAX_DIST2) continue;
 
-    // on ne paie la LOS que si d2 est déjà meilleur
     if (d2 < bestDist2) {
       if (!losBlockedForZombieClient(cxWorld, cyWorld, z.x, z.y)) {
         bestDist2 = d2;
@@ -758,7 +767,11 @@ function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   }
 
   const ang = Math.atan2(bdy, bdx);
+
+  // 4) Mémos
   turretAngleCache.set(turretKey, { ang, t: now });
+  turretAngleNextAt.set(turretKey, now + TURRET_RECALC_MIN_MS);
+
   return ang;
 }
 
@@ -1363,18 +1376,18 @@ function drawTurretLasers() {
   if (!turretLasers.length) return;
 
   const now = performance.now();
-  const LIFE_MS = 80;               // un peu plus court => moins d’objets à dessiner
-  const MAX_LASERS_PER_FRAME = 150; // cap dur pour éviter les spikes
+  const LIFE_MS = 60;                // (était 80) — persistance plus courte
+  const MAX_LASERS_PER_FRAME = 60;   // (était 150) — cap plus strict pour éviter les spikes
 
-  // On garde seulement les plus récents si ça explose
+  // Trim à l’avant si trop d’entrées (on garde les plus récentes)
   if (turretLasers.length > MAX_LASERS_PER_FRAME) {
     turretLasers = turretLasers.slice(turretLasers.length - MAX_LASERS_PER_FRAME);
   }
 
-  // Un seul path par frame, sans ombre (shadowBlur coûte cher)
   ctx.save();
   ctx.lineWidth = 2;
 
+  let w = 0; // compteur de traits vraiment dessinés
   for (let i = turretLasers.length - 1; i >= 0; i--) {
     const b = turretLasers[i];
     const age = now - b.t;
@@ -1383,6 +1396,7 @@ function drawTurretLasers() {
       continue;
     }
 
+    // Alpha simple, pas d'effets coûteux
     const alpha = 1 - (age / LIFE_MS);
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = b.color || '#fff';
@@ -1391,6 +1405,8 @@ function drawTurretLasers() {
     ctx.moveTo(b.x0 - cameraX, b.y0 - cameraY);
     ctx.lineTo(b.x1 - cameraX, b.y1 - cameraY);
     ctx.stroke();
+
+    if (++w >= MAX_LASERS_PER_FRAME) break; // sécurité
   }
 
   ctx.restore();
@@ -1807,7 +1823,7 @@ function drawHUD() {
 let lastTime = 0;
 function gameLoop(timestamp = 0) {
   FRAME_ID++; // <- important : identifie le frame courant pour nos caches
-
+	refreshZombiesFrame();
   const deltaTime = Math.max(0.008, Math.min(0.05, (timestamp - lastTime) / 1000));
   lastTime = timestamp;
 
