@@ -741,6 +741,10 @@ const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon 
 
 // Événement de batch pour les lasers (un tableau de segments)
 const TURRET_LASER_BATCH_EVENT = 'laserBeams';
+// --- Perf tuning (zombies) ---
+const MAX_REPATHS_PER_TICK = 25;  // nb max de BFS/repath par tick physique
+const LOS_CACHE_MS = 120;         // cache "ligne de vue" zombie → cible (ms)
+
 
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
@@ -1511,7 +1515,23 @@ function moveZombies(game, deltaTime) {
     // 3) déterminer vers où marcher (LOS directe sinon pathfinding) + repath périodique
     let tx, ty, usingPath = false;
 
-    if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
+    // --- cache LOS court (évite de rééchantillonner toutes les 1–2 ms) ---
+    let losClear;
+    const cacheOK =
+      z._losCache &&
+      now < z._losCache.until &&
+      Math.abs((z._losCache.tx || 0) - target.x) < 12 &&
+      Math.abs((z._losCache.ty || 0) - target.y) < 12;
+
+    if (cacheOK) {
+      losClear = z._losCache.clear === true;
+    } else {
+      losClear = !losBlockedForZombie(game, z.x, z.y, target.x, target.y);
+      // ⚠️ Utilise LOS_CACHE_MS (défini à l’étape 1)
+      z._losCache = { clear: losClear, tx: target.x, ty: target.y, until: now + LOS_CACHE_MS };
+    }
+
+    if (losClear) {
       // ligne de vue claire → marche directe
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
@@ -1531,22 +1551,34 @@ function moveZombies(game, deltaTime) {
         z.pathStep >= z.path.length;
 
       if (needNewPath) {
-        z.path = findPath(game, z.x, z.y, target.x, target.y);
-        z.pathStep = 1;
-        z.pathTarget = { x: target.x, y: target.y };
-        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        // ⚠️ Budget partagé par tick (init à l’étape 2)
+        if (game._repathsBudget > 0) {
+          const newPath = findPath(game, z.x, z.y, target.x, target.y);
+          game._repathsBudget--;
+          z.path = newPath;
+          z.pathStep = 1;
+          z.pathTarget = { x: target.x, y: target.y };
+          z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        } else {
+          // Pas de budget : petit déplacement “probable” pour garder du mouvement
+          const a = Math.atan2(target.y - z.y, target.x - z.x) + (Math.random() - 0.5) * 0.6; // ±~34°
+          tx = z.x + Math.cos(a) * 40;
+          ty = z.y + Math.sin(a) * 40;
+        }
       }
 
-      if (z.path && z.path.length > z.pathStep) {
-        const n = z.path[z.pathStep];
-        tx = n.x * TILE_SIZE + TILE_SIZE / 2;
-        ty = n.y * TILE_SIZE + TILE_SIZE / 2;
-        usingPath = true;
-      } else {
-        // petit jitter si aucun chemin
-        const a = Math.random() * Math.PI * 2;
-        tx = z.x + Math.cos(a) * 14;
-        ty = z.y + Math.sin(a) * 14;
+      if (tx === undefined) {
+        if (z.path && z.path.length > z.pathStep) {
+          const n = z.path[z.pathStep];
+          tx = n.x * TILE_SIZE + TILE_SIZE / 2;
+          ty = n.y * TILE_SIZE + TILE_SIZE / 2;
+          usingPath = true;
+        } else {
+          // petit jitter si aucun chemin disponible
+          const a = Math.random() * Math.PI * 2;
+          tx = z.x + Math.cos(a) * 14;
+          ty = z.y + Math.sin(a) * 14;
+        }
       }
     }
 
@@ -1679,33 +1711,36 @@ function moveZombies(game, deltaTime) {
 
       if (z._localBlockStrikes >= 2) {
         const tgtX = target.x, tgtY = target.y;
-        const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
-        if (newPath && newPath.length > 1) {
-          z.path = newPath;
-          z.pathStep = 1;
-          z.pathTarget = { x: tgtX, y: tgtY };
-          z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        // respecte le budget global par tick (initialisé ailleurs)
+        if (game._repathsBudget > 0) {
+          const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
+          game._repathsBudget--;
+          if (newPath && newPath.length > 1) {
+            z.path = newPath;
+            z.pathStep = 1;
+            z.pathTarget = { x: tgtX, y: tgtY };
+            z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
 
-          // tente immédiatement un micro-pas vers le prochain nœud
-          const n = newPath[1];
-          const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
-          const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
+            // tente immédiatement un micro-pas vers le prochain nœud
+            const n = newPath[1];
+            const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
+            const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
 
-          let rdx = nwx - z.x, rdy = nwy - z.y;
-          const rd = Math.hypot(rdx, rdy);
-          if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
+            let rdx = nwx - z.x, rdy = nwy - z.y;
+            const rd = Math.hypot(rdx, rdy);
+            if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
 
-          const step2 = Math.min(MAX_STEP, remaining + step);
-          let nx2 = z.x + rdx * step2;
-          let ny2 = z.y + rdy * step2;
+            const step2 = Math.min(MAX_STEP, remaining + step);
+            let nx2 = z.x + rdx * step2;
+            let ny2 = z.y + rdy * step2;
 
-          if (!blockedAt(nx2, ny2, radiusNow)) {
-            z.x = nx2; z.y = ny2;
-            z._localBlockStrikes = 0;
-            continue;
+            if (!blockedAt(nx2, ny2, radiusNow)) {
+              z.x = nx2; z.y = ny2;
+              z._localBlockStrikes = 0;
+              continue;
+            }
           }
         }
-
         break; // micro-repath n’a pas aidé → on stoppe ce tick
       }
 
@@ -1742,6 +1777,9 @@ function handleZombieAttacks(game) {
   const now = Date.now();
   let structuresChanged = false;
 
+  // pré-calcul pour éviter Math.hypot en boucle
+  const REACH_P_PLAYER2 = ATTACK_REACH_PLAYER * ATTACK_REACH_PLAYER;
+
   // Cibles tourelles vivantes (coords et cases)
   const turretTargets = [];
   if (game.structures) {
@@ -1766,13 +1804,13 @@ function handleZombieAttacks(game) {
 
     let hasAttackedAny = false;
 
-    // 1) Attaques sur joueurs au contact
+    // 1) Attaques sur joueurs au contact (distance²)
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
 
-      const dist = Math.hypot(z.x - p.x, z.y - p.y);
-      if (dist <= ATTACK_REACH_PLAYER) {
+      const dxp = z.x - p.x, dyp = z.y - p.y;
+      if ((dxp*dxp + dyp*dyp) <= REACH_P_PLAYER2) {
         if (!z.lastAttackTimes[pid]) z.lastAttackTimes[pid] = 0;
         if (now - z.lastAttackTimes[pid] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
           z.lastAttackTimes[pid] = now;
@@ -1790,17 +1828,16 @@ function handleZombieAttacks(game) {
             io.to(pid).emit('healthUpdate', p.health);
           }
 
-          // <-- gèle le zombie qui vient de frapper
           z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
         }
       }
     }
 
-    // 1bis) Attaques sur tourelles au contact
+    // 1bis) Attaques sur tourelles au contact (distance²)
     for (const t of turretTargets) {
-      const dist = Math.hypot(z.x - t.x, z.y - t.y);
-      if (dist <= ATTACK_REACH_PLAYER) {
+      const dxt = z.x - t.x, dyt = z.y - t.y;
+      if ((dxt*dxt + dyt*dyt) <= REACH_P_PLAYER2) {
         const key = `turret_${t.tx}_${t.ty}`;
         if (!z.lastAttackTimes[key]) z.lastAttackTimes[key] = 0;
         if (now - z.lastAttackTimes[key] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
@@ -1814,7 +1851,6 @@ function handleZombieAttacks(game) {
               structuresChanged = true;
             }
           }
-          // <-- gèle le zombie qui vient de frapper
           z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
         }
@@ -1849,7 +1885,6 @@ function handleZombieAttacks(game) {
           setStruct(game, tgt.tx, tgt.ty, null);
           structuresChanged = true;
         }
-        // <-- gèle le zombie qui vient de frapper
         z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
         hasAttackedAny = true;
       }
@@ -1892,7 +1927,6 @@ function handleZombieAttacks(game) {
               setStruct(game, tgt.tx, tgt.ty, null);
               structuresChanged = true;
             }
-            // <-- gèle le zombie qui vient de frapper
             z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
             hasAttackedAny = true;
           }
@@ -1914,7 +1948,6 @@ function handleZombieAttacks(game) {
     io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
   }
 }
-
 
 
 
@@ -2028,6 +2061,7 @@ function checkGameEnd(game) {
 function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
+	game._repathsBudget = MAX_REPATHS_PER_TICK;
 
     // === Simulation à dt fixe ===
     movePlayers(game,       dt);
