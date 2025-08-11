@@ -108,44 +108,29 @@ function createNewGame() {
 
 
 
-
 function buildCentralEnclosure(game, spacingTiles = 1) {
-  // 1) Init grille structures
+  // Taille fixe 11x11 (bords inclus)
+  const HALF = 5; // car 2*5 + 1 = 11
+
+  // 1) Init grille des structures si besoin
   game.structures = Array.from({ length: MAP_ROWS }, () =>
     Array.from({ length: MAP_COLS }, () => null)
   );
 
-  // 2) Trouver les bornes du carré vide central
+  // 2) Centre de la carte en indices de tuile
   const cR = Math.floor(MAP_ROWS / 2);
   const cC = Math.floor(MAP_COLS / 2);
 
-  function extent(dirR, dirC) {
-    let r = cR, c = cC, k = 0;
-    while (true) {
-      const nr = r + dirR, nc = c + dirC;
-      if (nr <= 0 || nr >= MAP_ROWS - 1 || nc <= 0 || nc >= MAP_COLS - 1) break;
-      if (game.map[nr][nc] === 1) break;
-      r = nr;
-      c = nc;
-      k++;
-    }
-    return k;
-  }
+  // 3) Bornes du carré 11x11, clamp pour rester dans la map
+  let r0 = Math.max(1, cR - HALF);
+  let r1 = Math.min(MAP_ROWS - 2, cR + HALF);
+  let c0 = Math.max(1, cC - HALF);
+  let c1 = Math.min(MAP_COLS - 2, cC + HALF);
 
-  const up = extent(-1, 0);
-  const down = extent(1, 0);
-  const left = extent(0, -1);
-  const right = extent(0, 1);
-  const half = Math.max(1, Math.min(up, down, left, right));
+  // Sécurité : si la carte est trop petite on sort
+  if (r1 - r0 !== 10 || c1 - c0 !== 10) return;
 
-  const r0 = cR - (half - spacingTiles);
-  const r1 = cR + (half - spacingTiles);
-  const c0 = cC - (half - spacingTiles);
-  const c1 = cC + (half - spacingTiles);
-
-  if (r1 - r0 < 2 || c1 - c0 < 2) return;
-
-  // 3) Murs barricades autour du carré
+  // 4) Murs barricades autour du carré (épaisseur 1 case)
   for (let c = c0; c <= c1; c++) {
     setStruct(game, c, r0, { type: 'B', hp: 200 });
     setStruct(game, c, r1, { type: 'B', hp: 200 });
@@ -155,7 +140,7 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
     setStruct(game, c1, r, { type: 'B', hp: 200 });
   }
 
-  // 4) Portes au milieu de chaque côté (HP = 200)
+  // 5) Portes au milieu de chaque côté (HP = 200)
   const midC = Math.floor((c0 + c1) / 2);
   const midR = Math.floor((r0 + r1) / 2);
   setStruct(game, midC, r0, { type: 'D', hp: 200 });
@@ -163,10 +148,10 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
   setStruct(game, c0, midR, { type: 'D', hp: 200 });
   setStruct(game, c1, midR, { type: 'D', hp: 200 });
 
-  // 5) Grande tourelle au centre (HP = 500)
+  // 6) Grande tourelle au centre (HP = 500)
   setStruct(game, midC, midR, { type: 'T', hp: 500, lastShot: 0 });
 
-  // 6) Mini-tourelles décalées d’1 case en diagonale (inset = 2)
+  // 7) Mini-tourelles : décalage fixe de 2 cases depuis les coins internes
   const inset = 2;
   const miniPositions = [
     { tx: c0 + inset, ty: r0 + inset }, // haut-gauche
@@ -178,7 +163,6 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
     setStruct(game, pos.tx, pos.ty, { type: 't', hp: 200, lastShot: 0 });
   }
 }
-
 
 
 
@@ -834,7 +818,7 @@ function spawnZombies(game, count) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
   if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) return;
 
-  const hp = 10 + (game.currentRound - 1);
+	const hp = Math.round(10 * Math.pow(1.1, game.currentRound - 1));
   const baseSpeed = 40;
   const speedIncreasePercent = 0.05;
   const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
