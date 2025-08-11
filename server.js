@@ -342,6 +342,14 @@ function tickTurrets(game) {
   if (!game?.structures) return;
   const now = Date.now();
 
+  // Quota global de tirs ce tick
+  let shotsLeft = TURRET_SHOTS_PER_TICK;
+
+  // Batch visuel des lasers à envoyer en une seule fois
+  const laserBatch = [];
+
+  // Parcours de la grille des structures
+  outer_loop:
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
@@ -349,9 +357,17 @@ function tickTurrets(game) {
 
       if (!s.lastShot) s.lastShot = 0;
 
-      // cadence inchangée
+      // cadence inchangée (mini/mini)
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
-      if (now - s.lastShot < interval) continue;
+
+      // --- JITTER : décalage aléatoire par tir, centré sur 0 pour conserver le débit moyen ---
+      // On mémorise le jitter courant dans l'objet tourelle, puis on le régénère après un tir
+      if (typeof s._jitterCur !== 'number') {
+        s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS; // [-J/2, +J/2]
+      }
+      if ((now - s.lastShot) < (interval + s._jitterCur)) {
+        continue; // encore en cooldown (avec décalage)
+      }
 
       // centre monde de la tourelle
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
@@ -368,7 +384,7 @@ function tickTurrets(game) {
         const dy = z.y - cy;
         const d2 = dx * dx + dy * dy;
 
-        // ❗ filtre distance : ignore tout zombie hors de 1000 px
+        // filtre distance : ignore tout zombie hors de portée
         if (d2 > TURRET_RANGE_SQ) continue;
 
         // on ne paie la LOS que si on a une meilleure distance
@@ -382,24 +398,30 @@ function tickTurrets(game) {
 
       if (!best) continue; // rien dans la portée avec LOS
 
-      // tir autorisé
+      // --- Quota par tick : on stoppe proprement quand il n'y a plus de budget ---
+      if (shotsLeft <= 0) {
+        break outer_loop;
+      }
+
+      // Tir validé → on consomme une "unité" du quota
+      shotsLeft--;
+
+      // Mise à jour cooldown + regénère un jitter pour le prochain tir
       s.lastShot = now;
+      s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS; // [-J/2, +J/2]
 
-      // Laser visuel (identique)
-      const color = (s.type === 'T') ? '#ff3b3b' : '#3aa6ff';
-      io.to('lobby' + game.id).emit('laserBeam', {
-        x0: cx, y0: cy,
-        x1: best.x, y1: best.y,
-        color
-      });
-
-      // Dégâts identiques
+      // Dégâts (inchangés)
       const dmg = BULLET_DAMAGE;
-
-      // Appliquer les dégâts immédiatement
       best.hp -= dmg;
 
-      // Mort éventuelle (copie de la logique existante)
+      // Batch du laser (pas d'emit unitaire ici)
+      laserBatch.push({
+        x0: cx, y0: cy,
+        x1: best.x, y1: best.y,
+        color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff'
+      });
+
+      // Mort éventuelle (identique à l'existant)
       if (best.hp <= 0) {
         // Gains au propriétaire s’il existe
         if (s.placedBy) {
@@ -413,7 +435,7 @@ function tickTurrets(game) {
           }
         }
 
-        // Compteurs de vague / broadcast restants (identique)
+        // Compteurs de vague / broadcast restants
         game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
@@ -428,8 +450,12 @@ function tickTurrets(game) {
       }
     }
   }
-}
 
+  // --- BATCH EMIT : on envoie tous les segments de lasers en UNE fois ---
+  if (laserBatch.length > 0) {
+    io.to('lobby' + game.id).emit(TURRET_LASER_BATCH_EVENT, laserBatch);
+  }
+}
 
 
 function losBlockedForZombie(game, x0, y0, x1, y1) {
@@ -706,6 +732,16 @@ const TURRET_SHOOT_INTERVAL = 250;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
 const TURRET_RANGE = 1000;
 const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
+// --- Anti-burst tourelles ---
+// Décalage aléatoire de cadence par tir, centré sur 0 (moyenne nulle) → ne change pas le DPS moyen
+const TURRET_JITTER_MS = 120;              // ex. ±120 ms par tir
+
+// Nombre maximum de tirs de tourelles autorisés par "stepOnce" (un tick physique)
+const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon charge)
+
+// Événement de batch pour les lasers (un tableau de segments)
+const TURRET_LASER_BATCH_EVENT = 'laserBeams';
+
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 const TICK_HZ = 60;
