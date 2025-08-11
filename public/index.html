@@ -1509,32 +1509,44 @@ function drawAimLine() {
 function drawLightMask() {
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
-  // Centre du joueur en coordonnées écran (on tient compte du zoom)
+  // Position du joueur en coordonnées écran (on tient compte du zoom)
   const p = playersHealth[myId];
   const screenX = (p.x - cameraX) * renderScale;
   const screenY = (p.y - cameraY) * renderScale;
 
+  // Rayon en pixels écran (pas en monde)
+  const radius = CLIENT_VIEW_RADIUS * renderScale;
+
   // On dessine l’overlay en coordonnées écran
+  ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  ctx.save();
-  // Couleur d’assombrissement de l’extérieur du halo
+  // 1) Voile sombre
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Un seul chemin : un grand rectangle + un cercle au centre
-  // puis on remplit avec la règle 'evenodd' => trou net dans le halo.
+  // 2) On "découpe" un trou doux au centre avec un dégradé radial
+  ctx.globalCompositeOperation = 'destination-out';
+  const g = ctx.createRadialGradient(
+    screenX, screenY, Math.max(1, radius * 0.35),   // noyau opaque
+    screenX, screenY, radius                         // bord transparent
+  );
+  g.addColorStop(0.0, 'rgba(0,0,0,1)');
+  g.addColorStop(1.0, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+
   ctx.beginPath();
-  ctx.rect(0, 0, canvas.width, canvas.height);
-  ctx.moveTo(screenX + CLIENT_VIEW_RADIUS, screenY); // facultatif, pour éviter une ligne
-  ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2, true);
-  ctx.fill('evenodd');
+  ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
 
   ctx.restore();
 
   // On remet la transform monde pour le reste du rendu
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 }
-
 
 
 function update(deltaTime) {
