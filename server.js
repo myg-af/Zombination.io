@@ -87,19 +87,27 @@ function createNewGame() {
     currentRound: 1,
     totalZombiesToSpawn: 50,
     zombiesSpawnedThisWave: 0,
-    zombiesKilledThisWave: 0, // compteur de kills/vague
+    zombiesKilledThisWave: 0,
     map: null,
     spawnInterval: null,
     spawningActive: false,
 
-    // --- NOUVEAU : throttle réseau par joueur
-    _lastNetSend: {} // { [socketId]: timestampDernierEnvoi }
+    // Throttle réseau par joueur
+    _lastNetSend: {},
+
+    // ---- Compteurs O(1) ----
+    _zombieCount: 0,
+    _bulletCount: 0,
+    _turretCount: 0
   };
   game.map = createEmptyMap(MAP_ROWS, MAP_COLS);
   placeObstacles(game.map, OBSTACLE_COUNT);
   activeGames.push(game);
   return game;
 }
+
+
+
 
 function buildCentralEnclosure(game, spacingTiles = 1) {
   // 1) Init grille structures
@@ -356,8 +364,6 @@ function tickTurrets(game) {
 
   let shotsLeft = TURRET_SHOTS_PER_TICK;
   const laserBatch = [];
-
-  // Accès direct à la map des zombies
   const zombiesMap = game.zombies;
 
   outer_loop:
@@ -369,74 +375,52 @@ function tickTurrets(game) {
       if (!s.lastShot) s.lastShot = 0;
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
 
-      if (typeof s._jitterCur !== 'number') {
-        s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
-      }
-      if ((now - s.lastShot) < (interval + s._jitterCur)) {
-        continue;
-      }
+      if (typeof s._jitterCur !== 'number') s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
+      if ((now - s.lastShot) < (interval + s._jitterCur)) continue;
 
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // --------- Cache de cible : s._targetId + cadence de re-ciblage ---------
+      // Cache cible
       let target = null;
       if (s._targetId) {
         const z = zombiesMap[s._targetId];
         if (z) {
           const dx = z.x - cx, dy = z.y - cy;
           const d2 = dx*dx + dy*dy;
-          // cible encore valable ?
           if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
-            target = z; // OK: on réutilise la cible
+            target = z;
           }
         }
       }
 
-      // si pas de cible valable, on re-sélectionne, mais pas plus d'une fois tous les TURRET_RETARGET_MS
       if (!target) {
         if (!s._nextRetargetAt || now >= s._nextRetargetAt) {
           s._nextRetargetAt = now + TURRET_RETARGET_MS;
-
-          // Recherche "meilleure" cible : on parcourt, mais on sort tôt si on trouve très proche
-          let best = null;
-          let bestDist2 = Infinity;
-
-          // NOTE: itère directement sur les valeurs du dictionnaire pour éviter Object.values allocs
+          let best = null, bestDist2 = Infinity;
           for (const zid in zombiesMap) {
             const z = zombiesMap[zid];
             if (!z) continue;
-
-            const dx = z.x - cx;
-            const dy = z.y - cy;
+            const dx = z.x - cx, dy = z.y - cy;
             const d2 = dx*dx + dy*dy;
             if (d2 > TURRET_RANGE_SQ) continue;
-
-            if (d2 < bestDist2) {
-              // on ne paie la LOS que si meilleur candidat
-              if (!losBlockedForTurret(game, cx, cy, z.x, z.y)) {
-                bestDist2 = d2;
-                best = z;
-                // heuristique: si on trouve très proche, on arrête la recherche
-                if (bestDist2 < 64*64) break;
-              }
+            if (d2 < bestDist2 && !losBlockedForTurret(game, cx, cy, z.x, z.y)) {
+              bestDist2 = d2; best = z;
+              if (bestDist2 < 64*64) break;
             }
           }
-
           if (best) {
             target = best;
             s._targetId = Object.keys(zombiesMap).find(id => zombiesMap[id] === best) || null;
           } else {
-            s._targetId = null; // rien pour cette tourelle maintenant
+            s._targetId = null;
           }
         } else {
-          // pas encore temps de retarget → on skip ce tir
           continue;
         }
       }
 
       if (!target) continue;
-
       if (shotsLeft <= 0) break outer_loop;
 
       shotsLeft--;
@@ -446,19 +430,15 @@ function tickTurrets(game) {
       const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
       target.hp -= dmg;
 
-      laserBatch.push({
-        x0: cx, y0: cy,
-        x1: target.x, y1: target.y,
-        color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff'
-      });
+      laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff' });
 
       if (target.hp <= 0) {
-        // gains propriétaire
+        // gains propriétaire inchangés...
         if (s.placedBy) {
           const ownerPlayer = game.players[s.placedBy];
           if (ownerPlayer) {
             const ownerStats = getPlayerStats(ownerPlayer);
-            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+            const baseMoney = Math.floor(Math.random() * 11) + 10;
             const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
             io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
@@ -469,10 +449,11 @@ function tickTurrets(game) {
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
 
-        // suppression du zombie tué + invalider cache
+        // suppression zombie + décrément O(1)
         for (const zid in zombiesMap) {
           if (zombiesMap[zid] === target) {
             delete zombiesMap[zid];
+            game._zombieCount = Math.max(0, game._zombieCount - 1);
             if (s._targetId === zid) s._targetId = null;
             break;
           }
@@ -773,6 +754,28 @@ const TURRET_LASER_BATCH_EVENT = 'laserBeams';
 const PATHFIND_BUDGET_PER_TICK = 12;     // nb max de findPath autorisés / tick (ajuste 8..20)
 const TURRET_RETARGET_MS = 120;          // une tourelle ne re-choisit pas une cible + souvent que ça
 
+// ---- PATHFINDING ADAPTATIF PAR TICK ----
+// Retourne le nombre d'appels findPath autorisés ce tick pour UNE partie.
+function computePathfindBudget(game) {
+  if (!game.lobby.started) return 0;
+  const z = game._zombieCount || 0;
+  const t = game._turretCount || 0;
+  const b = game._bulletCount || 0;
+
+  // Base plus généreuse quand peu d'ennemis, plus stricte quand ça charge
+  // 0 → 50 zombies : 12
+  // 51 → 150 zombies : 8
+  // >150 zombies : 6
+  let base = 12;
+  if (z > 150) base = 6;
+  else if (z > 50) base = 8;
+
+  // Petite correction si vraiment calme (pas de bullets, pas de spawn)
+  const calmish = (z === 0 && b === 0 && !game.spawningActive && t === 0);
+  if (calmish) return 0;
+
+  return base;
+}
 
 
 const NET_SEND_HZ = 30;
@@ -829,7 +832,7 @@ function startLobbyTimer(game) {
 
 function spawnZombies(game, count) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
-  if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) return;
+  if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) return;
 
   const hp = 10 + (game.currentRound - 1);
   const baseSpeed = 40;
@@ -839,7 +842,7 @@ function spawnZombies(game, count) {
   let spawnedCount = 0;
   for (let i = 0; i < count; i++) {
     if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) break;
-    if (Object.keys(game.zombies).length >= MAX_ACTIVE_ZOMBIES) break;
+    if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) break;
 
     const z = spawnZombieOnBorder(game, hp, speed);
     let tries = 0;
@@ -855,30 +858,27 @@ function spawnZombies(game, count) {
     }
     const id = `zombie${Date.now()}_${Math.floor(Math.random()*1000000)}`;
     game.zombies[id] = z;
+    game._zombieCount++;                 // O(1)
     game.zombiesSpawnedThisWave++;
     spawnedCount++;
   }
 }
 
 function checkWaveEnd(game) {
-  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && Object.keys(game.zombies).length === 0) {
+  if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && game._zombieCount === 0) {
     game.currentRound++;
     game.zombiesSpawnedThisWave = 0;
-    game.zombiesKilledThisWave = 0; // <-- reset kills de la nouvelle vague
+    game.zombiesKilledThisWave = 0;
     game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
 
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
-
-    // ------ NOUVEAU : informer le client du nouveau total ------
     io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
     io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
-    // -----------------------------------------------------------
 
     console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
 }
-
 
 
 
@@ -906,10 +906,15 @@ function launchGame(game, readyPlayersArr = null) {
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
 
+  // compteurs O(1)
+  game._zombieCount = 0;
+  game._bulletCount = 0;
+  game._turretCount = 0;
+
   game.currentRound = 1;
   game.totalZombiesToSpawn = 50;
   game.zombiesSpawnedThisWave = 0;
-  game.zombiesKilledThisWave = 0; // <-- reset
+  game.zombiesKilledThisWave = 0;
   game.spawningActive = false;
 
   if (readyPlayersArr === null) {
@@ -937,7 +942,7 @@ function launchGame(game, readyPlayersArr = null) {
     socketsArr.push(botId);
   }
 
-  // (re)construire l’enceinte centrale avec 1 tuile d’espace
+  // (re)construire l’enceinte centrale
   buildCentralEnclosure(game, 1);
 
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
@@ -950,13 +955,15 @@ function launchGame(game, readyPlayersArr = null) {
     structurePrices: SHOP_BUILD_PRICES
   });
 
-  // ------ NOUVEAU : informer le client du compteur de vague ------
   io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
   io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
-  // ---------------------------------------------------------------
 
   console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
   startSpawning(game);
+ // --- Reset du temps pour éviter l'accélération initiale après le lobby ---
+lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+accumulator = 0;
+_lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 }
 
 
@@ -1120,30 +1127,31 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
 
 
 
-  socket.on('shoot', (data) => {
-    if (!game.lobby.started) return;
-    const player = game.players[socket.id];
-    if (!player || !player.alive) return;
-    const now = Date.now();
-    if (now - player.lastShot < SHOOT_INTERVAL) return;
-    player.lastShot = now;
+socket.on('shoot', (data) => {
+  if (!game.lobby.started) return;
+  const player = game.players[socket.id];
+  if (!player || !player.alive) return;
+  const now = Date.now();
+  if (now - player.lastShot < SHOOT_INTERVAL) return;
+  player.lastShot = now;
 
-    const dx = data.targetX - player.x;
-    const dy = data.targetY - player.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 1) return;
+  const dx = data.targetX - player.x;
+  const dy = data.targetY - player.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if (dist < 1) return;
 
-    const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    game.bullets[bulletId] = {
-      id: bulletId,
-      owner: socket.id,
-      x: player.x,
-      y: player.y,
-      dx: dx / dist,
-      dy: dy / dist,
-      createdAt: now
-    };
-  });
+  const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  game.bullets[bulletId] = {
+    id: bulletId,
+    owner: socket.id,
+    x: player.x,
+    y: player.y,
+    dx: dx / dist,
+    dy: dy / dist,
+    createdAt: now
+  };
+  game._bulletCount++; // O(1)
+});
 
 socket.on('requestZombies', () => {
   const p = game.players[socket.id];
@@ -1161,12 +1169,13 @@ socket.on('requestZombies', () => {
   });
 
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
-  socket.on('killAllZombies', () => {
-    const player = game.players[socket.id];
-    if (!player || player.pseudo !== 'Myg') return;
-    game.zombies = {};
-    io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
-  });
+socket.on('killAllZombies', () => {
+  const player = game.players[socket.id];
+  if (!player || player.pseudo !== 'Myg') return;
+  game.zombies = {};
+  game._zombieCount = 0; // O(1)
+  io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+});
 });
 
 
@@ -1208,6 +1217,36 @@ function getPlayersHealthState(game) {
 }
 
 const zombieAttackCooldown = 350;
+
+// ---- FIN DE PARTIE FORCÉE QUAND AUCUN JOUEUR CONNECTÉ ----
+function endGame(game, reason = 'no_players') {
+  if (!game.lobby.started) return;
+
+  console.log(`---- Fin de partie (game ${game.id}) : ${reason}`);
+  game.lobby.started = false;
+
+  // arrêter le spawn
+  stopSpawning(game);
+
+  // vider entités + remettre compteurs O(1)
+  game.zombies = {};
+  game.bullets = {};
+  game.players = {};
+
+  game._zombieCount = 0;
+  game._bulletCount = 0;
+  game._turretCount = 0;
+
+  io.to('lobby' + game.id).emit('gameEnded', { reason });
+  // on nettoie le lobby un peu après (conservé)
+  setTimeout(() => {
+    game.lobby.players = {};
+    broadcastLobby(game);
+  }, 500);
+}
+
+
+
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
 const ATTACK_REACH_STRUCT = ZOMBIE_RADIUS + 2;    // contact (avant ~36)
 const ZOMBIE_ATTACK_COOLDOWN_MS = 300;            // avant 350
@@ -1379,19 +1418,21 @@ function moveBots(game, deltaTime) {
           }
         }
 
-        if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
-          bot.lastShot = now;
-          const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-          game.bullets[bulletId] = {
-            id: bulletId,
-            owner: botId,
-            x: bot.x,
-            y: bot.y,
-            dx: dx / dist,
-            dy: dy / dist,
-            createdAt: now,
-          };
-        }
+if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
+  bot.lastShot = now;
+  const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  game.bullets[bulletId] = {
+    id: bulletId,
+    owner: botId,
+    x: bot.x,
+    y: bot.y,
+    dx: dx / dist,
+    dy: dy / dist,
+    createdAt: now,
+  };
+  game._bulletCount++; // O(1)
+}
+
         continue;
       }
 
@@ -1979,12 +2020,14 @@ function moveBullets(game, deltaTime) {
       bullet.y < 0 || bullet.y > MAP_ROWS * TILE_SIZE
     ) {
       delete game.bullets[id];
+      game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
 
     // collisions avec les murs de la MAP
     if (isCollision(game.map, bullet.x, bullet.y)) {
       delete game.bullets[id];
+      game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
 
@@ -2000,7 +2043,6 @@ function moveBullets(game, deltaTime) {
 
         const killed = z.hp <= 0;
         if (killed) {
-          // --- Attribution des gains d'argent ---
           if (shooterIsPlayer) {
             game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
             io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
@@ -2009,41 +2051,25 @@ function moveBullets(game, deltaTime) {
             const moneyEarned = Math.round(baseMoney * ((statsShooter.goldGain || 10) / 10));
             game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
             io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
-
-          } else if (typeof bullet.owner === 'string' && bullet.owner.startsWith('turret_')) {
-            const tx = bullet.originTx, ty = bullet.originTy;
-            const s = getStruct(game, tx, ty);
-            if (s && (s.type === 'T' || s.type === 't') && s.placedBy) {
-              const ownerId = s.placedBy;
-              const ownerPlayer = game.players[ownerId];
-              if (ownerPlayer) {
-                const ownerStats = getPlayerStats(ownerPlayer);
-                const baseMoney = Math.floor(Math.random() * 11) + 10;
-                const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
-                ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
-                io.to(ownerId).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
-              }
-            }
           }
 
-          // ------ Garde uniquement "zombiesRemaining" ------
+          // décrément O(1) + remaining
+          delete game.zombies[zid];
+          game._zombieCount = Math.max(0, game._zombieCount - 1);
+
           game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
           const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
           io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
-          // --------------------------------------------------
-
-          // suppression du zombie tué
-          delete game.zombies[zid];
         }
 
         // La balle s'arrête sur impact
         delete game.bullets[id];
+        game._bulletCount = Math.max(0, game._bulletCount - 1);
         break;
       }
     }
   }
 }
-
 
 // PATCH: log de fin de partie
 function checkGameEnd(game) {
@@ -2063,17 +2089,23 @@ function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
 
-    PF_BUDGET_THIS_TICK = PATHFIND_BUDGET_PER_TICK;
+    // --- Si plus aucun joueur dans la room, on termine la partie immédiatement
+    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    if (!room || room.size === 0) {
+      endGame(game, 'no_players');
+      continue;
+    }
 
-    // --- Détection "calme" par partie ---
-    // Calme si : pas de zombies, pas de balles, pas de tourelles vivantes, et spawn inactif
-    const hasZombies = Object.keys(game.zombies).length > 0;
-    const hasBullets = Object.keys(game.bullets).length > 0;
-    const hasTurrets = (typeof game._turretCount === 'number' ? game._turretCount : 0) > 0;
+    // Budget PF adaptatif
+    PF_BUDGET_THIS_TICK = computePathfindBudget(game);
+
+    // Détection "calme"
+    const hasZombies = (game._zombieCount || 0) > 0;
+    const hasBullets = (game._bulletCount || 0) > 0;
+    const hasTurrets = (game._turretCount || 0) > 0;
     const calm = !hasZombies && !hasBullets && !hasTurrets && !game.spawningActive;
 
-    // === Simulation à dt fixe ===
-    // Toujours déplacer les joueurs/bots (coût léger), mais on saute le lourd si "calm"
+    // Simulation
     movePlayers(game, dt);
     moveBots(game, dt);
 
@@ -2084,8 +2116,7 @@ function stepOnce(dt) {
       handleZombieAttacks(game);
     }
 
-    // --- PUSH ÉTAT TEMPS-RÉEL (intervalle différent si calme) ---
-    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    // PUSH réseau (intervalle différent si calme)
     if (room) {
       const now = Date.now();
       const sendInterval = calm ? NET_INTERVAL_IDLE_MS : NET_INTERVAL_MS;
@@ -2114,7 +2145,7 @@ function stepOnce(dt) {
       }
     }
 
-    // --- Régénération ---
+    // Régénération
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
@@ -2126,7 +2157,6 @@ function stepOnce(dt) {
       }
     }
 
-    // Fin de vague/partie (ne coûte rien quand calme)
     checkWaveEnd(game);
     checkGameEnd(game);
   }
@@ -2142,19 +2172,16 @@ function gameLoop() {
     if (frameTime > 0.25) frameTime = 0.25;
     accumulator += frameTime;
 
-    // --- Détecter le mode global ---
-    // EMPTY : aucune partie démarrée
-    // CALM  : toutes les parties démarrées sont calmes (pas de zombies, balles, tourelles, spawn)
-    // BUSY  : le reste
+    // Modes global
     let anyStarted = false;
     let anyBusy = false;
 
     for (const game of activeGames) {
       if (!game.lobby.started) continue;
       anyStarted = true;
-      const hasZombies = Object.keys(game.zombies).length > 0;
-      const hasBullets = Object.keys(game.bullets).length > 0;
-      const hasTurrets = (typeof game._turretCount === 'number' ? game._turretCount : 0) > 0;
+      const hasZombies = (game._zombieCount || 0) > 0;
+      const hasBullets = (game._bulletCount || 0) > 0;
+      const hasTurrets = (game._turretCount || 0) > 0;
       const busy = hasZombies || hasBullets || hasTurrets || game.spawningActive;
       if (busy) { anyBusy = true; break; }
     }
@@ -2167,14 +2194,12 @@ function gameLoop() {
     const targetIntervalMs = 1000 / targetHz;
     const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-    // Cadence adaptative : si pas encore le moment, on attend (et on évite d'accumuler)
     if (_lastTickAtMs && (nowMs - _lastTickAtMs) < targetIntervalMs) {
       setTimeout(gameLoop, Math.max(1, targetIntervalMs - (nowMs - _lastTickAtMs)));
       return;
     }
     _lastTickAtMs = nowMs;
 
-    // Nombre de steps max par invocation (évite de "rattraper" à l'infini)
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
       stepOnce(FIXED_DT);
@@ -2184,8 +2209,6 @@ function gameLoop() {
   } catch (err) {
     console.error("Erreur dans gameLoop :", err);
   }
-
-  // Replanifie en fonction de la dernière détection (proche du prochain tick)
   setTimeout(gameLoop, 1);
 }
 
