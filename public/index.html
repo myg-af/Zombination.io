@@ -396,7 +396,31 @@
 
     // --- JEU ---
     const socket = io({ transports: ['websocket'] });
-	
+// ---- Throttle pour moveDir (anti-flood) ----
+let lastMoveSent = { x: 0, y: 0 };
+let lastMoveEmitTs = 0;
+const MOVE_EMIT_INTERVAL_MS = 50;   // max ~20 Hz
+const MOVE_EPS = 0.02;              // tolérance de changement (évite les micros variations)
+const MOVE_HEARTBEAT_MS = 500;      // pour éviter les timeouts si on reste immobile
+
+function nearlyEqual(a, b, eps) { return Math.abs(a - b) < eps; }
+
+function emitMoveThrottled(move) {
+  const now = performance.now();
+  const changed =
+    !nearlyEqual(move.x, lastMoveSent.x, MOVE_EPS) ||
+    !nearlyEqual(move.y, lastMoveSent.y, MOVE_EPS);
+
+  const due = (now - lastMoveEmitTs) >= MOVE_EMIT_INTERVAL_MS;
+  const heartbeatDue = (now - lastMoveEmitTs) >= MOVE_HEARTBEAT_MS;
+
+  if ((changed && due) || heartbeatDue) {
+    socket.emit('moveDir', move);
+    lastMoveSent = { x: move.x, y: move.y };
+    lastMoveEmitTs = now;
+  }
+}
+
 let currentRound = 1;
 let playersHealth = {};
 let zombies = {};
@@ -1275,66 +1299,70 @@ function drawLightMask() {
 
 
 
-	function update(deltaTime) {
-	  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
-	  let player = playersHealth[myId];
-	  let move = { x:0, y:0 };
+function update(deltaTime) {
+  if (isDead || !myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
+  let player = playersHealth[myId];
+  let move = { x: 0, y: 0 };
 
-	  // ---- MOUVEMENT ----
-	  if (!isMobileDevice) {
-		if (keys['arrowup'] || keys['w']) move.y -= 1;
-		if (keys['arrowdown'] || keys['s']) move.y += 1;
-		if (keys['arrowleft'] || keys['a']) move.x -= 1;
-		if (keys['arrowright'] || keys['d']) move.x += 1;
-	  } else {
-		const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
-		if (len > 0.06) {
-		  let mx = moveJoyVal.x / (len || 1);
-		  let my = moveJoyVal.y / (len || 1);
-		  move.x = curve(mx);
-		  move.y = curve(my);
-		}
-	  }
+  // ---- MOUVEMENT ----
+  if (!isMobileDevice) {
+    if (keys['arrowup'] || keys['w']) move.y -= 1;
+    if (keys['arrowdown'] || keys['s']) move.y += 1;
+    if (keys['arrowleft'] || keys['a']) move.x -= 1;
+    if (keys['arrowright'] || keys['d']) move.x += 1;
+  } else {
+    const len = Math.hypot(moveJoyVal.x, moveJoyVal.y);
+    if (len > 0.06) {
+      let mx = moveJoyVal.x / (len || 1);
+      let my = moveJoyVal.y / (len || 1);
+      move.x = curve(mx);
+      move.y = curve(my);
+    }
+  }
 
-	  socket.emit('moveDir', move);
+  // ⚠️ Remplacement de l'ancien "socket.emit('moveDir', move);" par :
+  emitMoveThrottled(move);
 
-	  // ---- TIR ----
-	  let shooting = false;
-	  let shootDir = { x:1, y:0 };
+  // ---- TIR ----
+  let shooting = false;
+  let shootDir = { x: 1, y: 0 };
 
-	  if (!isMobileDevice) {
-		// ✅ corrige avec / renderScale
-		let dx = (cameraX + mousePos.x / renderScale) - player.x;
-		let dy = (cameraY + mousePos.y / renderScale) - player.y;
-		let len = Math.hypot(dx, dy);
-		if (len > 3) shootDir = { x: dx/len, y: dy/len };
-		shooting = mouseDown;
-	  } else {
-		const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
-		if (len > 0.06) {
-		  let ax = aimJoyVal.x / (len || 1);
-		  let ay = aimJoyVal.y / (len || 1);
-		  ax = curve(ax);
-		  ay = curve(ay);
-		  shootDir = { x: ax, y: ay };
-		  shooting = true;
-		}
-	  }
+  if (!isMobileDevice) {
+    // ✅ corrige avec / renderScale
+    let dx = (cameraX + mousePos.x / renderScale) - player.x;
+    let dy = (cameraY + mousePos.y / renderScale) - player.y;
+    let len = Math.hypot(dx, dy);
+    if (len > 3) shootDir = { x: dx / len, y: dy / len };
+    shooting = mouseDown;
+  } else {
+    const len = Math.hypot(aimJoyVal.x, aimJoyVal.y);
+    if (len > 0.06) {
+      let ax = aimJoyVal.x / (len || 1);
+      let ay = aimJoyVal.y / (len || 1);
+      ax = curve(ax);
+      ay = curve(ay);
+      shootDir = { x: ax, y: ay };
+      shooting = true;
+    }
+  }
 
-	  if (shooting) {
-		const n = Math.hypot(shootDir.x, shootDir.y);
-		if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
-	  }
+  if (shooting) {
+    const n = Math.hypot(shootDir.x, shootDir.y);
+    if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
+  }
 
-	  if (shooting && !shootBlocked) {
-		shootBlocked = true;
-		socket.emit('shoot', {
-		  targetX: player.x + shootDir.x * 120,
-		  targetY: player.y + shootDir.y * 120
-		});
-		setTimeout(() => { shootBlocked = false; }, 300);
-	  }
-	}
+  if (shooting && !shootBlocked) {
+    shootBlocked = true;
+    socket.emit('shoot', {
+      targetX: player.x + shootDir.x * 120,
+      targetY: player.y + shootDir.y * 120
+    });
+    setTimeout(() => { shootBlocked = false; }, 300);
+  }
+}
+
+
+
 
 if (isMobileDevice) {
   canvas.addEventListener('pointerdown', (e) => {
