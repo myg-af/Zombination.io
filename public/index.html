@@ -207,23 +207,25 @@
 <div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
   <!-- Conteneur horizontal des 4 tuiles -->
   <div id="buildTiles" style="display:flex; gap:10px;">
-    <!-- Grande tourelle (avec petit canon) -->
-    <button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 5, Cadence: ~6.7/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
-        <!-- petit canon -->
-        <div style="position:absolute; left:50%; top:50%; width:16px; height:3px; background:#3a0b0b; transform:translate(0,-50%); border-radius:2px;"></div>
-      </div>
-      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
-    </button>
+<!-- Grande tourelle (avec petit carré noir central) -->
+<button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 10, Cadence: ~2 tirs/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+  <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
+    <!-- Petit carré noir central -->
+    <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+  </div>
+  <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
+</button>
 
-    <!-- Mini-tourelle (avec petit canon) -->
-    <button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
-        <!-- petit canon -->
-        <div style="position:absolute; left:50%; top:50%; width:14px; height:3px; background:#0b1b2a; transform:translate(0,-50%); border-radius:2px;"></div>
-      </div>
-      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
-    </button>
+
+<!-- Mini-tourelle (avec petit carré noir central) -->
+<button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+  <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
+    <!-- Petit carré noir central -->
+    <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+  </div>
+  <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
+</button>
+
 
     <!-- Mur (barricade) -->
     <button class="build-tile" data-type="B" data-tip="Mur (HP: 200)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
@@ -1183,103 +1185,44 @@ function drawMap() {
 function drawStructures() {
   if (!structures) return;
 
-  // HP helpers
-  function getHP(r, c, type, cell) {
-    const defaultMax = (type === 'T') ? 500 : (type === 't' ? 200 : 200);
-    const hpFromObj  = (typeof cell === 'object') ? cell.hp : undefined;
-    const hpNorm = (structHPGrid && structHPGrid[r]) ? structHPGrid[r][c] : undefined;
-    const hpSwap = (structHPGrid && structHPGrid[c]) ? structHPGrid[c][r] : undefined;
-    if (typeof hpNorm === 'number') return hpNorm;
-    if (typeof hpFromObj === 'number') return hpFromObj;
-    if (typeof hpSwap === 'number') return hpSwap;
-    return defaultMax;
-  }
-  function destroyCell(r, c) {
-    if (structures?.[r]) structures[r][c] = null;
-    if (structHPGrid) {
-      if (!structHPGrid[r]) structHPGrid[r] = [];
-      structHPGrid[r][c] = 0;
-      if (!structHPGrid[c]) structHPGrid[c] = [];
-      structHPGrid[c][r] = 0;
-    }
-  }
+  // Parcours des structures
+  for (let row = 0; row < structures.length; row++) {
+    for (let col = 0; col < structures[row].length; col++) {
+      const cell = structures[row][col];
+      if (!cell) continue; // Si pas de structure, on passe à la suivante
 
-  // Liste des zombies : 1 rafraîchissement par frame
-  refreshZombiesFrame();
+      const x = col * TILE_SIZE - cameraX; // Calcul de la position en X
+      const y = row * TILE_SIZE - cameraY; // Calcul de la position en Y
 
-  const viewW = canvas.width / renderScale;
-  const viewH = canvas.height / renderScale;
-  const startCol = Math.floor(cameraX / TILE_SIZE);
-  const startRow = Math.floor(cameraY / TILE_SIZE);
-  const visibleCols = Math.ceil(viewW / TILE_SIZE) + 2;
-  const visibleRows = Math.ceil(viewH / TILE_SIZE) + 2;
-
-  for (let row = startRow; row < startRow + visibleRows; row++) {
-    if (row < 0 || row >= MAP_ROWS) continue;
-    for (let col = startCol; col < startCol + visibleCols; col++) {
-      if (col < 0 || col >= MAP_COLS) continue;
-
-      let cell = structures[row]?.[col];
-      if (!cell) continue;
-
-      let type, hp;
-      if (typeof cell === 'object') type = cell.type; else type = cell;
-      if (!type) continue;
-
-      hp = getHP(row, col, type, cell);
-      if (!(hp > 0)) {
-        destroyCell(row, col);
-        continue;
-      }
-
-      if (typeof cell !== 'object') {
-        if (structures[row]) structures[row][col] = { type, hp };
-        cell = structures[row][col];
-      } else {
-        cell.hp = hp;
-      }
-
-      const x = col * TILE_SIZE - cameraX;
-      const y = row * TILE_SIZE - cameraY;
-
-      if (type === 'B') {
-        ctx.fillStyle = '#7b4b2a';
+      // Dessiner la structure de base
+      if (cell.type === 'B') {
+        ctx.fillStyle = '#7b4b2a'; // Couleur du mur
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
-
-      } else if (type === 'D') {
-        ctx.fillStyle = '#a57b4a';
+      } else if (cell.type === 'D') {
+        ctx.fillStyle = '#a57b4a'; // Couleur de la porte
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
-
-      } else if (type === 'T' || type === 't') {
-        const isBig = (type === 'T');
-        ctx.fillStyle = isBig ? '#d33' : '#3aa6ff';
+      } else if (cell.type === 'T' || cell.type === 't') {
+        const isBig = (cell.type === 'T');
+        ctx.fillStyle = isBig ? '#d33' : '#3aa6ff'; // Couleur des tourelles
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = isBig ? '#3a0b0b' : '#0b1b2a';
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
-
-        // Canon orienté
-        const cx = x + TILE_SIZE / 2;
-        const cy = y + TILE_SIZE / 2;
-        const cxW = col * TILE_SIZE + TILE_SIZE / 2;
-        const cyW = row * TILE_SIZE + TILE_SIZE / 2;
-
-        const turretKey = `turret_${col}_${row}`;
-        const ang = findTurretTargetAngle(turretKey, cxW, cyW);
-
-        const L = TILE_SIZE * 0.38;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + Math.cos(ang) * L, cy + Math.sin(ang) * L);
-        ctx.stroke();
+        
+        // Dessiner le carré noir au centre de la tourelle
+        const centerX = x + TILE_SIZE / 2;
+        const centerY = y + TILE_SIZE / 2;
+        ctx.fillStyle = '#000'; // Noir
+        ctx.fillRect(centerX - 8, centerY - 8, 16, 16); // Dessiner un carré de 16px au centre
       }
     }
   }
 }
+
 
 
 	function drawPlayers() {
