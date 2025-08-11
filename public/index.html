@@ -1506,47 +1506,82 @@ function drawAimLine() {
   ctx.restore();
 }
 
+// — Détection de support 'evenodd' (une fois) —
+let CANVAS_EVENODD_OK = null;
+function testEvenOddSupport() {
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 8;
+    const g = c.getContext('2d');
+
+    // fond blanc
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, 8, 8);
+
+    // on dessine un masque noir avec un trou "evenodd"
+    g.fillStyle = '#000';
+    g.beginPath();
+    g.rect(0, 0, 8, 8);
+    g.moveTo(4 + 2, 4); // évite artefacts
+    g.arc(4, 4, 2, 0, Math.PI * 2, true);
+    g.fill('evenodd');
+
+    // si le trou a bien été créé, le pixel central n’est PAS noir
+    const [r, gch, b, a] = g.getImageData(4, 4, 1, 1).data;
+    return !(r === 0 && gch === 0 && b === 0 && a !== 0);
+  } catch {
+    return false;
+  }
+}
+
+
 function drawLightMask() {
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
-  // Position du joueur en coordonnées écran (on tient compte du zoom)
+  // centre du joueur en coordonnées écran (identique PC)
   const p = playersHealth[myId];
   const screenX = (p.x - cameraX) * renderScale;
   const screenY = (p.y - cameraY) * renderScale;
 
-  // Rayon en pixels écran (pas en monde)
-  const radius = CLIENT_VIEW_RADIUS * renderScale;
-
-  // On dessine l’overlay en coordonnées écran
-  ctx.save();
+  // on passe en coordonnées écran pour l’overlay (identique PC)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // 1) Voile sombre
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // — init du test 'evenodd' une fois —
+  if (CANVAS_EVENODD_OK === null) {
+    CANVAS_EVENODD_OK = testEvenOddSupport();
+  }
 
-  // 2) On "découpe" un trou doux au centre avec un dégradé radial
-  ctx.globalCompositeOperation = 'destination-out';
-  const g = ctx.createRadialGradient(
-    screenX, screenY, Math.max(1, radius * 0.35),   // noyau opaque
-    screenX, screenY, radius                         // bord transparent
-  );
-  g.addColorStop(0.0, 'rgba(0,0,0,1)');
-  g.addColorStop(1.0, 'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
+  if (CANVAS_EVENODD_OK) {
+    // ✅ chemin standard (exactement comme PC)
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.rect(0, 0, canvas.width, canvas.height);
+    ctx.moveTo(screenX + CLIENT_VIEW_RADIUS, screenY);
+    ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2, true);
+    ctx.fill('evenodd');
+    ctx.restore();
+  } else {
+    // 🔁 fallback mobile (visuellement identique) : on “perfore” le trou
+    ctx.save();
+    // on peint l’ombre
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.beginPath();
-  ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.fill();
+    // on découpe le trou
+    const prevOp = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, CLIENT_VIEW_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = prevOp;
+    ctx.restore();
+  }
 
-  ctx.restore();
-
-  // On remet la transform monde pour le reste du rendu
+  // on remet l’espace monde
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 }
+
 
 
 function update(deltaTime) {
