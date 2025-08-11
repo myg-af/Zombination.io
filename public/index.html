@@ -529,6 +529,7 @@ socket.on('stateUpdate', (payload) => {
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+	let mapBuffer = null, mapBufCtx = null, mapBufW = 0, mapBufH = 0;
     const hudAlive = document.getElementById('hudAlive');
     const hudZombies = document.getElementById('hudZombies');
     const hudKills = document.getElementById('hudKills');
@@ -765,6 +766,32 @@ window.addEventListener('mousedown', e => {
     function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
+
+function createMapBuffer() {
+  if (!map || !map.length) return;
+
+  mapBufW = MAP_COLS * TILE_SIZE;
+  mapBufH = MAP_ROWS * TILE_SIZE;
+
+  // (Re)crée le canvas offscreen
+  mapBuffer = document.createElement('canvas');
+  mapBuffer.width  = mapBufW;
+  mapBuffer.height = mapBufH;
+  mapBufCtx = mapBuffer.getContext('2d');
+
+  // Fond neutre (optionnel) : on laisse transparent, on ne dessine que les murs
+  // Rendu des tuiles MURS une seule fois
+  mapBufCtx.fillStyle = '#363636';
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      if (map[r][c] === 1) {
+        mapBufCtx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+}
+
+
 
     // JOYSTICK PATCH MOBILE
     let moveJoy = null, aimJoy = null;
@@ -1070,51 +1097,35 @@ function positionShopUI() {
 
 
 
-	function drawMap() {
-	  if (!map.length) return;
+function drawMap() {
+  if (!map || !map.length) return;
+  // Génère le buffer si nécessaire (ou si tailles non prêtes)
+  if (!mapBuffer || mapBufW !== MAP_COLS * TILE_SIZE || mapBufH !== MAP_ROWS * TILE_SIZE) {
+    createMapBuffer();
+  }
+  if (!mapBuffer) return;
 
-	  // ✅ tenir compte du zoom
-	  const viewW = canvas.width / renderScale;
-	  const viewH = canvas.height / renderScale;
+  // Calcule la portion visible (en coordonnées monde)
+  const viewW = Math.ceil(canvas.width  / renderScale);
+  const viewH = Math.ceil(canvas.height / renderScale);
+  const sx = Math.floor(cameraX);
+  const sy = Math.floor(cameraY);
+  const sW = Math.min(viewW, mapBufW - sx);
+  const sH = Math.min(viewH, mapBufH - sy);
+  if (sW <= 0 || sH <= 0) return;
 
-	  const startCol = Math.floor(cameraX / TILE_SIZE);
-	  const startRow = Math.floor(cameraY / TILE_SIZE);
-	  const visibleCols = Math.ceil(viewW / TILE_SIZE) + 2;
-	  const visibleRows = Math.ceil(viewH / TILE_SIZE) + 2;
-
-	  for (let row = startRow; row < startRow + visibleRows; row++) {
-		if (row < 0 || row >= MAP_ROWS) continue;
-		for (let col = startCol; col < startCol + visibleCols; col++) {
-		  if (col < 0 || col >= MAP_COLS) continue;
-		  if (map[row][col] === 1) {
-			ctx.fillStyle = '#363636';
-			ctx.fillRect(
-			  col * TILE_SIZE - cameraX,
-			  row * TILE_SIZE - cameraY,
-			  TILE_SIZE,
-			  TILE_SIZE
-			);
-		  }
-		}
-	  }
-	}
+  // Dessine le morceau nécessaire du buffer à la bonne position
+  ctx.drawImage(
+    mapBuffer,
+    sx, sy, sW, sH,              // source rect (dans le buffer)
+    sx - cameraX, sy - cameraY,  // destination (coord. monde → après setTransform)
+    sW, sH
+  );
+}
 
 
 function drawStructures() {
   if (!structures) return;
-
-  // angle le plus récent par tourelle (depuis bullets)
-  const latestTurretAngles = {};
-  for (const bid in bullets) {
-    const b = bullets[bid];
-    if (!b || typeof b.owner !== 'string') continue;
-    if (!b.owner.startsWith('turret_')) continue;
-    const key = b.owner;
-    const t = b.createdAt || 0;
-    if (!latestTurretAngles[key] || t > latestTurretAngles[key].t) {
-      latestTurretAngles[key] = { t, ang: Math.atan2(b.dy, b.dx) };
-    }
-  }
 
   // Helper robuste pour récupérer l'HP (gère axes inversés)
   function getHP(r, c, type, cell) {
@@ -1156,29 +1167,23 @@ function drawStructures() {
       let cell = structures[row]?.[col];
       if (!cell) continue;
 
-      // type robuste + conversion à l’objet si string
+      // type + hp
       let type, hp;
-      if (typeof cell === 'object') {
-        type = cell.type;
-      } else {
-        type = cell;
-      }
+      if (typeof cell === 'object') type = cell.type; else type = cell;
       if (!type) continue;
 
       hp = getHP(row, col, type, cell);
 
-      // Si HP <= 0 → suppression logique/visuelle (sans barre de vie)
+      // HP ≤ 0 → on supprime
       if (!(hp > 0)) {
         destroyCell(row, col);
         continue;
       }
 
-      // Si le cell était un string, on le convertit une fois pour toutes
       if (typeof cell !== 'object') {
         if (structures[row]) structures[row][col] = { type, hp };
         cell = structures[row][col];
       } else {
-        // on maintient l’HP local (barres supprimées, mais HP utile au gameplay)
         cell.hp = hp;
       }
 
@@ -1186,21 +1191,18 @@ function drawStructures() {
       const y = row * TILE_SIZE - cameraY;
 
       if (type === 'B') {
-        // Mur (plus de drawHealthBar)
         ctx.fillStyle = '#7b4b2a';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
       } else if (type === 'D') {
-        // Porte (plus de drawHealthBar)
         ctx.fillStyle = '#a57b4a';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
       } else if (type === 'T' || type === 't') {
-        // Tourelle / Mini-tourelle (plus de drawHealthBar)
         const isBig = (type === 'T');
         ctx.fillStyle = isBig ? '#d33' : '#3aa6ff';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
@@ -1208,15 +1210,14 @@ function drawStructures() {
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-        // Canon orienté
+        // Canon orienté (sans parcourir toutes les balles)
         const cx = x + TILE_SIZE / 2;
         const cy = y + TILE_SIZE / 2;
         const cxW = col * TILE_SIZE + TILE_SIZE / 2;
         const cyW = row * TILE_SIZE + TILE_SIZE / 2;
 
         const turretKey = `turret_${col}_${row}`;
-        let ang = latestTurretAngles[turretKey]?.ang;
-        if (ang == null) ang = findTurretTargetAngle(turretKey, cxW, cyW);
+        const ang = findTurretTargetAngle(turretKey, cxW, cyW);
 
         const L = TILE_SIZE * 0.38;
         ctx.beginPath();
@@ -1822,6 +1823,7 @@ function drawHUD() {
 
     socket.on('gameStarted', (data) => {
       map = data.map;
+	  createMapBuffer();
       MAP_ROWS = map.length;
       MAP_COLS = map[0].length;
       playersHealth = data.players;
