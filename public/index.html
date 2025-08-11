@@ -338,7 +338,7 @@
     ];
     function getDefaultLang() { return "en"; }
     let currentLang = getDefaultLang();
-    let lobbyData = { started: false, count: 0, max: 10, timeLeft: 30, players: {} };
+    let lobbyData = { started: false, count: 0, max: 6, timeLeft: 30, players: {} };
     let lobbyJoined = false, lobbyStarted = false;
     function initLobbyTexts() {
       updateLobbyTexts();
@@ -425,20 +425,97 @@ let currentRound = 1;
 let playersHealth = {};
 let zombies = {};
 let bullets = {};
+let turretLasers = [];
 let zombiesRemaining = 0;
 let waveTotalZombies = 0;
 let waveKilledThisWave = 0;
 let structures = null;
+let structHPGrid = null;
 
-// Remplace entièrement l'ancien handler
 socket.on('stateUpdate', (payload) => {
   if (!payload) return;
-  if (payload.zombies)    zombies = payload.zombies;
-  if (payload.bullets)    bullets = payload.bullets;
-  if (payload.playersHealth) playersHealth = payload.playersHealth;
+
+  if (payload.zombies)        zombies = payload.zombies;
+  if (payload.bullets)        bullets = payload.bullets;
+  if (payload.playersHealth)  playersHealth = payload.playersHealth;
   if (typeof payload.round === 'number') currentRound = payload.round;
-  if (payload.structures) structures = payload.structures;
-  // petit rafraîchissement d'UI
+
+  // 1) Grille HP optionnelle + application immédiate aux structures existantes
+  if (payload.structuresHP) {
+    structHPGrid = payload.structuresHP;
+
+    // Si on n'a PAS reçu de nouvelle grille de structures,
+    // on pousse quand même les HP dans la grille locale pour mettre à jour les barres
+    if (structures && !payload.structures) {
+      const rows = Math.min(structHPGrid.length, MAP_ROWS);
+      for (let y = 0; y < rows; y++) {
+        const cols = Math.min(structHPGrid[y]?.length || 0, MAP_COLS);
+        for (let x = 0; x < cols; x++) {
+          const hp = structHPGrid[y][x];
+          const cell = structures[y]?.[x];
+          if (cell) {
+            if (typeof cell === 'object') {
+              cell.hp = hp;
+            } else if (typeof cell === 'string') {
+              structures[y][x] = { type: cell, hp };
+            }
+            // si HP <= 0 → on supprime visuellement
+            if (typeof hp === 'number' && hp <= 0) {
+              structures[y][x] = null;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2) Normalisation/merge de la grille structures reçue
+  if (payload.structures) {
+    const grid = payload.structures;
+    const rows = grid.length || 0;
+    const cols = rows ? (grid[0]?.length || 0) : 0;
+
+    structures = Array.from({ length: rows }, (_, y) =>
+      Array.from({ length: cols }, (_, x) => {
+        const cell = grid[y][x];
+        if (!cell || cell === 0) return null;
+
+        // HP prioritaire : structuresHP, sinon ancien HP local, sinon valeur par défaut
+        const hpFromGrid = structHPGrid?.[y]?.[x];
+        const previousHP = structures?.[y]?.[x]?.hp;
+
+        if (typeof cell === 'object') {
+          const type = cell.type;
+          let hp = (typeof cell.hp === 'number') ? cell.hp
+                  : (typeof hpFromGrid === 'number') ? hpFromGrid
+                  : (typeof previousHP === 'number') ? previousHP
+                  : (type === 'T' ? 500 : (type === 't' ? 200 : 200));
+          if (hp <= 0) return null;
+          return { type, hp };
+        }
+
+        if (typeof cell === 'string') {
+          const type = cell;
+          let hp = (typeof hpFromGrid === 'number') ? hpFromGrid
+                  : (typeof previousHP === 'number') ? previousHP
+                  : (type === 'T' ? 500 : (type === 't' ? 200 : 200));
+          if (hp <= 0) return null;
+          return { type, hp };
+        }
+
+        return null;
+      })
+    );
+  }
+
+  // 3) Destructions éventuelles en lot
+  if (Array.isArray(payload.destroyedStructures)) {
+    payload.destroyedStructures.forEach(({ tx, ty }) => {
+      if (structures?.[ty]) structures[ty][tx] = null;
+      if (structHPGrid?.[ty]) structHPGrid[ty][tx] = 0;
+    });
+  }
+
   drawHUD();
 });
 
@@ -1013,92 +1090,130 @@ function positionShopUI() {
 function drawStructures() {
   if (!structures) return;
 
-  // 1) Pré-calcul : angle le plus récent par tourelle (depuis les bullets)
+  // angle le plus récent par tourelle (depuis bullets)
   const latestTurretAngles = {};
   for (const bid in bullets) {
     const b = bullets[bid];
     if (!b || typeof b.owner !== 'string') continue;
-    if (!b.owner.startsWith('turret_')) continue; // seulement balles de tourelles
-    const key = b.owner; // ex: "turret_12_8"
+    if (!b.owner.startsWith('turret_')) continue;
+    const key = b.owner;
     const t = b.createdAt || 0;
     if (!latestTurretAngles[key] || t > latestTurretAngles[key].t) {
-      latestTurretAngles[key] = {
-        t,
-        ang: Math.atan2(b.dy, b.dx)
-      };
+      latestTurretAngles[key] = { t, ang: Math.atan2(b.dy, b.dx) };
     }
   }
 
-  // 2) Bornes d'affichage (caméra/viewport)
+  // Helper robuste pour récupérer l'HP (gère axes inversés)
+  function getHP(r, c, type, cell) {
+    const defaultMax = (type === 'T') ? 500 : (type === 't' ? 200 : 200);
+    const hpFromObj  = (typeof cell === 'object') ? cell.hp : undefined;
+
+    const hpNorm = (structHPGrid && structHPGrid[r]) ? structHPGrid[r][c] : undefined;
+    const hpSwap = (structHPGrid && structHPGrid[c]) ? structHPGrid[c][r] : undefined;
+
+    if (typeof hpNorm === 'number') return hpNorm;
+    if (typeof hpFromObj === 'number') return hpFromObj;
+    if (typeof hpSwap === 'number') return hpSwap;
+    return defaultMax;
+  }
+
+  // Helper pour supprimer proprement une cellule (et ses miroirs HP) quand HP ≤ 0
+  function destroyCell(r, c) {
+    if (structures?.[r]) structures[r][c] = null;
+    if (structHPGrid) {
+      if (!structHPGrid[r]) structHPGrid[r] = [];
+      structHPGrid[r][c] = 0;
+      if (!structHPGrid[c]) structHPGrid[c] = [];
+      structHPGrid[c][r] = 0; // miroir pour axes inversés
+    }
+  }
+
   const viewW = canvas.width / renderScale;
   const viewH = canvas.height / renderScale;
-
   const startCol = Math.floor(cameraX / TILE_SIZE);
   const startRow = Math.floor(cameraY / TILE_SIZE);
   const visibleCols = Math.ceil(viewW / TILE_SIZE) + 2;
   const visibleRows = Math.ceil(viewH / TILE_SIZE) + 2;
 
-  // 3) Parcours des structures visibles
   for (let row = startRow; row < startRow + visibleRows; row++) {
     if (row < 0 || row >= MAP_ROWS) continue;
     for (let col = startCol; col < startCol + visibleCols; col++) {
       if (col < 0 || col >= MAP_COLS) continue;
-      const s = structures[row]?.[col];
-      if (!s) continue;
+
+      let cell = structures[row]?.[col];
+      if (!cell) continue;
+
+      // type robuste + conversion à l’objet si string
+      let type, hp;
+      if (typeof cell === 'object') {
+        type = cell.type;
+      } else {
+        type = cell;
+      }
+      if (!type) continue;
+
+      hp = getHP(row, col, type, cell);
+
+      // Si HP <= 0 → suppression logique/visuelle (sans barre de vie)
+      if (!(hp > 0)) {
+        destroyCell(row, col);
+        continue;
+      }
+
+      // Si le cell était un string, on le convertit une fois pour toutes
+      if (typeof cell !== 'object') {
+        if (structures[row]) structures[row][col] = { type, hp };
+        cell = structures[row][col];
+      } else {
+        // on maintient l’HP local (barres supprimées, mais HP utile au gameplay)
+        cell.hp = hp;
+      }
 
       const x = col * TILE_SIZE - cameraX;
       const y = row * TILE_SIZE - cameraY;
 
-      if (s.type === 'B') {
-        // Barricade
+      if (type === 'B') {
+        // Mur (plus de drawHealthBar)
         ctx.fillStyle = '#7b4b2a';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-      } else if (s.type === 'D') {
-        // Porte
+      } else if (type === 'D') {
+        // Porte (plus de drawHealthBar)
         ctx.fillStyle = '#a57b4a';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = '#000';
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-      } else if (s.type === 'T' || s.type === 't') {
-        // Tourelle (T = grande/rouge, t = mini/bleue)
-        const isBig = s.type === 'T';
+      } else if (type === 'T' || type === 't') {
+        // Tourelle / Mini-tourelle (plus de drawHealthBar)
+        const isBig = (type === 'T');
         ctx.fillStyle = isBig ? '#d33' : '#3aa6ff';
         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
         ctx.strokeStyle = isBig ? '#3a0b0b' : '#0b1b2a';
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
 
-        // Centre écran et monde
+        // Canon orienté
         const cx = x + TILE_SIZE / 2;
         const cy = y + TILE_SIZE / 2;
         const cxW = col * TILE_SIZE + TILE_SIZE / 2;
         const cyW = row * TILE_SIZE + TILE_SIZE / 2;
 
-        // Angle du canon (dernière balle tirée, sinon target visible la plus proche)
         const turretKey = `turret_${col}_${row}`;
         let ang = latestTurretAngles[turretKey]?.ang;
         if (ang == null) ang = findTurretTargetAngle(cxW, cyW);
 
-        // Canon
         const L = TILE_SIZE * 0.38;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(cx + Math.cos(ang) * L, cy + Math.sin(ang) * L);
         ctx.stroke();
-
-        // ✅ Barre de vie (au-dessus de la tuile)
-        const maxHp = isBig ? 500 : 200;
-        // x = centre, y = légèrement au-dessus de la case
-        drawHealthBar(cx, y - 8, s.hp, maxHp, TILE_SIZE - 6, 5);
       }
     }
   }
 }
-
 
 
 	function drawPlayers() {
@@ -1177,6 +1292,44 @@ function drawZombies() {
       }
     }
 	
+
+
+
+function drawTurretLasers() {
+  if (!turretLasers.length) return;
+
+  const now = performance.now();
+  const LIFE_MS = 100; // affichage très bref (100 ms)
+
+  for (let i = turretLasers.length - 1; i >= 0; i--) {
+    const b = turretLasers[i];
+    const age = now - b.t;
+    if (age > LIFE_MS) {
+      turretLasers.splice(i, 1);
+      continue;
+    }
+
+    // petit fade-out
+    const alpha = 1 - (age / LIFE_MS);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(b.x0 - cameraX, b.y0 - cameraY);
+    ctx.lineTo(b.x1 - cameraX, b.y1 - cameraY);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = b.color || '#fff';
+    ctx.shadowColor = b.color || '#fff';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+
+
+
+
 	function drawMoneyFloatingTexts() {
 	  const now = Date.now();
 	  for (let i = moneyFloatingTexts.length - 1; i >= 0; i--) {
@@ -1597,6 +1750,7 @@ function drawHUD() {
 		drawBuildPreview();
 		drawStructures();
 		drawBullets();
+		drawTurretLasers();
 		drawZombies();
 		drawMoneyFloatingTexts();
 		drawPlayers();
@@ -1673,12 +1827,41 @@ socket.on('waveStarted', ({ totalZombies }) => {
 
 
 
-socket.on('structurePricesUpdate', (prices) => {
-  STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...prices };
-  updateBuildTilesState();
+// --- MISE À JOUR DES STRUCTURES PAR LE SERVEUR ---
+// Reçoit une grille 2D (chaque case = null ou { type, hp } ou juste "type")
+socket.on('structuresUpdate', (grid) => {
+  structures = grid;
+
+  // seed/rafraîchir structHPGrid si la grille contient des hp
+  if (!structHPGrid) structHPGrid = [];
+  for (let ty = 0; ty < grid.length; ty++) {
+    const row = grid[ty];
+    if (!structHPGrid[ty]) structHPGrid[ty] = [];
+    for (let tx = 0; tx < row.length; tx++) {
+      const cell = row[tx];
+      if (cell && typeof cell === 'object' && typeof cell.hp === 'number') {
+        structHPGrid[ty][tx] = cell.hp;
+      } else if (cell == null) {
+        structHPGrid[ty][tx] = 0; // détruit
+      }
+    }
+  }
 });
 
 
+   
+   
+   socket.on('laserBeam', ({ x0, y0, x1, y1, color }) => {
+  // On stocke pour le prochain rendu; l’effet disparaît très vite
+  turretLasers.push({
+    x0, y0, x1, y1, color,
+    t: performance.now()
+  });
+});
+
+   
+   
+   
    
 	socket.on('zombiesRemaining', (n) => {
 	  zombiesRemaining = Number(n) || 0;
@@ -1824,6 +2007,131 @@ window.addEventListener('resize', positionBuildBar);
 window.addEventListener('orientationchange', positionBuildBar);
 
 
+// Normalise les coordonnées reçues : supporte {tx,ty} ou {x,y} en pixels
+function normalizeTileCoords(obj) {
+  let tx = (typeof obj.tx === 'number') ? obj.tx
+        : (typeof obj.x === 'number') ? Math.floor(obj.x / TILE_SIZE)
+        : null;
+  let ty = (typeof obj.ty === 'number') ? obj.ty
+        : (typeof obj.y === 'number') ? Math.floor(obj.y / TILE_SIZE)
+        : null;
+  return { tx, ty };
+}
+
+// Tente d'appliquer sur [ty][tx], puis fallback sur [tx][ty] si nécessaire
+function setStructureHP(tx, ty, hp) {
+  if (!structures) return false;
+
+  // bornes “normales”
+  if (ty >= 0 && ty < MAP_ROWS && tx >= 0 && tx < MAP_COLS && structures?.[ty]) {
+    const cell = structures[ty][tx];
+    if (cell != null) {
+      if (typeof cell === 'object') structures[ty][tx].hp = hp;
+      else structures[ty][tx] = { type: cell, hp };
+      if (!structHPGrid) structHPGrid = [];
+      if (!structHPGrid[ty]) structHPGrid[ty] = [];
+      structHPGrid[ty][tx] = hp;
+      return true;
+    }
+  }
+
+  // fallback si inversion tx/ty côté serveur
+  if (tx >= 0 && tx < MAP_ROWS && ty >= 0 && ty < MAP_COLS && structures?.[tx]) {
+    const cell = structures[tx][ty];
+    if (cell != null) {
+      if (typeof cell === 'object') structures[tx][ty].hp = hp;
+      else structures[tx][ty] = { type: cell, hp };
+      if (!structHPGrid) structHPGrid = [];
+      if (!structHPGrid[tx]) structHPGrid[tx] = [];
+      structHPGrid[tx][ty] = hp;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+socket.on('structureHP', (payload) => {
+  // --- 1) Coords tuile fiables (accepte {tx,ty} OU {x,y} en pixels) ---
+  const tx = (typeof payload.tx === 'number') ? payload.tx
+            : (typeof payload.x  === 'number') ? Math.floor(payload.x / TILE_SIZE) : null;
+  const ty = (typeof payload.ty === 'number') ? payload.ty
+            : (typeof payload.y  === 'number') ? Math.floor(payload.y / TILE_SIZE) : null;
+  const hp = Number(payload.hp);
+
+  if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(hp)) return;
+
+  // --- 2) Miroir HP (grille) : on met à jour la case "normale",
+  // et si nécessaire on tente aussi l’inversion [tx][ty] (serveur inversé)
+  if (!structHPGrid) structHPGrid = [];
+  if (!structHPGrid[ty]) structHPGrid[ty] = [];
+  structHPGrid[ty][tx] = hp;
+
+  // Si la case "normale" n'existe pas côté structures mais l’inversée oui,
+  // on maintien aussi le miroir inversé pour l’affichage
+  if (!(structures?.[ty]?.[tx]) && (structures?.[tx]?.[ty])) {
+    if (!structHPGrid[tx]) structHPGrid[tx] = [];
+    structHPGrid[tx][ty] = hp;
+  }
+
+  // --- 3) Mise à jour de la grille visuelle (si elle existe déjà) ---
+  const applyHP = (r, c) => {
+    if (!structures || !structures[r]) return false;
+    const cell = structures[r][c];
+    if (cell == null) return false; // rien à mettre à jour
+
+    if (typeof cell === 'object') {
+      structures[r][c].hp = hp;
+    } else {
+      // Le serveur a peut-être envoyé juste le type (string) :
+      // on le convertit en objet pour avoir un HP visible qui descend.
+      structures[r][c] = { type: cell, hp };
+    }
+
+    // HP <= 0 → suppression visuelle immédiate
+    if (hp <= 0) {
+      structures[r][c] = null;
+      if (structHPGrid?.[r]) structHPGrid[r][c] = 0;
+    }
+    return true;
+  };
+
+  // Essai en [ty][tx], puis fallback en [tx][ty] si besoin
+  if (!applyHP(ty, tx)) applyHP(tx, ty);
+});
+
+
+function clearStructureAt(tx, ty) {
+  if (!structures) return false;
+
+  // chemin “normal” [ty][tx]
+  if (ty >= 0 && ty < MAP_ROWS && tx >= 0 && tx < MAP_COLS && structures?.[ty]) {
+    if (structures[ty][tx] !== undefined) {
+      structures[ty][tx] = null;
+      if (structHPGrid?.[ty]) structHPGrid[ty][tx] = 0;
+      return true;
+    }
+  }
+  // fallback inversion [tx][ty]
+  if (tx >= 0 && tx < MAP_ROWS && ty >= 0 && ty < MAP_COLS && structures?.[tx]) {
+    if (structures[tx][ty] !== undefined) {
+      structures[tx][ty] = null;
+      if (structHPGrid?.[tx]) structHPGrid[tx][ty] = 0;
+      return true;
+    }
+  }
+  return false;
+}
+
+socket.on('structureDestroyed', (payload) => {
+  const { tx, ty } = normalizeTileCoords(payload);
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+
+  const ok = clearStructureAt(tx, ty);
+  if (!ok) console.warn('[structureDestroyed] cellule introuvable', { payload, tx, ty });
+});
+
+
 
 // Réception du résultat d’achat d’une structure
 socket.on('buildResult', (payload) => {
@@ -1883,6 +2191,12 @@ socket.on('buildResult', (payload) => {
 
   // Place localement
   structures[ty][tx] = { type, hp };
+  
+ // Maintenir aussi la grille HP si on l'utilise
+if (structHPGrid) {
+  if (!structHPGrid[ty]) structHPGrid[ty] = [];
+  structHPGrid[ty][tx] = hp;
+}
 
   // Sort du mode placement
   buildMode = null;
