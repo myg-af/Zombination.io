@@ -339,7 +339,7 @@ function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
 }
 
 function tickTurrets(game) {
-  if (!game.structures) return;
+  if (!game?.structures) return;
   const now = Date.now();
 
   for (let ty = 0; ty < MAP_ROWS; ty++) {
@@ -349,61 +349,71 @@ function tickTurrets(game) {
 
       if (!s.lastShot) s.lastShot = 0;
 
-      // cadence identique à avant (NE PAS MODIFIER)
+      // cadence inchangée
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
       if (now - s.lastShot < interval) continue;
 
-      // centre de la tuile de la tourelle
+      // centre monde de la tourelle
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // cible : zombie le plus proche avec LOS libre (identique à l’avant)
-      let best = null, bestDist = Infinity;
+      // cible : zombie le plus proche DANS LA PORTÉE + LOS libre
+      let best = null;
+      let bestDist2 = Infinity;
+
       for (const z of Object.values(game.zombies)) {
+        if (!z) continue;
+
         const dx = z.x - cx;
         const dy = z.y - cy;
-        const d = Math.hypot(dx, dy);
-        if (d < 1) continue;
-        if (losBlockedForTurret(game, cx, cy, z.x, z.y)) continue;
-        if (d < bestDist) { bestDist = d; best = z; }
+        const d2 = dx * dx + dy * dy;
+
+        // ❗ filtre distance : ignore tout zombie hors de 1000 px
+        if (d2 > TURRET_RANGE_SQ) continue;
+
+        // on ne paie la LOS que si on a une meilleure distance
+        if (d2 < bestDist2) {
+          if (!losBlockedForTurret(game, cx, cy, z.x, z.y)) {
+            bestDist2 = d2;
+            best = z;
+          }
+        }
       }
-      if (!best) continue;
+
+      if (!best) continue; // rien dans la portée avec LOS
 
       // tir autorisé
       s.lastShot = now;
 
-      // --- NOUVEAU : laser hitscan instantané (sans projectile) ---
-      // Couleur selon le type
+      // Laser visuel (identique)
       const color = (s.type === 'T') ? '#ff3b3b' : '#3aa6ff';
-
-      // On informe les clients pour l'effet visuel
       io.to('lobby' + game.id).emit('laserBeam', {
         x0: cx, y0: cy,
         x1: best.x, y1: best.y,
         color
       });
 
-      // Dégâts identiques à avant pour les tourelles (ne pas changer)
+      // Dégâts identiques
       const dmg = BULLET_DAMAGE;
 
       // Appliquer les dégâts immédiatement
       best.hp -= dmg;
 
-      // Gestion de la mort (copie minimale de la logique utilisée par les projectiles)
+      // Mort éventuelle (copie de la logique existante)
       if (best.hp <= 0) {
-        // Gains pour l’owner de la tourelle si connu
+        // Gains au propriétaire s’il existe
         if (s.placedBy) {
           const ownerPlayer = game.players[s.placedBy];
           if (ownerPlayer) {
             const ownerStats = getPlayerStats(ownerPlayer);
-            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20 (identique)
+            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
             const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
             io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: best.x, y: best.y });
           }
         }
 
-        // Mise à jour vague / compteur restants (identique au flux existant)
+        // Compteurs de vague / broadcast restants (identique)
         game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
@@ -416,11 +426,9 @@ function tickTurrets(game) {
           }
         }
       }
-      // -------------------------------------------------------------
     }
   }
 }
-
 
 
 
@@ -696,6 +704,8 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 250;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
+const TURRET_RANGE = 1000;
+const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 const TICK_HZ = 60;
