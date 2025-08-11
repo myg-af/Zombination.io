@@ -426,6 +426,8 @@ let playersHealth = {};
 let zombies = {};
 let bullets = {};
 let turretLasers = [];
+const turretAngleCache = new Map(); // key: "turret_c_r" -> { ang, t }
+const TURRET_ANGLE_TTL_MS = 180;    // durée de cache (ms)
 let zombiesRemaining = 0;
 let waveTotalZombies = 0;
 let waveKilledThisWave = 0;
@@ -692,7 +694,16 @@ function losBlockedForZombieClient(x0, y0, x1, y1) {
 
 
 
-function findTurretTargetAngle(cxWorld, cyWorld) {
+// Version avec cache (clé = id tourelle) pour éviter de rescanner tous les zombies à chaque frame
+function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
+  const now = performance.now();
+  // 1) Si on a un angle récent en cache → le réutiliser
+  const cached = turretAngleCache.get(turretKey);
+  if (cached && (now - cached.t) <= TURRET_ANGLE_TTL_MS) {
+    return cached.ang;
+  }
+
+  // 2) Sinon on fait un scan (comme avant), puis on met en cache
   let best = null, bestDist = Infinity, bdx = 1, bdy = 0;
   for (const z of Object.values(zombies)) {
     const dx = z.x - cxWorld;
@@ -702,7 +713,9 @@ function findTurretTargetAngle(cxWorld, cyWorld) {
       best = z; bestDist = d; bdx = dx; bdy = dy;
     }
   }
-  return Math.atan2(bdy, bdx); // défaut: 0 rad (vers la droite)
+  const ang = Math.atan2(bdy, bdx);
+  turretAngleCache.set(turretKey, { ang, t: now });
+  return ang;
 }
 
 
@@ -1203,7 +1216,7 @@ function drawStructures() {
 
         const turretKey = `turret_${col}_${row}`;
         let ang = latestTurretAngles[turretKey]?.ang;
-        if (ang == null) ang = findTurretTargetAngle(cxW, cyW);
+        if (ang == null) ang = findTurretTargetAngle(turretKey, cxW, cyW);
 
         const L = TILE_SIZE * 0.38;
         ctx.beginPath();
@@ -1299,7 +1312,17 @@ function drawTurretLasers() {
   if (!turretLasers.length) return;
 
   const now = performance.now();
-  const LIFE_MS = 100; // affichage très bref (100 ms)
+  const LIFE_MS = 80;               // un peu plus court => moins d’objets à dessiner
+  const MAX_LASERS_PER_FRAME = 150; // cap dur pour éviter les spikes
+
+  // On garde seulement les plus récents si ça explose
+  if (turretLasers.length > MAX_LASERS_PER_FRAME) {
+    turretLasers = turretLasers.slice(turretLasers.length - MAX_LASERS_PER_FRAME);
+  }
+
+  // Un seul path par frame, sans ombre (shadowBlur coûte cher)
+  ctx.save();
+  ctx.lineWidth = 2;
 
   for (let i = turretLasers.length - 1; i >= 0; i--) {
     const b = turretLasers[i];
@@ -1309,23 +1332,18 @@ function drawTurretLasers() {
       continue;
     }
 
-    // petit fade-out
     const alpha = 1 - (age / LIFE_MS);
-
-    ctx.save();
     ctx.globalAlpha = alpha;
+    ctx.strokeStyle = b.color || '#fff';
+
     ctx.beginPath();
     ctx.moveTo(b.x0 - cameraX, b.y0 - cameraY);
     ctx.lineTo(b.x1 - cameraX, b.y1 - cameraY);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = b.color || '#fff';
-    ctx.shadowColor = b.color || '#fff';
-    ctx.shadowBlur = 8;
     ctx.stroke();
-    ctx.restore();
   }
-}
 
+  ctx.restore();
+}
 
 
 
