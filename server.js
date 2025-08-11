@@ -251,8 +251,20 @@ function getStruct(game, tx, ty) {
 function setStruct(game, tx, ty, s) {
   if (!game.structures) return;
   if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return;
+
+  // Compteur de tourelles en cache (évite de scanner la grille à chaque tick)
+  if (typeof game._turretCount !== 'number') game._turretCount = 0;
+
+  const prev = game.structures[ty][tx];
+  const prevIsTurret = !!(prev && (prev.type === 'T' || prev.type === 't') && prev.hp > 0);
+  const nextIsTurret = !!(s && (s.type === 'T' || s.type === 't') && s.hp > 0);
+
+  if (prevIsTurret && !nextIsTurret) game._turretCount = Math.max(0, game._turretCount - 1);
+  if (!prevIsTurret && nextIsTurret) game._turretCount++;
+
   game.structures[ty][tx] = s;
 }
+
 
 function canPlaceStructureAt(game, tx, ty, buyerId) {
   if (!game || !game.map) return false;
@@ -342,13 +354,12 @@ function tickTurrets(game) {
   if (!game?.structures) return;
   const now = Date.now();
 
-  // Quota global de tirs ce tick
   let shotsLeft = TURRET_SHOTS_PER_TICK;
-
-  // Batch visuel des lasers à envoyer en une seule fois
   const laserBatch = [];
 
-  // Parcours de la grille des structures
+  // Accès direct à la map des zombies
+  const zombiesMap = game.zombies;
+
   outer_loop:
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
@@ -356,74 +367,93 @@ function tickTurrets(game) {
       if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
 
       if (!s.lastShot) s.lastShot = 0;
-
-      // cadence inchangée (mini/mini)
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
 
-      // --- JITTER : décalage aléatoire par tir, centré sur 0 pour conserver le débit moyen ---
-      // On mémorise le jitter courant dans l'objet tourelle, puis on le régénère après un tir
       if (typeof s._jitterCur !== 'number') {
-        s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS; // [-J/2, +J/2]
+        s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
       }
       if ((now - s.lastShot) < (interval + s._jitterCur)) {
-        continue; // encore en cooldown (avec décalage)
+        continue;
       }
 
-      // centre monde de la tourelle
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // cible : zombie le plus proche DANS LA PORTÉE + LOS libre
-      let best = null;
-      let bestDist2 = Infinity;
-
-      for (const z of Object.values(game.zombies)) {
-        if (!z) continue;
-
-        const dx = z.x - cx;
-        const dy = z.y - cy;
-        const d2 = dx * dx + dy * dy;
-
-        // filtre distance : ignore tout zombie hors de portée
-        if (d2 > TURRET_RANGE_SQ) continue;
-
-        // on ne paie la LOS que si on a une meilleure distance
-        if (d2 < bestDist2) {
-          if (!losBlockedForTurret(game, cx, cy, z.x, z.y)) {
-            bestDist2 = d2;
-            best = z;
+      // --------- Cache de cible : s._targetId + cadence de re-ciblage ---------
+      let target = null;
+      if (s._targetId) {
+        const z = zombiesMap[s._targetId];
+        if (z) {
+          const dx = z.x - cx, dy = z.y - cy;
+          const d2 = dx*dx + dy*dy;
+          // cible encore valable ?
+          if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
+            target = z; // OK: on réutilise la cible
           }
         }
       }
 
-      if (!best) continue; // rien dans la portée avec LOS
+      // si pas de cible valable, on re-sélectionne, mais pas plus d'une fois tous les TURRET_RETARGET_MS
+      if (!target) {
+        if (!s._nextRetargetAt || now >= s._nextRetargetAt) {
+          s._nextRetargetAt = now + TURRET_RETARGET_MS;
 
-      // --- Quota par tick : on stoppe proprement quand il n'y a plus de budget ---
-      if (shotsLeft <= 0) {
-        break outer_loop;
+          // Recherche "meilleure" cible : on parcourt, mais on sort tôt si on trouve très proche
+          let best = null;
+          let bestDist2 = Infinity;
+
+          // NOTE: itère directement sur les valeurs du dictionnaire pour éviter Object.values allocs
+          for (const zid in zombiesMap) {
+            const z = zombiesMap[zid];
+            if (!z) continue;
+
+            const dx = z.x - cx;
+            const dy = z.y - cy;
+            const d2 = dx*dx + dy*dy;
+            if (d2 > TURRET_RANGE_SQ) continue;
+
+            if (d2 < bestDist2) {
+              // on ne paie la LOS que si meilleur candidat
+              if (!losBlockedForTurret(game, cx, cy, z.x, z.y)) {
+                bestDist2 = d2;
+                best = z;
+                // heuristique: si on trouve très proche, on arrête la recherche
+                if (bestDist2 < 64*64) break;
+              }
+            }
+          }
+
+          if (best) {
+            target = best;
+            s._targetId = Object.keys(zombiesMap).find(id => zombiesMap[id] === best) || null;
+          } else {
+            s._targetId = null; // rien pour cette tourelle maintenant
+          }
+        } else {
+          // pas encore temps de retarget → on skip ce tir
+          continue;
+        }
       }
 
-      // Tir validé → on consomme une "unité" du quota
+      if (!target) continue;
+
+      if (shotsLeft <= 0) break outer_loop;
+
       shotsLeft--;
-
-      // Mise à jour cooldown + regénère un jitter pour le prochain tir
       s.lastShot = now;
-      s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS; // [-J/2, +J/2]
+      s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
 
-      // Dégâts (inchangés)
       const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
-      best.hp -= dmg;
+      target.hp -= dmg;
 
-      // Batch du laser (pas d'emit unitaire ici)
       laserBatch.push({
         x0: cx, y0: cy,
-        x1: best.x, y1: best.y,
+        x1: target.x, y1: target.y,
         color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff'
       });
 
-      // Mort éventuelle (identique à l'existant)
-      if (best.hp <= 0) {
-        // Gains au propriétaire s’il existe
+      if (target.hp <= 0) {
+        // gains propriétaire
         if (s.placedBy) {
           const ownerPlayer = game.players[s.placedBy];
           if (ownerPlayer) {
@@ -431,19 +461,19 @@ function tickTurrets(game) {
             const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
             const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
-            io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: best.x, y: best.y });
+            io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
           }
         }
 
-        // Compteurs de vague / broadcast restants
         game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
 
-        // Suppression du zombie
-        for (const zid in game.zombies) {
-          if (game.zombies[zid] === best) {
-            delete game.zombies[zid];
+        // suppression du zombie tué + invalider cache
+        for (const zid in zombiesMap) {
+          if (zombiesMap[zid] === target) {
+            delete zombiesMap[zid];
+            if (s._targetId === zid) s._targetId = null;
             break;
           }
         }
@@ -451,7 +481,6 @@ function tickTurrets(game) {
     }
   }
 
-  // --- BATCH EMIT : on envoie tous les segments de lasers en UNE fois ---
   if (laserBatch.length > 0) {
     io.to('lobby' + game.id).emit(TURRET_LASER_BATCH_EVENT, laserBatch);
   }
@@ -741,12 +770,29 @@ const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon 
 
 // Événement de batch pour les lasers (un tableau de segments)
 const TURRET_LASER_BATCH_EVENT = 'laserBeams';
+const PATHFIND_BUDGET_PER_TICK = 12;     // nb max de findPath autorisés / tick (ajuste 8..20)
+const TURRET_RETARGET_MS = 120;          // une tourelle ne re-choisit pas une cible + souvent que ça
+
+
 
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
+
+// --- Modes basse consommation ---
+const NET_INTERVAL_IDLE_MS = 250;    // envoi réseau plus rare quand calme
+const CALM_TICK_HZ = 10;            // tick serveur si partie(s) calmes (pas d'IA/tourelles/bullets)
+const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
+
+// Timestamp du dernier tick pour cadence adaptative
+let _lastTickAtMs = 0;
+
+
 const TICK_HZ = 60;
 const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
 const MAX_STEPS = 5;              // anti-spirale si gros retard
+// Budget courant de pathfinding pour CE tick (réinitialisé dans stepOnce)
+let PF_BUDGET_THIS_TICK = 0;
+
 let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 let accumulator = 0;
 
@@ -1429,11 +1475,10 @@ function moveBots(game, deltaTime) {
 
 
 function moveZombies(game, deltaTime) {
-  const MAX_STEP = 6;      // micro-pas (px)
-  const BASE_NUDGE = 1.6;  // anti-coin normal
+  const MAX_STEP = 6;
+  const BASE_NUDGE = 1.6;
   const now = Date.now();
 
-  // cibles tourelles vivantes
   const turretTargets = [];
   if (game.structures) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
@@ -1450,7 +1495,6 @@ function moveZombies(game, deltaTime) {
     }
   }
 
-  // --- Helpers avec rayon paramétrable (pour réduire le rayon en "unstuck") ---
   const collidesPlayerAtR = (x, y, r) =>
     Object.values(game.players).some(p =>
       p && p.alive && entitiesCollide(x, y, r, p.x, p.y, PLAYER_RADIUS, 0)
@@ -1459,9 +1503,8 @@ function moveZombies(game, deltaTime) {
   const blockedAt = (x, y, r) =>
     isCircleColliding(game.map, x, y, r) ||
     circleBlockedByStructures(game, x, y, r, isSolidForZombie) ||
-    collidesPlayerAtR(x, y, r); // <-- pas de collision zombie-zombie
+    collidesPlayerAtR(x, y, r);
 
-  // petite fonction de rotation 2D
   const rotated = (vx, vy, rad) => {
     const c = Math.cos(rad), s = Math.sin(rad);
     return { x: vx * c - vy * s, y: vx * s + vy * c };
@@ -1470,18 +1513,16 @@ function moveZombies(game, deltaTime) {
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
 
-    // 0) init états “anti-bloqué”
     if (z._lastTrackAt == null) {
       z._lastTrackAt = now;
       z._lastTrackX = z.x;
       z._lastTrackY = z.y;
       z._stuckAccum = 0;
       z._unstuckUntil = 0;
-      z._wallSide = (Math.random() < 0.5 ? -1 : 1); // gauche/droite
-      z._localBlockStrikes = 0;                      // blocage local (étape 3)
+      z._wallSide = (Math.random() < 0.5 ? -1 : 1);
+      z._localBlockStrikes = 0;
     }
 
-    // 1) freeze après attaque
     if (z.attackFreezeUntil && now < z.attackFreezeUntil) {
       if (now - z._lastTrackAt >= 450) {
         z._lastTrackAt = now;
@@ -1493,7 +1534,6 @@ function moveZombies(game, deltaTime) {
       continue;
     }
 
-    // 2) choisir la cible (joueur vivant le + proche, sinon tourelle)
     let target = null, bestDist = Infinity;
     for (const p of Object.values(game.players)) {
       if (!p || !p.alive) continue;
@@ -1508,11 +1548,9 @@ function moveZombies(game, deltaTime) {
 
     const speed = z.speed || 40;
 
-    // 3) déterminer vers où marcher (LOS directe sinon pathfinding) + repath périodique
     let tx, ty, usingPath = false;
 
     if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
-      // ligne de vue claire → marche directe
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
       if (!z.nextRepathAt) {
@@ -1531,10 +1569,17 @@ function moveZombies(game, deltaTime) {
         z.pathStep >= z.path.length;
 
       if (needNewPath) {
-        z.path = findPath(game, z.x, z.y, target.x, target.y);
-        z.pathStep = 1;
-        z.pathTarget = { x: target.x, y: target.y };
-        z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        // ---- BUDGET de pathfinding ----
+        if (PF_BUDGET_THIS_TICK > 0) {
+          PF_BUDGET_THIS_TICK--;
+          z.path = findPath(game, z.x, z.y, target.x, target.y);
+          z.pathStep = 1;
+          z.pathTarget = { x: target.x, y: target.y };
+          z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        } else {
+          // budget épuisé : on re-essaiera très bientôt, petit délai
+          z.nextRepathAt = now + 120 + Math.floor(Math.random() * 120);
+        }
       }
 
       if (z.path && z.path.length > z.pathStep) {
@@ -1543,20 +1588,17 @@ function moveZombies(game, deltaTime) {
         ty = n.y * TILE_SIZE + TILE_SIZE / 2;
         usingPath = true;
       } else {
-        // petit jitter si aucun chemin
         const a = Math.random() * Math.PI * 2;
         tx = z.x + Math.cos(a) * 14;
         ty = z.y + Math.sin(a) * 14;
       }
     }
 
-    // 4) calcul direction de base
     let dx = tx - z.x, dy = ty - z.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
 
-    // 5) watchdog anti-bloqué
     if (now - z._lastTrackAt >= 450) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
@@ -1571,13 +1613,12 @@ function moveZombies(game, deltaTime) {
       z._lastTrackY = z.y;
 
       if (z._stuckAccum >= 2000 && now >= z._unstuckUntil) {
-        z._unstuckUntil = now + 600;              // 0.6s d’unlock
-        z._wallSide = -z._wallSide;               // alterner le côté
-        z._stuckAccum = 900;                      // évite retrigger instant
+        z._unstuckUntil = now + 600;
+        z._wallSide = -z._wallSide;
+        z._stuckAccum = 900;
       }
     }
 
-    // 6) “wall-follow” doux pendant l’unstuck
     if (now < z._unstuckUntil) {
       const side = z._wallSide || 1;
       const px = side * (-dy);
@@ -1588,14 +1629,10 @@ function moveZombies(game, deltaTime) {
       if (n > 0.0001) { dx = mixX / n; dy = mixY / n; }
     }
 
-    // 7) déplacement par micro-pas avec slides (+ micro-repath sur blocage local)
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
     const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
-
-    // rayon collision temporairement réduit de 1 px pendant l’unstuck
     const radiusNow = (now < z._unstuckUntil) ? Math.max(1, ZOMBIE_RADIUS - 1) : ZOMBIE_RADIUS;
 
-    // réinitialise le compteur de blocage local au début de l’itération
     z._localBlockStrikes = 0;
 
     while (remaining > 0.0001) {
@@ -1604,7 +1641,6 @@ function moveZombies(game, deltaTime) {
 
       let advanced = false;
 
-      // tentative 1 : direction principale
       let nx = z.x + dx * step;
       let ny = z.y + dy * step;
 
@@ -1612,19 +1648,16 @@ function moveZombies(game, deltaTime) {
         z.x = nx; z.y = ny;
         advanced = true;
       } else {
-        // tentative 2 : slide X
         nx = z.x + Math.sign(dx) * step;
         if (!blockedAt(nx, z.y, radiusNow)) {
           z.x = nx;
           advanced = true;
         } else {
-          // tentative 3 : slide Y
           ny = z.y + Math.sign(dy) * step;
           if (!blockedAt(z.x, ny, radiusNow)) {
             z.y = ny;
             advanced = true;
           } else {
-            // tentative 4 : NUDGE
             if (!blockedAt(z.x + Math.sign(dx) * NUDGE, z.y, radiusNow)) {
               z.x += Math.sign(dx) * NUDGE;
               advanced = true;
@@ -1632,8 +1665,7 @@ function moveZombies(game, deltaTime) {
               z.y += Math.sign(dy) * NUDGE;
               advanced = true;
             } else {
-              // tentative 5 : direction Tournée (±20°) pour contourner les coins
-              const turn = (Math.PI / 9) * (z._wallSide || 1); // ~20°
+              const turn = (Math.PI / 9) * (z._wallSide || 1);
               let r1 = rotated(dx, dy, turn);
               nx = z.x + r1.x * step; ny = z.y + r1.y * step;
               if (!blockedAt(nx, ny, radiusNow)) {
@@ -1646,8 +1678,7 @@ function moveZombies(game, deltaTime) {
                   z.x = nx; z.y = ny;
                   advanced = true;
                 } else {
-                  // 🔥 ESCALADE SUPPLÉMENTAIRE : si toujours bloqué, tente ±45° (pas 80%)
-                  const turnStrong = (Math.PI / 4) * (z._wallSide || 1); // 45°
+                  const turnStrong = (Math.PI / 4) * (z._wallSide || 1);
                   const stepStrong = step * 0.8;
                   let r3 = rotated(dx, dy, turnStrong);
                   nx = z.x + r3.x * stepStrong; ny = z.y + r3.y * stepStrong;
@@ -1674,45 +1705,48 @@ function moveZombies(game, deltaTime) {
         continue;
       }
 
-      // === Micro-repath immédiat sur blocage local ===
+      // Micro-repath : seulement si on a du budget ce tick
       z._localBlockStrikes++;
-
       if (z._localBlockStrikes >= 2) {
-        const tgtX = target.x, tgtY = target.y;
-        const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
-        if (newPath && newPath.length > 1) {
-          z.path = newPath;
-          z.pathStep = 1;
-          z.pathTarget = { x: tgtX, y: tgtY };
-          z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+        if (PF_BUDGET_THIS_TICK > 0) {
+          PF_BUDGET_THIS_TICK--;
+          const tgtX = target.x, tgtY = target.y;
+          const newPath = findPath(game, z.x, z.y, tgtX, tgtY);
+          if (newPath && newPath.length > 1) {
+            z.path = newPath;
+            z.pathStep = 1;
+            z.pathTarget = { x: tgtX, y: tgtY };
+            z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
 
-          // tente immédiatement un micro-pas vers le prochain nœud
-          const n = newPath[1];
-          const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
-          const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
+            const n = newPath[1];
+            const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
+            const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
 
-          let rdx = nwx - z.x, rdy = nwy - z.y;
-          const rd = Math.hypot(rdx, rdy);
-          if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
+            let rdx = nwx - z.x, rdy = nwy - z.y;
+            const rd = Math.hypot(rdx, rdy);
+            if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
 
-          const step2 = Math.min(MAX_STEP, remaining + step);
-          let nx2 = z.x + rdx * step2;
-          let ny2 = z.y + rdy * step2;
+            const step2 = Math.min(MAX_STEP, remaining + step);
+            let nx2 = z.x + rdx * step2;
+            let ny2 = z.y + rdy * step2;
 
-          if (!blockedAt(nx2, ny2, radiusNow)) {
-            z.x = nx2; z.y = ny2;
-            z._localBlockStrikes = 0;
-            continue;
+            if (!blockedAt(nx2, ny2, radiusNow)) {
+              z.x = nx2; z.y = ny2;
+              z._localBlockStrikes = 0;
+              continue;
+            }
           }
+        } else {
+          // pas de budget : retente bientôt
+          z.nextRepathAt = now + 120 + Math.floor(Math.random() * 120);
         }
 
-        break; // micro-repath n’a pas aidé → on stoppe ce tick
+        break; // stop pour ce tick
       }
 
-      break; // échec simple (1er strike) → stop pour ce tick
+      break;
     }
 
-    // 8) progression du path (si on suit un chemin)
     if (z.path && z.path.length > z.pathStep) {
       const n = z.path[z.pathStep];
       const nodeX = n.x * TILE_SIZE + TILE_SIZE / 2;
@@ -2029,17 +2063,33 @@ function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
 
-    // === Simulation à dt fixe ===
-    movePlayers(game,       dt);
-    moveBots(game,          dt);
-    moveZombies(game,       dt);
-    tickTurrets(game);
-    moveBullets(game,       dt);
-    handleZombieAttacks(game);
+    PF_BUDGET_THIS_TICK = PATHFIND_BUDGET_PER_TICK;
 
-    // --- PUSH ÉTAT TEMPS-RÉEL (inchangé) ---
+    // --- Détection "calme" par partie ---
+    // Calme si : pas de zombies, pas de balles, pas de tourelles vivantes, et spawn inactif
+    const hasZombies = Object.keys(game.zombies).length > 0;
+    const hasBullets = Object.keys(game.bullets).length > 0;
+    const hasTurrets = (typeof game._turretCount === 'number' ? game._turretCount : 0) > 0;
+    const calm = !hasZombies && !hasBullets && !hasTurrets && !game.spawningActive;
+
+    // === Simulation à dt fixe ===
+    // Toujours déplacer les joueurs/bots (coût léger), mais on saute le lourd si "calm"
+    movePlayers(game, dt);
+    moveBots(game, dt);
+
+    if (!calm) {
+      moveZombies(game, dt);
+      tickTurrets(game);
+      moveBullets(game, dt);
+      handleZombieAttacks(game);
+    }
+
+    // --- PUSH ÉTAT TEMPS-RÉEL (intervalle différent si calme) ---
     const room = io.sockets.adapter.rooms.get('lobby' + game.id);
     if (room) {
+      const now = Date.now();
+      const sendInterval = calm ? NET_INTERVAL_IDLE_MS : NET_INTERVAL_MS;
+
       for (const sid of room) {
         const p = game.players[sid];
         if (!p) continue;
@@ -2051,9 +2101,8 @@ function stepOnce(dt) {
         const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
 
-        const now = Date.now();
         const last = game._lastNetSend[sid] || 0;
-        if (now - last >= NET_INTERVAL_MS) {
+        if (now - last >= sendInterval) {
           io.to(sid).volatile.emit('stateUpdate', {
             zombies: zSnap,
             bullets: bSnap,
@@ -2077,6 +2126,7 @@ function stepOnce(dt) {
       }
     }
 
+    // Fin de vague/partie (ne coûte rien quand calme)
     checkWaveEnd(game);
     checkGameEnd(game);
   }
@@ -2089,11 +2139,42 @@ function gameLoop() {
     let frameTime = now - lastTime;
     lastTime = now;
 
-    // On limite l’accumulation (ex : process gelé / pause)
     if (frameTime > 0.25) frameTime = 0.25;
-
     accumulator += frameTime;
 
+    // --- Détecter le mode global ---
+    // EMPTY : aucune partie démarrée
+    // CALM  : toutes les parties démarrées sont calmes (pas de zombies, balles, tourelles, spawn)
+    // BUSY  : le reste
+    let anyStarted = false;
+    let anyBusy = false;
+
+    for (const game of activeGames) {
+      if (!game.lobby.started) continue;
+      anyStarted = true;
+      const hasZombies = Object.keys(game.zombies).length > 0;
+      const hasBullets = Object.keys(game.bullets).length > 0;
+      const hasTurrets = (typeof game._turretCount === 'number' ? game._turretCount : 0) > 0;
+      const busy = hasZombies || hasBullets || hasTurrets || game.spawningActive;
+      if (busy) { anyBusy = true; break; }
+    }
+
+    const targetHz =
+      !anyStarted ? EMPTY_TICK_HZ :
+      anyBusy     ? TICK_HZ       :
+                    CALM_TICK_HZ;
+
+    const targetIntervalMs = 1000 / targetHz;
+    const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+    // Cadence adaptative : si pas encore le moment, on attend (et on évite d'accumuler)
+    if (_lastTickAtMs && (nowMs - _lastTickAtMs) < targetIntervalMs) {
+      setTimeout(gameLoop, Math.max(1, targetIntervalMs - (nowMs - _lastTickAtMs)));
+      return;
+    }
+    _lastTickAtMs = nowMs;
+
+    // Nombre de steps max par invocation (évite de "rattraper" à l'infini)
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
       stepOnce(FIXED_DT);
@@ -2104,8 +2185,8 @@ function gameLoop() {
     console.error("Erreur dans gameLoop :", err);
   }
 
-  // cadence nominale 60 Hz (le fixe est garanti par l'accumulateur)
-  setTimeout(gameLoop, 1000 / TICK_HZ);
+  // Replanifie en fonction de la dernière détection (proche du prochain tick)
+  setTimeout(gameLoop, 1);
 }
 
 
