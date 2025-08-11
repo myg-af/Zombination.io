@@ -425,12 +425,13 @@ let currentRound = 1;
 let playersHealth = {};
 let zombies = {};
 let bullets = {};
-let turretLasers = [];
 let zombiesRemaining = 0;
 let waveTotalZombies = 0;
 let waveKilledThisWave = 0;
 let structures = null;
 let structHPGrid = null;
+
+
 
 socket.on('stateUpdate', (payload) => {
   if (!payload) return;
@@ -519,6 +520,25 @@ socket.on('stateUpdate', (payload) => {
   drawHUD();
 });
 
+	
+	
+	// === AJOUTER après l'initialisation des autres socket.on ===
+// Dictionnaire des lasers actifs { id -> {x0,y0,x1,y1,color} }
+const activeBeams = new Map();
+
+socket.on('laserBeamUpdate', (data) => {
+  // data: { id, x0, y0, x1, y1, color }
+  activeBeams.set(data.id, data);
+});
+
+socket.on('laserBeamOff', ({ id }) => {
+  activeBeams.delete(id);
+});
+
+
+
+
+	
 	
 	setInterval(() => {
 	  if (socket && socket.connected) {
@@ -1295,37 +1315,27 @@ function drawZombies() {
 
 
 
-function drawTurretLasers() {
-  if (!turretLasers.length) return;
 
-  const now = performance.now();
-  const LIFE_MS = 100; // affichage très bref (100 ms)
 
-  for (let i = turretLasers.length - 1; i >= 0; i--) {
-    const b = turretLasers[i];
-    const age = now - b.t;
-    if (age > LIFE_MS) {
-      turretLasers.splice(i, 1);
-      continue;
-    }
+function drawLaserBeamsPersistent() {
+  if (!activeBeams || activeBeams.size === 0) return;
 
-    // petit fade-out
-    const alpha = 1 - (age / LIFE_MS);
+  ctx.save();
+  ctx.globalAlpha = 0.9;   // léger glow constant
+  ctx.lineWidth = 3;
 
-    ctx.save();
-    ctx.globalAlpha = alpha;
+  for (const beam of activeBeams.values()) {
     ctx.beginPath();
-    ctx.moveTo(b.x0 - cameraX, b.y0 - cameraY);
-    ctx.lineTo(b.x1 - cameraX, b.y1 - cameraY);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = b.color || '#fff';
-    ctx.shadowColor = b.color || '#fff';
+    ctx.moveTo(beam.x0 - cameraX, beam.y0 - cameraY);
+    ctx.lineTo(beam.x1 - cameraX, beam.y1 - cameraY);
+    ctx.strokeStyle = beam.color || '#fff';
+    ctx.shadowColor = beam.color || '#fff';
     ctx.shadowBlur = 8;
     ctx.stroke();
-    ctx.restore();
   }
-}
 
+  ctx.restore();
+}
 
 
 
@@ -1750,7 +1760,7 @@ function drawHUD() {
 		drawBuildPreview();
 		drawStructures();
 		drawBullets();
-		drawTurretLasers();
+		drawLaserBeamsPersistent();
 		drawZombies();
 		drawMoneyFloatingTexts();
 		drawPlayers();
@@ -1762,6 +1772,11 @@ function drawHUD() {
 
       if (!isDead) requestAnimationFrame(gameLoop);
     }
+
+socket.on('laserBeamOffAll', () => {
+  activeBeams.clear();
+});
+
 
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
@@ -1803,6 +1818,7 @@ function drawHUD() {
     };
 
     socket.on('gameStarted', (data) => {
+	activeBeams.clear();
       map = data.map;
       MAP_ROWS = map.length;
       MAP_COLS = map[0].length;
@@ -1851,16 +1867,6 @@ socket.on('structuresUpdate', (grid) => {
 
    
    
-   socket.on('laserBeam', ({ x0, y0, x1, y1, color }) => {
-  // On stocke pour le prochain rendu; l’effet disparaît très vite
-  turretLasers.push({
-    x0, y0, x1, y1, color,
-    t: performance.now()
-  });
-});
-
-   
-   
    
    
 	socket.on('zombiesRemaining', (n) => {
@@ -1880,6 +1886,7 @@ socket.on('zombieDied', () => {
 
 
     socket.on('youDied', (data) => {
+	activeBeams.clear();
       isDead = true;
       playerHealth = 0;
       showDeathScreen(data.kills, data.round);

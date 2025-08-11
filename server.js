@@ -345,82 +345,104 @@ function tickTurrets(game) {
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
-      if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
+      // Si pas de tourelle ou morte → coupe le faisceau si actif
+      if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) {
+        if (s && s._beamOn) {
+          const id = s._beamId || `turret_${tx}_${ty}`;
+          io.to('lobby' + game.id).emit('laserBeamOff', { id });
+          s._beamOn = false;
+        }
+        continue;
+      }
 
       if (!s.lastShot) s.lastShot = 0;
+      if (!s._beamId)  s._beamId  = `turret_${tx}_${ty}`;
 
-      // cadence identique à avant (NE PAS MODIFIER)
-      const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
-      if (now - s.lastShot < interval) continue;
-
-      // centre de la tuile de la tourelle
+      // centre monde de la tourelle
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // cible : zombie le plus proche avec LOS libre (identique à l’avant)
+      // Cherche la meilleure cible (zombie + LOS claire par rapport aux murs)
       let best = null, bestDist = Infinity;
       for (const z of Object.values(game.zombies)) {
         const dx = z.x - cx;
         const dy = z.y - cy;
-        const d = Math.hypot(dx, dy);
+        const d  = Math.hypot(dx, dy);
         if (d < 1) continue;
         if (losBlockedForTurret(game, cx, cy, z.x, z.y)) continue;
         if (d < bestDist) { bestDist = d; best = z; }
       }
-      if (!best) continue;
 
-      // tir autorisé
-      s.lastShot = now;
-
-      // --- NOUVEAU : laser hitscan instantané (sans projectile) ---
-      // Couleur selon le type
-      const color = (s.type === 'T') ? '#ff3b3b' : '#3aa6ff';
-
-      // On informe les clients pour l'effet visuel
-      io.to('lobby' + game.id).emit('laserBeam', {
-        x0: cx, y0: cy,
-        x1: best.x, y1: best.y,
-        color
-      });
-
-      // Dégâts identiques à avant pour les tourelles (ne pas changer)
-      const dmg = BULLET_DAMAGE;
-
-      // Appliquer les dégâts immédiatement
-      best.hp -= dmg;
-
-      // Gestion de la mort (copie minimale de la logique utilisée par les projectiles)
-      if (best.hp <= 0) {
-        // Gains pour l’owner de la tourelle si connu
-        if (s.placedBy) {
-          const ownerPlayer = game.players[s.placedBy];
-          if (ownerPlayer) {
-            const ownerStats = getPlayerStats(ownerPlayer);
-            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20 (identique)
-            const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
-            ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
-            io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: best.x, y: best.y });
-          }
+      // Si pas de cible → éteindre le faisceau une seule fois
+      if (!best) {
+        if (s._beamOn) {
+          io.to('lobby' + game.id).emit('laserBeamOff', { id: s._beamId });
+          s._beamOn = false;
         }
+        continue;
+      }
 
-        // Mise à jour vague / compteur restants (identique au flux existant)
-        game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
-        const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
-        io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
+      // Il y a une cible → throttle l’update visuelle du faisceau
+      // On n'émet "update" que si :
+      //  - le dernier envoi remonte à > LASER_BEAM_MIN_DT ms
+      //  - OU la pointe du faisceau a bougé de > LASER_MIN_DELTA px (coalescing)
+      const due = (now - (s._lastBeamSentTs || 0)) >= LASER_BEAM_MIN_DT;
+      const moveDelta = Math.hypot(
+        (best.x - (s._lastBeamX1 || 0)),
+        (best.y - (s._lastBeamY1 || 0))
+      ) >= LASER_MIN_DELTA;
 
-        // Suppression du zombie
-        for (const zid in game.zombies) {
-          if (game.zombies[zid] === best) {
-            delete game.zombies[zid];
-            break;
+      if (due || moveDelta || !s._beamOn) {
+        // ⚠️ IMPORTANT : en 'volatile' pour éviter l'accumulation si le réseau lag
+        io.to('lobby' + game.id).volatile.emit('laserBeamUpdate', {
+          id: s._beamId,
+          x0: cx, y0: cy,
+          x1: best.x, y1: best.y,
+          color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff'
+        });
+        s._beamOn = true;
+        s._lastBeamSentTs = now;
+        s._lastBeamX1 = best.x;
+        s._lastBeamY1 = best.y;
+      }
+
+      // Dégâts à la cadence configurée (inchangé)
+      const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
+      if (now - s.lastShot >= interval) {
+        s.lastShot = now;
+
+        const dmg = BULLET_DAMAGE;
+        best.hp -= dmg;
+
+        if (best.hp <= 0) {
+          // Gains au propriétaire si besoin
+          if (s.placedBy) {
+            const ownerPlayer = game.players[s.placedBy];
+            if (ownerPlayer) {
+              const ownerStats = getPlayerStats(ownerPlayer);
+              const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+              const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
+              ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
+              io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: best.x, y: best.y });
+            }
+          }
+
+          game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
+          const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
+          io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
+
+          // suppression du zombie
+          for (const zid in game.zombies) {
+            if (game.zombies[zid] === best) {
+              delete game.zombies[zid];
+              break;
+            }
           }
         }
       }
-      // -------------------------------------------------------------
     }
   }
 }
-
 
 
 
@@ -696,6 +718,9 @@ const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 150;
 const MINI_TURRET_SHOOT_INTERVAL = 1000;
+const LASER_BEAM_HZ = 15;                                 // fréquence max d'update visuelle
+const LASER_BEAM_MIN_DT = Math.floor(1000 / LASER_BEAM_HZ);
+const LASER_MIN_DELTA = 4;     
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 const TICK_HZ = 60;
@@ -1766,6 +1791,8 @@ function handleZombieAttacks(game) {
             if (s.hp <= 0) {
               setStruct(game, t.tx, t.ty, null);
               structuresChanged = true;
+				const beamId = s._beamId || `turret_${t.tx}_${t.ty}`;
+				io.to('lobby' + game.id).emit('laserBeamOff', { id: beamId });
             }
           }
           // <-- gèle le zombie qui vient de frapper
@@ -1803,6 +1830,10 @@ function handleZombieAttacks(game) {
           setStruct(game, tgt.tx, tgt.ty, null);
           structuresChanged = true;
         }
+		  if (tgt.s.type === 'T' || tgt.s.type === 't') {
+			const beamId = tgt.s._beamId || `turret_${tgt.tx}_${tgt.ty}`;
+			io.to('lobby' + game.id).emit('laserBeamOff', { id: beamId });
+  }
         // <-- gèle le zombie qui vient de frapper
         z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
         hasAttackedAny = true;
@@ -1846,6 +1877,10 @@ function handleZombieAttacks(game) {
               setStruct(game, tgt.tx, tgt.ty, null);
               structuresChanged = true;
             }
+			  if (tgt.s.type === 'T' || tgt.s.type === 't') {
+				const beamId = tgt.s._beamId || `turret_${tgt.tx}_${tgt.ty}`;
+				io.to('lobby' + game.id).emit('laserBeamOff', { id: beamId });
+			  }
             // <-- gèle le zombie qui vient de frapper
             z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
             hasAttackedAny = true;
