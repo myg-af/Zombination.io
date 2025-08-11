@@ -721,6 +721,8 @@ const MINI_TURRET_SHOOT_INTERVAL = 1000;
 const LASER_BEAM_HZ = 15;                                 // fréquence max d'update visuelle
 const LASER_BEAM_MIN_DT = Math.floor(1000 / LASER_BEAM_HZ);
 const LASER_MIN_DELTA = 4;     
+const TURRET_TICK_HZ = 20;
+const TURRET_TICK_INTERVAL_MS = Math.floor(1000 / TURRET_TICK_HZ);
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 const TICK_HZ = 60;
@@ -2018,12 +2020,19 @@ function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
 
-    // === Simulation à dt fixe ===
-    movePlayers(game,       dt);
-    moveBots(game,          dt);
-    moveZombies(game,       dt);
-    tickTurrets(game);
-    moveBullets(game,       dt);
+    // === Simulation à dt fixe (60 Hz) ===
+    movePlayers(game, dt);
+    moveBots(game, dt);
+    moveZombies(game, dt);
+
+    // Throttle de la logique tourelles (20 Hz par défaut)
+    const nowMsForTurrets = Date.now();
+    if (nowMsForTurrets - (game._lastTurretTick || 0) >= TURRET_TICK_INTERVAL_MS) {
+      tickTurrets(game);
+      game._lastTurretTick = nowMsForTurrets;
+    }
+
+    moveBullets(game, dt);
     handleZombieAttacks(game);
 
     // --- PUSH ÉTAT TEMPS-RÉEL (inchangé) ---
