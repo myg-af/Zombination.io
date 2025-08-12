@@ -205,6 +205,18 @@
 
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
 <div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
+  <!-- === AUTO-FIRE TOGGLE BUTTON (au-dessus des 4 blocs) === -->
+  <button id="autoFireBtn"
+    style="display:flex; align-items:center; gap:10px;
+           padding:8px 14px; border-radius:12px; border:2px solid #4a1111;
+           background:#5a2226; color:#f1d6d6; font-weight:700; letter-spacing:0.3px;
+           box-shadow:0 2px 10px #0007; cursor:pointer; user-select:none;">
+    <span style="width:10px;height:10px;border-radius:50%;background:#742f36;box-shadow:0 0 8px #000 inset;"></span>
+    <span id="autoFireLabel">Auto fire OFF</span>
+  </button>
+  <!-- /AUTO-FIRE TOGGLE -->
+
+
   <!-- Conteneur horizontal des 4 tuiles -->
   <div id="buildTiles" style="display:flex; gap:10px;">
 <!-- Grande tourelle (avec petit carré noir central) -->
@@ -694,6 +706,20 @@ function worldToTile(x, y) {
 function isWallAt(tx, ty) {
   if (!map || ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return true;
   return map[ty][tx] === 1;
+}
+
+function losBlockedForPlayer(x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return false;
+  const steps = Math.ceil(dist / 8);
+  for (let s = 1; s < steps; s++) {
+    const ix = x0 + (dx * s / steps);
+    const iy = y0 + (dy * s / steps);
+    const { tx, ty } = worldToTile(ix, iy);
+    if (isWallAt(tx, ty)) return true;
+  }
+  return false;
 }
 function structAtWorld(x, y) {
   if (!structures) return null;
@@ -1579,6 +1605,35 @@ function update(deltaTime) {
     if (n > 0.0001) lastAimDir = { x: shootDir.x, y: shootDir.y };
   }
 
+  // --- AUTO-FIRE: cible visible la plus proche (dans le halo) ---
+  if (AUTO_FIRE_ENABLED && !buildMode) {
+    const sm = document.getElementById('shopModal');
+    const shopOpen = sm && sm.style.display === 'block';
+    if (!shopOpen && myId && playersHealth[myId] && playersHealth[myId].alive) {
+      const p = playersHealth[myId];
+      let best = null, bestD2 = Infinity;
+      const ZSRC = (typeof ZOMBIES_FRAME !== 'undefined' && Array.isArray(ZOMBIES_FRAME) && ZOMBIES_FRAME.length)
+        ? ZOMBIES_FRAME
+        : Object.values(zombies || {});
+      const r2 = CLIENT_VIEW_RADIUS * CLIENT_VIEW_RADIUS;
+      for (const z of ZSRC) {
+        if (!z || z.hp <= 0) continue;
+        const dx = z.x - p.x, dy = z.y - p.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 > r2) continue;
+        if (losBlockedForPlayer(p.x, p.y, z.x, z.y)) continue;
+        if (d2 < bestD2) { bestD2 = d2; best = z; }
+      }
+      if (best) {
+        const d = Math.sqrt(bestD2) || 1;
+        shooting = true;
+        shootDir = { x: (best.x - p.x) / d, y: (best.y - p.y) / d };
+        lastAimDir = shootDir;
+      }
+    }
+  }
+
+
   if (shooting && !shootBlocked) {
     shootBlocked = true;
     socket.emit('shoot', {
@@ -2037,7 +2092,37 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 	const shopClose = document.getElementById('shopClose');
 
 
-// ====== UI Achat Structures (au-dessus du SHOP) ======
+// ====== UI Achat Structures \(au-dessus du SHOP\) ======
+
+// === Auto-fire state & UI ===
+let AUTO_FIRE_ENABLED = false;
+const autoBtn = document.getElementById('autoFireBtn');
+const autoLbl = document.getElementById('autoFireLabel');
+
+function updateAutoFireBtnUI() {
+  if (!autoBtn || !autoLbl) return;
+  if (AUTO_FIRE_ENABLED) {
+    autoBtn.style.background = '#d1292f';
+    autoBtn.style.borderColor = '#7b0e13';
+    autoBtn.style.color = '#fff';
+    autoLbl.textContent = 'Auto fire ON';
+    autoBtn.querySelector('span').style.background = '#ff6066';
+  } else {
+    autoBtn.style.background = '#5a2226';
+    autoBtn.style.borderColor = '#4a1111';
+    autoBtn.style.color = '#f1d6d6';
+    autoLbl.textContent = 'Auto fire OFF';
+    autoBtn.querySelector('span').style.background = '#742f36';
+  }
+}
+if (autoBtn) {
+  autoBtn.addEventListener('click', () => {
+    AUTO_FIRE_ENABLED = !AUTO_FIRE_ENABLED;
+    updateAutoFireBtnUI();
+  });
+  updateAutoFireBtnUI();
+}
+
 const buildBar = document.getElementById('buildBar');
 const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
 const buildTooltip = document.getElementById('buildTooltip');
