@@ -205,6 +205,15 @@
 
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
 <div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
+  <!-- Réduction/affichage de la barre de construction + Auto-fire -->
+  <button id="toggleBuildUI"
+    style="align-self:flex-end; margin-bottom:8px; padding:6px 10px;
+           border-radius:10px; border:1px solid #444; background:#1c1c1f;
+           color:#ddd; font-weight:700; cursor:pointer; box-shadow:0 2px 8px #0007;"
+    title="Réduire/Afficher les boutons">
+    –
+  </button>
+
   <!-- === AUTO-FIRE TOGGLE BUTTON (au-dessus des 4 blocs) === -->
   <button id="autoFireBtn"
     style="display:flex; align-items:center; gap:10px;
@@ -1252,10 +1261,22 @@ function drawStructures() {
 
 
 	function drawPlayers() {
+  const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
+  const vx = me ? me.x : 0;
+  const vy = me ? me.y : 0;
+  const VIEW_MARGIN = 8;
+  const R2 = (CLIENT_VIEW_RADIUS - VIEW_MARGIN) * (CLIENT_VIEW_RADIUS - VIEW_MARGIN);
+
 	  for (const id in playersHealth) {
 		const p = playersHealth[id];
 		if (!p.alive) continue;
-		const screenX = p.x - cameraX;
+		
+        if (id !== myId) {
+          const dx = p.x - vx;
+          const dy = p.y - vy;
+          if (dx*dx + dy*dy > R2) continue; // hors halo: ne pas afficher
+        }
+const screenX = p.x - cameraX;
 		const screenY = p.y - cameraY;
 		ctx.beginPath();
 		ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
@@ -1273,7 +1294,7 @@ function drawStructures() {
 		  p.maxHealth || 100,
 		  30
 		);
-	  }
+      }
 	}
 	
 	
@@ -2538,7 +2559,50 @@ function renderShopUpgrades() {
   });
 })();
 	
-  </script>
+  
+// === Toggle (réduire/afficher) la barre Auto-Fire + 4 constructions ===
+let BUILD_UI_COLLAPSED = (localStorage.getItem('buildUICollapsed') === '1');
+
+function applyBuildUICollapse() {
+  const autoBtn = document.getElementById('autoFireBtn');
+  const tiles = document.getElementById('buildTiles');
+  const tgl = document.getElementById('toggleBuildUI');
+  if (!tgl) return;
+  if (BUILD_UI_COLLAPSED) {
+    if (autoBtn) autoBtn.style.display = 'none';
+    if (tiles) tiles.style.display = 'none';
+    tgl.textContent = '+';
+    tgl.title = 'Afficher les boutons';
+  } else {
+    if (autoBtn) autoBtn.style.display = 'flex';
+    if (tiles) tiles.style.display = 'flex';
+    tgl.textContent = '–';
+    tgl.title = 'Réduire les boutons';
+  }
+  // repositionne si besoin pour mobile
+  if (typeof positionShopUI === 'function') {
+    positionShopUI();
+  }
+}
+
+(function initBuildUIToggle(){
+  const tgl = document.getElementById('toggleBuildUI');
+  if (!tgl) return;
+  tgl.addEventListener('click', () => {
+    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
+    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
+    applyBuildUICollapse();
+  }, {passive:true});
+  tgl.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
+    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
+    applyBuildUICollapse();
+  }, {passive:false});
+  applyBuildUICollapse();
+})();
+// === /Toggle build UI ===
+</script>
   
   
 
