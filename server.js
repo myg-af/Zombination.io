@@ -183,26 +183,23 @@ const ZOMBIE_RADIUS = 10;
 const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
+
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
-  const r2 = r * r;
+  // FIX: include ALL players (not filtered by distance) so allies count remains correct even when far.
   const out = {};
   for (const id in game.players) {
     const p = game.players[id];
     if (!p) continue;
-    const dx = (p.x || 0) - cx;
-    const dy = (p.y || 0) - cy;
-    if (dx*dx + dy*dy <= r2) {
-      fixHealth(p);
-      out[id] = {
-        health: p.health,
-        alive: p.alive,
-        x: p.x,
-        y: p.y,
-        pseudo: p.pseudo,
-        money: p.money,
-        maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
-      };
-    }
+    fixHealth(p);
+    out[id] = {
+      health: p.health,
+      alive: p.alive,
+      x: p.x,
+      y: p.y,
+      pseudo: p.pseudo,
+      money: p.money,
+      maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
+    };
   }
   return out;
 }
@@ -537,15 +534,17 @@ function tickTurrets(game) {
       const __angDeg = Math.round((__ang * 180/Math.PI)) & 0x1FF;
       _laserMap.set(tx + ',' + ty, { tx, ty, big: (s.type === 'T') ? 1 : 0, x: target.x, y: target.y });
 
+      
       if (target.hp <= 0) {
-        // reward owner
+        // reward owner (based on player's goldGain stat), and send FX
         if (s.placedBy) {
           const ownerPlayer = game.players[s.placedBy];
           if (ownerPlayer) {
             const ownerStats = getPlayerStats(ownerPlayer);
-            const baseMoney = Math.floor(Math.random() * 11) + 10;
-            const moneyEarned = Math.round(baseMoney * ((ownerStats?.turretBonus || 1)));
+            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+            const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
+            io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
           }
         }
         // delete zombie by id
@@ -563,7 +562,12 @@ function tickTurrets(game) {
             }
           }
         }
+        // decrement wave counters & notify lobby like bullet kills
+        game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
+        const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
+        io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
       }
+
     }
   }
 
