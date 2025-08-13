@@ -428,8 +428,6 @@ const MOVE_HEARTBEAT_MS = 500;      // pour éviter les timeouts si on reste imm
 
 function nearlyEqual(a, b, eps) { return Math.abs(a - b) < eps; }
 
-let INPUT_SEQ = 0;
-let lastAckSeq = -1;
 function emitMoveThrottled(move) {
   const now = performance.now();
   const changed =
@@ -440,7 +438,7 @@ function emitMoveThrottled(move) {
   const heartbeatDue = (now - lastMoveEmitTs) >= MOVE_HEARTBEAT_MS;
 
   if ((changed && due) || heartbeatDue) {
-    socket.emit('moveDir', { x: move.x, y: move.y, seq: ++INPUT_SEQ });
+    socket.emit('moveDir', move);
     lastMoveSent = { x: move.x, y: move.y };
     lastMoveEmitTs = now;
   }
@@ -486,72 +484,10 @@ let waveKilledThisWave = 0;
 let structures = null;
 let structHPGrid = null;
 
-socket.on('ackInput', ({seq}) => { if (typeof seq==='number') lastAckSeq = seq; });
-socket.on('stateBin', (buf) => {
-  try {
-    const view = new DataView(buf);
-    let off = 0;
-    const ver = view.getUint8(off); off+=1;
-    if (ver !== 1) return;
-    const nz = view.getUint16(off, true); off+=2;
-    const nb = view.getUint16(off, true); off+=2;
-    const nph = view.getUint16(off, true); off+=2;
-    const round = view.getUint16(off, true); off+=2;
-    const decStr = (len)=>{ let s=''; for(let i=0;i<len;i++){ s+=String.fromCharCode(view.getUint8(off+i)); } off+=len; return s; };
-    const readId = ()=>{ const len = view.getUint16(off, true); off+=2; return decStr(len); };
-
-    const zNew = {}; for (let i=0;i<nz;i++){
-  if (view.getUint8(off++)!==122) break;
-  const id=readId();
-  const x=view.getFloat32(off, true); off+=4;
-  const y=view.getFloat32(off, true); off+=4;
-  const hp=view.getUint16(off, true); off+=2;
-  const maxHp=view.getUint16(off, true); off+=2;
-  zNew[id] = { x, y, hp, maxHp };
-}
-    const bNew = {}; for (let i=0;i<nb;i++){
-  if (view.getUint8(off++)!==98)  break;
-  const id=readId();
-  const x=view.getFloat32(off, true); off+=4;
-  const y=view.getFloat32(off, true); off+=4;
-  const dx=view.getFloat32(off, true); off+=4;
-  const dy=view.getFloat32(off, true); off+=4;
-  const ownerLen = view.getUint16(off, true); off+=2;
-  let owner = ''; for (let j=0;j<ownerLen;j++){ owner += String.fromCharCode(view.getUint8(off+j)); } off+=ownerLen;
-  bNew[id] = { x, y, dx, dy, owner };
-}
-    const pNew = {}; for (let i=0;i<nph;i++){ if (view.getUint8(off++)!==112) break; const id=readId(); const x=view.getFloat32(off, true); off+=4; const y=view.getFloat32(off, true); off+=4; const hp=view.getUint16(off, true); off+=2; const maxHealth=view.getUint16(off, true); off+=2; pNew[id] = { x, y, health: hp, maxHealth, alive: (hp>0) }; }
-
-    // assign to live state
-    zombies = zNew; bullets = bNew; // preserve pseudo between snapshots and infer bots
-    try {
-      if (playersHealth && typeof playersHealth === 'object') {
-        for (const id in pNew) {
-          const prev = playersHealth[id];
-          if (prev && prev.pseudo) {
-            pNew[id].pseudo = prev.pseudo;
-          } else {
-            if (!pNew[id].pseudo) pNew[id].pseudo = (id && id.startsWith('bot')) ? '[Bot]' : 'Joueur';
-          }
-        }
-      } else {
-        for (const id in pNew) {
-          if (!pNew[id].pseudo) pNew[id].pseudo = (id && id.startsWith('bot')) ? '[Bot]' : 'Joueur';
-        }
-      }
-    } catch(e) {}
-    playersHealth = pNew; currentRound = round;
-  } catch(e) { console.warn('stateBin parse error', e); }
-});
-function reconcileWithServer() {
-  const me = playersHealth[myId];
-  if (!me) return;
-  // here, adjust local authoritative position if we track it (requires storing myX,myY)
-}
 socket.on('stateUpdate', (payload) => {
   if (!payload) return;
 
-  if (payload.zombies)        { onServerSnapshot(payload.zombies, payload.playersHealth||playersHealth); zombies = payload.zombies; }
+  if (payload.zombies)        zombies = payload.zombies;
   if (payload.bullets)        bullets = payload.bullets;
   if (payload.playersHealth)  playersHealth = payload.playersHealth;
   if (typeof payload.round === 'number') currentRound = payload.round;
@@ -1430,59 +1366,41 @@ function drawTurretLasers() {
   if (!turretLasers.length) return;
 
   const now = performance.now();
-  const LIFE_MS = 150;               // persistance ~150 ms (demandé)
-  const MAX_LASERS_PER_FRAME = 60;   // cap sécurité
+  const LIFE_MS = 60;                // (était 80) — persistance plus courte
+  const MAX_LASERS_PER_FRAME = 60;   // (était 150) — cap plus strict pour éviter les spikes
 
+  // Trim à l’avant si trop d’entrées (on garde les plus récentes)
   if (turretLasers.length > MAX_LASERS_PER_FRAME) {
     turretLasers = turretLasers.slice(turretLasers.length - MAX_LASERS_PER_FRAME);
   }
 
   ctx.save();
+  ctx.lineWidth = 2;
 
-  let drawn = 0;
+  let w = 0; // compteur de traits vraiment dessinés
   for (let i = turretLasers.length - 1; i >= 0; i--) {
     const b = turretLasers[i];
-    const age = now - (b.t || 0);
-    if (age >= LIFE_MS) { 
+    const age = now - b.t;
+    if (age > LIFE_MS) {
       turretLasers.splice(i, 1);
       continue;
     }
 
+    // Alpha simple, pas d'effets coûteux
     const alpha = 1 - (age / LIFE_MS);
-
-    const x0 = b.x0 - cameraX, y0 = b.y0 - cameraY;
-    const x1 = b.x1 - cameraX, y1 = b.y1 - cameraY;
-    const color = b.color || '#fff';
-
-    // --- PASS 1 : HALO (glow) ---
-    ctx.globalAlpha = alpha * 0.55;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 6;
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = color;
-
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.stroke();
-
-    // --- PASS 2 : COEUR DU LASER ---
-    ctx.shadowBlur = 0;
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = (color === '#f00') ? 3 : 2;
+    ctx.strokeStyle = b.color || '#fff';
 
     ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1, y1);
+    ctx.moveTo(b.x0 - cameraX, b.y0 - cameraY);
+    ctx.lineTo(b.x1 - cameraX, b.y1 - cameraY);
     ctx.stroke();
 
-    if (++drawn >= MAX_LASERS_PER_FRAME) break;
+    if (++w >= MAX_LASERS_PER_FRAME) break; // sécurité
   }
 
   ctx.restore();
 }
-
 
 
 
@@ -1677,7 +1595,7 @@ function update(deltaTime) {
     }
   }
 
-  // ⚠️ Remplacement de l'ancien "socket.emit('moveDir', { x: move.x, y: move.y, seq: ++INPUT_SEQ });" par :
+  // ⚠️ Remplacement de l'ancien "socket.emit('moveDir', move);" par :
   emitMoveThrottled(move);
 
   // ---- TIR ----
@@ -2110,32 +2028,7 @@ socket.on('structuresUpdate', (grid) => {
 
    
    
-	
-    // Turret FX → long laser from turret center to target
-    socket.on('turretFx', ({ mode, list, frame }) => {
-      try {
-        if (!Array.isArray(list) || !list.length) return;
-        if (mode === 'replace') { turretLasers.length = 0; }
-        const now = performance.now();
-        for (let i = 0; i < list.length; i++) {
-          const o = list[i];
-          const cx = o.tx * TILE_SIZE + TILE_SIZE/2;
-          const cy = o.ty * TILE_SIZE + TILE_SIZE/2;
-          let x1 = cx, y1 = cy;
-          if (typeof o.x === 'number' && typeof o.y === 'number') {
-            x1 = o.x; y1 = o.y;
-          } else if (typeof o.ang === 'number') {
-            const ang = o.ang * Math.PI / 180;
-            const len = o.big ? 420 : 280;
-            x1 = cx + Math.cos(ang) * len;
-            y1 = cy + Math.sin(ang) * len;
-          }
-          const color = (o && o.color) ? o.color : (o.big ? '#f00' : '#6cf');
-          turretLasers.push({ x0: cx, y0: cy, x1, y1, color, t: now });
-        }
-      } catch (e) { /* ignore */ }
-    });
-socket.on('zombiesRemaining', (n) => {
+	socket.on('zombiesRemaining', (n) => {
 	  zombiesRemaining = Number(n) || 0;
 	  drawHUD();
 	});
@@ -2717,18 +2610,3 @@ function applyBuildUICollapse() {
 
 </body>
 </html>
-
-<script>
-// Interp helper: blend between last and next snapshots if available
-function getInterpPos(entityId, type) {
-  if (!interpBuffer.last || !interpBuffer.next) return null;
-  const now = performance.now();
-  const alpha = Math.min(1, (now - interpBuffer.t0) / SNAP_INTERVAL);
-  const lastMap = (type==='z') ? interpBuffer.last.z : interpBuffer.last.p;
-  const nextMap = (type==='z') ? interpBuffer.next.z : interpBuffer.next.p;
-  const a = lastMap && lastMap[entityId];
-  const b = nextMap && nextMap[entityId];
-  if (!a || !b) return null;
-  return { x: a.x + (b.x - a.x) * alpha, y: a.y + (b.y - a.y) * alpha };
-}
-</script>
