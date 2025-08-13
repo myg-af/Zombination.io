@@ -72,10 +72,6 @@ let nextGameId = 1;
 
 function createNewGame() {
   let game = {
-    // ---- Spatial grid for dynamic entities ----
-    _egrid: new Map(),           // key "cx,cy" -> { z: Set<zid>, p: Set<pid> }
-    _cellSize: Math.max(16, TILE_SIZE | 0),
-    _turrets: [],
     structures: null,
     id: nextGameId++,
     lobby: {
@@ -166,8 +162,10 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
   for (const pos of miniPositions) {
     setStruct(game, pos.tx, pos.ty, { type: 't', hp: 200, lastShot: 0 });
   }
-
 }
+
+
+
 
 function getAvailableLobby() {
   let game = activeGames.find(g => !g.lobby.started);
@@ -183,129 +181,31 @@ const ZOMBIE_RADIUS = 10;
 const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
-
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
-  // FIX: include ALL players (not filtered by distance) so allies count remains correct even when far.
+  const r2 = r * r;
   const out = {};
   for (const id in game.players) {
     const p = game.players[id];
     if (!p) continue;
-    fixHealth(p);
-    out[id] = {
-      health: p.health,
-      alive: p.alive,
-      x: p.x,
-      y: p.y,
-      pseudo: p.pseudo,
-      money: p.money,
-      maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
-    };
+    const dx = (p.x || 0) - cx;
+    const dy = (p.y || 0) - cy;
+    if (dx*dx + dy*dy <= r2) {
+      fixHealth(p);
+      out[id] = {
+        health: p.health,
+        alive: p.alive,
+        x: p.x,
+        y: p.y,
+        pseudo: p.pseudo,
+        money: p.money,
+        maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
+      };
+    }
   }
   return out;
 }
 
-
-
-// ====== Spatial grid helpers (entities) + Int16 conversions ======
-const _egBounds16 = new Int16Array(4); // [minCx, maxCx, minCy, maxCy]
-function clampInt16(n) {
-  n = n | 0;
-  if (n > 32767) return 32767;
-  if (n < -32768) return -32768;
-  return n;
-}
-function toCellCoord(x, cellSize) {
-  // floor then clamp to int16
-  return clampInt16((x / cellSize) | 0);
-}
-function egKey(cx, cy) { return cx + ',' + cy; }
-
-function egEnsure(game) {
-  if (!game._egrid) game._egrid = new Map();
-  if (!game._cellSize) game._cellSize = Math.max(16, TILE_SIZE | 0);
-}
-
-function egAdd(game, type, id, x, y) {
-  egEnsure(game);
-  const cx = toCellCoord(x, game._cellSize);
-  const cy = toCellCoord(y, game._cellSize);
-  const key = egKey(cx, cy);
-  let bucket = game._egrid.get(key);
-  if (!bucket) { bucket = { z: new Set(), p: new Set() }; game._egrid.set(key, bucket); }
-  bucket[type].add(id);
-  const obj = type === 'z' ? game.zombies[id] : game.players[id];
-  if (obj) { obj._egCx16 = cx; obj._egCy16 = cy; } // stocké en int16
-}
-
-function egMove(game, type, id, x, y) {
-  const obj = type === 'z' ? game.zombies[id] : game.players[id];
-  if (!obj) return;
-  const oldCx = obj._egCx16, oldCy = obj._egCy16;
-  const newCx = toCellCoord(x, game._cellSize);
-  const newCy = toCellCoord(y, game._cellSize);
-  if (oldCx === newCx && oldCy === newCy) return;
-  // remove from old
-  if (oldCx !== undefined && oldCy !== undefined) {
-    const oldKey = egKey(oldCx, oldCy);
-    const bucket = game._egrid.get(oldKey);
-    if (bucket) { bucket[type].delete(id); if (bucket.z.size===0 && bucket.p.size===0) game._egrid.delete(oldKey); }
-  }
-  // add to new
-  const key = egKey(newCx, newCy);
-  let bucket = game._egrid.get(key);
-  if (!bucket) { bucket = { z: new Set(), p: new Set() }; game._egrid.set(key, bucket); }
-  bucket[type].add(id);
-  obj._egCx16 = newCx; obj._egCy16 = newCy;
-}
-
-function egRemove(game, type, id) {
-  const obj = type === 'z' ? game.zombies[id] : game.players[id];
-  if (!obj) return;
-  const cx = obj._egCx16, cy = obj._egCy16;
-  if (cx === undefined || cy === undefined) return;
-  const key = egKey(cx, cy);
-  const bucket = game._egrid.get(key);
-  if (bucket) { bucket[type].delete(id); if (bucket.z.size===0 && bucket.p.size===0) game._egrid.delete(key); }
-  delete obj._egCx16; delete obj._egCy16;
-}
-
-function egQueryZombiesInCircle(game, cx, cy, r) {
-  egEnsure(game);
-  const cs = game._cellSize;
-  _egBounds16[0] = toCellCoord(cx - r, cs);
-  _egBounds16[1] = toCellCoord(cx + r, cs);
-  _egBounds16[2] = toCellCoord(cy - r, cs);
-  _egBounds16[3] = toCellCoord(cy + r, cs);
-  const minCx = _egBounds16[0], maxCx = _egBounds16[1];
-  const minCy = _egBounds16[2], maxCy = _egBounds16[3];
-  const r2 = r * r;
-  const outIds = [];
-  for (let cY = minCy; cY <= maxCy; cY++) {
-    for (let cX = minCx; cX <= maxCx; cX++) {
-      const bucket = game._egrid.get(egKey(cX, cY));
-      if (!bucket) continue;
-      for (const zid of bucket.z) {
-        const z = game.zombies[zid];
-        if (!z) continue;
-        const dx = z.x - cx, dy = z.y - cy;
-        if (dx*dx + dy*dy <= r2) outIds.push(zid);
-      }
-    }
-  }
-  return outIds;
-}
-
 function getZombiesFiltered(game, cx, cy, r) {
-  if (game && game._egrid) {
-    const out = {};
-    const ids = egQueryZombiesInCircle(game, cx, cy, r);
-    for (const zid of ids) {
-      const z = game.zombies[zid];
-      if (z) out[zid] = z;
-    }
-    return out;
-  }
-  // Fallback
   const r2 = r * r;
   const out = {};
   for (const zid in game.zombies) {
@@ -316,7 +216,6 @@ function getZombiesFiltered(game, cx, cy, r) {
   }
   return out;
 }
-
 
 function getBulletsFiltered(game, cx, cy, r) {
   const r2 = r * r;
@@ -348,8 +247,6 @@ function setStruct(game, tx, ty, s) {
   // Compteur de tourelles en cache (évite de scanner la grille à chaque tick)
   if (typeof game._turretCount !== 'number') game._turretCount = 0;
 
-  // (fix) do NOT reset entity spatial grid when placing structures
-
   const prev = game.structures[ty][tx];
   const prevIsTurret = !!(prev && (prev.type === 'T' || prev.type === 't') && prev.hp > 0);
   const nextIsTurret = !!(s && (s.type === 'T' || s.type === 't') && s.hp > 0);
@@ -358,19 +255,8 @@ function setStruct(game, tx, ty, s) {
   if (!prevIsTurret && nextIsTurret) game._turretCount++;
 
   game.structures[ty][tx] = s;
-  // Maintain fast list of turret tiles
-  if (!game._turrets) game._turrets = [];
-  const wasTurret = prevIsTurret;
-  const isTurret = nextIsTurret;
-  const key = tx + ',' + ty;
-  if (wasTurret && !isTurret) {
-    // remove from list
-    game._turrets = game._turrets.filter(t => !(t.tx===tx && t.ty===ty));
-  } else if (!wasTurret && isTurret) {
-    game._turrets.push({ tx, ty });
-  }
-
 }
+
 
 function canPlaceStructureAt(game, tx, ty, buyerId) {
   if (!game || !game.map) return false;
@@ -449,71 +335,70 @@ function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
     if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
   }
   // centre
-  {
-    const center = worldToTile(x, y);
-    const s2 = getStruct(game, center.tx, center.ty);
-    if (!isGrace(center.tx, center.ty) && isSolidForPlayer(s2)) return true;
-  }
+  const { tx, ty } = worldToTile(x, y);
+  const s = getStruct(game, tx, ty);
+  if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
+
   return false;
 }
 
-
-
 function tickTurrets(game) {
   if (!game?.structures) return;
-  game._laserLatestByTurret = game._laserLatestByTurret || new Map();
-  const _laserMap = game._laserLatestByTurret;
-
   const now = Date.now();
-  let shotsLeft = TURRET_SHOTS_PER_TICK;
-  const zombiesMap = game.zombies || {};
 
-  const turretList = Array.isArray(game._turrets) && game._turrets.length ? game._turrets : null;
+  let shotsLeft = TURRET_SHOTS_PER_TICK;
+  const laserBatch = [];
+  const zombiesMap = game.zombies;
+
   outer_loop:
-  if (turretList) {
-    for (let i = 0; i < turretList.length; i++) {
-      const { tx, ty } = turretList[i];
+  for (let ty = 0; ty < MAP_ROWS; ty++) {
+    for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
       if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
 
       if (!s.lastShot) s.lastShot = 0;
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
+
       if (typeof s._jitterCur !== 'number') s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
       if ((now - s.lastShot) < (interval + s._jitterCur)) continue;
 
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // Keep/validate current target if any
-      let target = null, targetId = s._targetId || null;
-      if (targetId && zombiesMap[targetId]) {
-        const z = zombiesMap[targetId];
-        const dx = z.x - cx, dy = z.y - cy;
-        const d2 = dx*dx + dy*dy;
-        if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
-          target = z;
-        } else {
-          targetId = null;
+      // Cache cible
+      let target = null;
+      if (s._targetId) {
+        const z = zombiesMap[s._targetId];
+        if (z) {
+          const dx = z.x - cx, dy = z.y - cy;
+          const d2 = dx*dx + dy*dy;
+          if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
+            target = z;
+          }
         }
       }
 
-      // Retarget if needed
       if (!target) {
-        const lastRet = s._lastRetargetAt || 0;
-        if ((now - lastRet) >= TURRET_RETARGET_MS) {
-          s._lastRetargetAt = now;
-          let best = null, bestId = null, bestDist2 = Infinity;
+        if (!s._nextRetargetAt || now >= s._nextRetargetAt) {
+          s._nextRetargetAt = now + TURRET_RETARGET_MS;
+          let best = null, bestDist2 = Infinity;
           for (const zid in zombiesMap) {
             const z = zombiesMap[zid];
             if (!z) continue;
             const dx = z.x - cx, dy = z.y - cy;
             const d2 = dx*dx + dy*dy;
             if (d2 > TURRET_RANGE_SQ) continue;
-            if (z.hp <= 0) continue;
-            if (losBlockedForTurret(game, cx, cy, z.x, z.y)) continue;
-            if (d2 < bestDist2) { bestDist2 = d2; best = z; bestId = zid; if (bestDist2 < 64*64) break; }
+            if (d2 < bestDist2 && !losBlockedForTurret(game, cx, cy, z.x, z.y)) {
+              bestDist2 = d2; best = z;
+              if (bestDist2 < 64*64) break;
+            }
           }
-          if (best) { target = best; targetId = bestId; s._targetId = bestId; }
+          if (best) {
+            target = best;
+            s._targetId = Object.keys(zombiesMap).find(id => zombiesMap[id] === best) || null;
+          } else {
+            s._targetId = null;
+          }
         } else {
           continue;
         }
@@ -529,86 +414,43 @@ function tickTurrets(game) {
       const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
       target.hp -= dmg;
 
-      // FX cache (compact): one per turret
-      const __ang = Math.atan2(target.y - cy, target.x - cx);
-      const __angDeg = Math.round((__ang * 180/Math.PI)) & 0x1FF;
-      _laserMap.set(tx + ',' + ty, { tx, ty, big: (s.type === 'T') ? 1 : 0, x: target.x, y: target.y });
+      laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff' });
 
-      
       if (target.hp <= 0) {
-        // reward owner (based on player's goldGain stat), and send FX
+        // gains propriétaire inchangés...
         if (s.placedBy) {
           const ownerPlayer = game.players[s.placedBy];
           if (ownerPlayer) {
             const ownerStats = getPlayerStats(ownerPlayer);
-            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+            const baseMoney = Math.floor(Math.random() * 11) + 10;
             const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
             io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
           }
         }
-        // delete zombie by id
-        if (targetId && zombiesMap[targetId] === target) {
-          delete zombiesMap[targetId];
-          game._zombieCount = Math.max(0, (game._zombieCount|0) - 1);
-          if (s._targetId === targetId) s._targetId = null;
-        } else {
-          for (const _zid in zombiesMap) {
-            if (zombiesMap[_zid] === target) {
-              delete zombiesMap[_zid];
-              game._zombieCount = Math.max(0, (game._zombieCount|0) - 1);
-              if (s._targetId === _zid) s._targetId = null;
-              break;
-            }
-          }
-        }
-        // decrement wave counters & notify lobby like bullet kills
+
         game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
-      }
 
+        // suppression zombie + décrément O(1)
+        for (const zid in zombiesMap) {
+          if (zombiesMap[zid] === target) {
+            delete zombiesMap[zid];
+            game._zombieCount = Math.max(0, game._zombieCount - 1);
+            if (s._targetId === zid) s._targetId = null;
+            break;
+          }
+        }
+      }
     }
   }
 
-  // ---- Compact FX emission (server-driven, replace mode) ----
-  {
-    const nowMs = Date.now();
-    const EMIT_MS = 150;
-    const MAX_TURRETS_PER_EMIT = 12;
-    const last = game._lastLaserEmitAt || 0;
-    if (_laserMap && _laserMap.size && (nowMs - last) >= EMIT_MS) {
-      const payload = Array.from(_laserMap.values());
-      if (payload.length > MAX_TURRETS_PER_EMIT) payload.length = MAX_TURRETS_PER_EMIT;
-      _laserMap.clear();
-
-      const recips = [];
-      for (const pid in game.players) {
-        const p = game.players[pid];
-        if (!p) continue;
-        p._fxNextAt = p._fxNextAt || 0;
-        const perPlayerMs = (p.fxLevel === 0) ? 220 : 150;
-        if (nowMs < p._fxNextAt) continue;
-        const cx = p.x || 0, cy = p.y || 0;
-        let visible = false;
-        for (let i = 0; i < payload.length; i++) {
-          const o = payload[i];
-          const ox = o.tx * TILE_SIZE + TILE_SIZE/2;
-          const oy = o.ty * TILE_SIZE + TILE_SIZE/2;
-          const dx = ox - cx, dy = oy - cy;
-          if (dx*dx + dy*dy <= SERVER_VIEW_RADIUS_SQ) { visible = true; break; }
-        }
-        if (visible) { recips.push(pid); p._fxNextAt = nowMs + perPlayerMs; }
-      }
-
-      if (recips.length) {
-        game._fxFrame = (game._fxFrame|0) + 1;
-        io.to(recips).emit('turretFx', { mode: 'replace', frame: game._fxFrame, list: payload });
-      }
-      game._lastLaserEmitAt = nowMs;
-    }
+  if (laserBatch.length > 0) {
+    io.to('lobby' + game.id).emit(TURRET_LASER_BATCH_EVENT, laserBatch);
   }
 }
+
 
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
@@ -657,24 +499,6 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   const dist = Math.hypot(dx, dy);
   // <= au lieu de <
   return dist <= (aradius + bradius + bonus);
-}
-
-function segmentIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
-  // Compute the projection of C onto segment AB and clamp to [0,1]
-  const ABx = x2 - x1, ABy = y2 - y1;
-  const ACx = cx - x1, ACy = cy - y1;
-  const ab2 = ABx*ABx + ABy*ABy;
-  if (ab2 <= 1e-6) {
-    // Degenerate segment -> distance point-circle
-    const dx = cx - x1, dy = cy - y1;
-    return (dx*dx + dy*dy) <= r*r;
-  }
-  let t = (ACx*ABx + ACy*ABy) / ab2;
-  if (t < 0) t = 0; else if (t > 1) t = 1;
-  const px = x1 + ABx * t;
-  const py = y1 + ABy * t;
-  const dx = cx - px, dy = cy - py;
-  return (dx*dx + dy*dy) <= r*r;
 }
 
 
@@ -804,6 +628,11 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   }
 }
 
+
+
+
+
+
 function isNearObstacle(map, cx, cy, radius, tileSize) {
   const margin = Math.ceil(radius / tileSize);
   for (let dx = -margin; dx <= margin; dx++) {
@@ -816,7 +645,6 @@ function isNearObstacle(map, cx, cy, radius, tileSize) {
   }
   return false;
 }
-
 
 function findPath(game, startX, startY, endX, endY) {
   // On travaille en cases (grid)
@@ -934,7 +762,7 @@ function computePathfindBudget(game) {
 }
 
 
-const NET_SEND_HZ = 20;
+const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 
 // --- Modes basse consommation ---
@@ -946,7 +774,7 @@ const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
 let _lastTickAtMs = 0;
 
 
-const TICK_HZ = 20;
+const TICK_HZ = 60;
 const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
 const MAX_STEPS = 5;              // anti-spirale si gros retard
 // Budget courant de pathfinding pour CE tick (réinitialisé dans stepOnce)
@@ -1014,7 +842,6 @@ function spawnZombies(game, count) {
     }
     const id = `zombie${Date.now()}_${Math.floor(Math.random()*1000000)}`;
     game.zombies[id] = z;
-    egAdd(game, 'z', id, z.x, z.y);
     game._zombieCount++;                 // O(1)
     game.zombiesSpawnedThisWave++;
     spawnedCount++;
@@ -1035,8 +862,10 @@ function checkWaveEnd(game) {
 
     console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
-
 }
+
+
+
 
 function startSpawning(game) {
   if (game.spawnInterval) clearInterval(game.spawnInterval);
@@ -1057,16 +886,14 @@ function stopSpawning(game) {
 }
 
 function launchGame(game, readyPlayersArr = null) {
-  Object.keys(game.players).forEach(id => { egRemove(game,'p', id); delete game.players[id]; });
-  Object.keys(game.zombies).forEach(id => { egRemove(game,'z', id); delete game.zombies[id]; });
+  Object.keys(game.players).forEach(id => delete game.players[id]);
+  Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
 
   // compteurs O(1)
   game._zombieCount = 0;
   game._bulletCount = 0;
   game._turretCount = 0;
-
-  // (fix) do NOT reset entity spatial grid when placing structures
 
   game.currentRound = 1;
   game.totalZombiesToSpawn = 50;
@@ -1089,7 +916,7 @@ function launchGame(game, readyPlayersArr = null) {
 
   for (let i = 1; i <= nbBots; i++) {
     const botId = `bot${i}_${Date.now()}`;
-    const botName = "[Bot]";
+    const botName = `[BOT${i}]`;
     game.players[botId] = {
       x: 0, y: 0, lastShot: 0, alive: true, health: 100, kills: 0,
       pseudo: botName, moveDir: { x: 0, y: 0 }, isBot: true, targetId: null,
@@ -1154,7 +981,7 @@ io.on('connection', socket => {
   });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-pseudo = (pseudo || '').trim().substring(0, 15);
+    pseudo = (pseudo || '').trim().substring(0, 15);
     pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) pseudo = 'Joueur';
     game.lobby.players[socket.id] = { pseudo, ready: true };
@@ -1170,7 +997,6 @@ pseudo = (pseudo || '').trim().substring(0, 15);
   socket.on('disconnect', () => {
     console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
     delete game.lobby.players[socket.id];
-    egRemove(game, 'p', socket.id);
     delete game.players[socket.id];
 	if (game._lastNetSend) delete game._lastNetSend[socket.id];
 	delete socketToGame[socket.id];
@@ -1182,14 +1008,7 @@ pseudo = (pseudo || '').trim().substring(0, 15);
   socket.on('moveDir', (dir) => {
     const player = game.players[socket.id];
     if (!game.lobby.started || !player || !player.alive) return;
-    if (typeof dir === 'object') {
-      if (typeof dir.seq === 'number') player._lastInputSeq = dir.seq|0;
-      player.moveDir = { x: +dir.x || 0, y: +dir.y || 0 };
-      // ack to client for reconciliation
-      io.to(socket.id).emit('ackInput', { seq: player._lastInputSeq });
-    } else {
-      player.moveDir = dir;
-    }
+    player.moveDir = dir; // dir.x et dir.y entre -1 et 1
   });
 
   socket.on('upgradeBuy', ({ upgId }) => {
@@ -1314,7 +1133,7 @@ socket.on('shoot', (data) => {
     dx: dx / dist,
     dy: dy / dist,
     createdAt: now
-  , prevX: player.x, prevY: player.y };
+  };
   game._bulletCount++; // O(1)
 });
 
@@ -1341,10 +1160,10 @@ socket.on('killAllZombies', () => {
   game._zombieCount = 0; // O(1)
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
-
-
-
 });
+
+
+
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
@@ -1402,8 +1221,6 @@ function endGame(game, reason = 'no_players') {
   game._bulletCount = 0;
   game._turretCount = 0;
 
-  // (fix) do NOT reset entity spatial grid when placing structures
-
   io.to('lobby' + game.id).emit('gameEnded', { reason });
   // on nettoie le lobby un peu après (conservé)
   setTimeout(() => {
@@ -1434,6 +1251,7 @@ function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
     }
   }
 }
+
 
 function movePlayers(game, deltaTime) {
   const MAX_STEP = 6;   // px par micro-pas
@@ -1507,11 +1325,10 @@ function movePlayers(game, deltaTime) {
         p.graceTile = null;
       }
     }
-    // update spatial grid position
-    egMove(game, 'p', pid, p.x, p.y);
-
   }
 }
+
+
 
 function moveBots(game, deltaTime) {
   const MAX_STEP = 6;
@@ -1593,8 +1410,6 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
     owner: botId,
     x: bot.x,
     y: bot.y,
-    prevX: bot.x,
-    prevY: bot.y,
     dx: dx / dist,
     dy: dy / dist,
     createdAt: now,
@@ -1682,6 +1497,7 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
     }
   }
 }
+
 
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;
@@ -1967,8 +1783,10 @@ function moveZombies(game, deltaTime) {
   }
 }
 
-// Test si un cercle (zombie) touche une tuile (structure)}
 
+
+
+// Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const x0 = tx * TILE_SIZE, y0 = ty * TILE_SIZE;
   const x1 = x0 + TILE_SIZE, y1 = y0 + TILE_SIZE;
@@ -2149,15 +1967,15 @@ function handleZombieAttacks(game) {
         }
       }
     }
-    // update spatial grid position
-    egMove(game, 'z', zid, z.x, z.y);
-
   }
 
   if (structuresChanged) {
     io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
   }
 }
+
+
+
 
 function fixHealth(p) {
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
@@ -2176,10 +1994,8 @@ function moveBullets(game, deltaTime) {
     const bullet = game.bullets[id];
 
     // avance
-    const _nx = bullet.x + bullet.dx * BULLET_SPEED * deltaTime;
-    const _ny = bullet.y + bullet.dy * BULLET_SPEED * deltaTime;
-    bullet.prevX = bullet.x; bullet.prevY = bullet.y;
-    bullet.x = _nx; bullet.y = _ny;
+    bullet.x += bullet.dx * BULLET_SPEED * deltaTime;
+    bullet.y += bullet.dy * BULLET_SPEED * deltaTime;
     bullet.lifeFrames = (bullet.lifeFrames || 0) + 1;
 
     // hors map -> supprime
@@ -2202,7 +2018,7 @@ function moveBullets(game, deltaTime) {
     // collision avec zombies
     for (const zid in game.zombies) {
       const z = game.zombies[zid];
-      if (segmentIntersectsCircle(bullet.prevX ?? bullet.x, bullet.prevY ?? bullet.y, bullet.x, bullet.y, z.x, z.y, ZOMBIE_RADIUS + 4)) {
+      if (entitiesCollide(z.x, z.y, ZOMBIE_RADIUS, bullet.x, bullet.y, 4)) {
         const shooterIsPlayer = !!game.players[bullet.owner];
         const statsShooter = shooterIsPlayer ? getPlayerStats(game.players[bullet.owner]) : {};
         const bulletDamage = shooterIsPlayer ? (statsShooter.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
@@ -2222,7 +2038,6 @@ function moveBullets(game, deltaTime) {
           }
 
           // décrément O(1) + remaining
-          egRemove(game, 'z', zid);
           delete game.zombies[zid];
           game._zombieCount = Math.max(0, game._zombieCount - 1);
 
@@ -2303,10 +2118,6 @@ function stepOnce(dt) {
 
         const last = game._lastNetSend[sid] || 0;
         if (now - last >= sendInterval) {
-          // Compose a compact binary packet (version 1)
-          const buf = buildBinaryStatePacket(zSnap, bSnap, phSnap, game.currentRound);
-          io.to(sid).volatile.emit('stateBin', buf);
-          // Also keep JSON for backward-compat
           io.to(sid).volatile.emit('stateUpdate', {
             zombies: zSnap,
             bullets: bSnap,
@@ -2335,70 +2146,6 @@ function stepOnce(dt) {
   }
 }
 
-// ---- Binary state packet (very compact) ----
-// Format (little endian):
-// u8 version(1), u16 nz, u16 nb, u16 nph, u16 round
-// Repeated blocks:
-//  - ZOMBIE: u8 'z', u16 idLen, id UTF-8, f32 x, f32 y, u16 hp, u16 maxHp
-//  - BULLET: u8 'b', u16 idLen, id UTF-8, f32 x, f32 y, f32 dx, f32 dy, u16 ownerLen, owner UTF-8
-//  - PHEALTH: u8 'p', u16 idLen, id UTF-8, f32 x, f32 y, u16 hp, u16 maxHp}
-
-function buildBinaryStatePacket(zSnap, bSnap, phSnap, round) {
-  function strlenUtf8(str){ return new TextEncoder().encode(str).length; }
-  function writeStr(view, offset, str){
-    const bytes = new TextEncoder().encode(str);
-    for (let i=0;i<bytes.length;i++) view.setUint8(offset+i, bytes[i]);
-    return bytes.length;
-  }
-  const zEntries = Object.entries(zSnap || {});
-  const bEntries = Object.entries(bSnap || {});
-  const pEntries = Object.entries(phSnap || {});
-  // estimate size
-  let size = 1 + 2 + 2 + 2 + 2;
-  for (const [id,z] of zEntries) size += 1 + 2 + strlenUtf8(id) + 4 + 4 + 2 + 2;
-  for (const [id,b] of bEntries) size += 1 + 2 + strlenUtf8(id) + 4 + 4 + 4 + 4 + 2 + strlenUtf8(String(b.owner||''));
-  for (const [id,p] of pEntries) size += 1 + 2 + strlenUtf8(id) + 4 + 4 + 2 + 2;
-  const buf = new ArrayBuffer(size);
-  const view = new DataView(buf);
-  let off = 0;
-  view.setUint8(off++, 1);
-  view.setUint16(off, zEntries.length, true); off+=2;
-  view.setUint16(off, bEntries.length, true); off+=2;
-  view.setUint16(off, pEntries.length, true); off+=2;
-  view.setUint16(off, round & 0xffff, true); off+=2;
-
-  for (const [id,z] of zEntries) {
-    view.setUint8(off++, 122); // 'z'
-    view.setUint16(off, strlenUtf8(id), true); off+=2;
-    off += writeStr(view, off, id);
-    view.setFloat32(off, z.x||0, true); off+=4;
-    view.setFloat32(off, z.y||0, true); off+=4;
-    view.setUint16(off, Math.max(0, Math.min(65535, z.hp|0)), true); off+=2;
-    view.setUint16(off, Math.max(0, Math.min(65535, (z.maxHp|0) || (z.maxHealth|0) || 0)), true); off+=2;
-  }
-  for (const [id,b] of bEntries) {
-    view.setUint8(off++, 98); // 'b'
-    view.setUint16(off, strlenUtf8(id), true); off+=2;
-    off += writeStr(view, off, id);
-    view.setFloat32(off, b.x||0, true); off+=4;
-    view.setFloat32(off, b.y||0, true); off+=4;
-    view.setFloat32(off, b.dx||0, true); off+=4;
-    view.setFloat32(off, b.dy||0, true); off+=4;
-    const ownerStr = String(b.owner||'');
-    view.setUint16(off, strlenUtf8(ownerStr), true); off+=2;
-    off += writeStr(view, off, ownerStr);
-  }
-  for (const [id,p] of pEntries) {
-    view.setUint8(off++, 112); // 'p'
-    view.setUint16(off, strlenUtf8(id), true); off+=2;
-    off += writeStr(view, off, id);
-    view.setFloat32(off, p.x||0, true); off+=4;
-    view.setFloat32(off, p.y||0, true); off+=4;
-    view.setUint16(off, Math.max(0, Math.min(65535, p.health|0)), true); off+=2;
-    view.setUint16(off, Math.max(0, Math.min(65535, p.maxHealth|0)), true); off+=2;
-  }
-  return buf;
-}
 
 function gameLoop() {
   try {
@@ -2448,15 +2195,13 @@ function gameLoop() {
   }
   setTimeout(gameLoop, 1);
 }
-// Démarrage de la boucle de jeu (appel in-scope)
-try { gameLoop(); } catch (e) { console.error('gameLoop indisponible:', e); }
 
 
 
 
 
 
-
+gameLoop();
 
 const PORT = process.env.PORT || 3000;
 console.log('Avant listen');
