@@ -75,7 +75,7 @@ function createNewGame() {
     // ---- Spatial grid for dynamic entities ----
     _egrid: new Map(),           // key "cx,cy" -> { z: Set<zid>, p: Set<pid> }
     _cellSize: Math.max(16, TILE_SIZE | 0),
-
+    _turrets: [],
     structures: null,
     id: nextGameId++,
     lobby: {
@@ -166,10 +166,8 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
   for (const pos of miniPositions) {
     setStruct(game, pos.tx, pos.ty, { type: 't', hp: 200, lastShot: 0 });
   }
+
 }
-
-
-
 
 function getAvailableLobby() {
   let game = activeGames.find(g => !g.lobby.started);
@@ -363,8 +361,19 @@ function setStruct(game, tx, ty, s) {
   if (!prevIsTurret && nextIsTurret) game._turretCount++;
 
   game.structures[ty][tx] = s;
-}
+  // Maintain fast list of turret tiles
+  if (!game._turrets) game._turrets = [];
+  const wasTurret = prevIsTurret;
+  const isTurret = nextIsTurret;
+  const key = tx + ',' + ty;
+  if (wasTurret && !isTurret) {
+    // remove from list
+    game._turrets = game._turrets.filter(t => !(t.tx===tx && t.ty===ty));
+  } else if (!wasTurret && isTurret) {
+    game._turrets.push({ tx, ty });
+  }
 
+}
 
 function canPlaceStructureAt(game, tx, ty, buyerId) {
   if (!game || !game.map) return false;
@@ -443,84 +452,73 @@ function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
     if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
   }
   // centre
-  const { tx, ty } = worldToTile(x, y);
-  const s = getStruct(game, tx, ty);
-  if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
-
+  {
+    const center = worldToTile(x, y);
+    const s2 = getStruct(game, center.tx, center.ty);
+    if (!isGrace(center.tx, center.ty) && isSolidForPlayer(s2)) return true;
+  }
   return false;
 }
 
 
+
 function tickTurrets(game) {
   if (!game?.structures) return;
+  game._laserLatestByTurret = game._laserLatestByTurret || new Map();
+  const _laserMap = game._laserLatestByTurret;
+
   const now = Date.now();
-
   let shotsLeft = TURRET_SHOTS_PER_TICK;
-  const laserBatch = [];
-  const zombiesMap = game.zombies;
+  const zombiesMap = game.zombies || {};
 
+  const turretList = Array.isArray(game._turrets) && game._turrets.length ? game._turrets : null;
   outer_loop:
-  for (let ty = 0; ty < MAP_ROWS; ty++) {
-    for (let tx = 0; tx < MAP_COLS; tx++) {
+  if (turretList) {
+    for (let i = 0; i < turretList.length; i++) {
+      const { tx, ty } = turretList[i];
       const s = getStruct(game, tx, ty);
       if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
 
       if (!s.lastShot) s.lastShot = 0;
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
-
       if (typeof s._jitterCur !== 'number') s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
       if ((now - s.lastShot) < (interval + s._jitterCur)) continue;
 
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
 
-      // 1) Try to keep current target if valid
-      let target = null;
-      if (s._targetId) {
-        const z = zombiesMap[s._targetId];
-        if (z) {
-          const dx = z.x - cx, dy = z.y - cy;
-          const d2 = dx*dx + dy*dy;
-          if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
-            target = z;
-          } else {
-            s._targetId = null; // invalidate
-          }
+      // Keep/validate current target if any
+      let target = null, targetId = s._targetId || null;
+      if (targetId && zombiesMap[targetId]) {
+        const z = zombiesMap[targetId];
+        const dx = z.x - cx, dy = z.y - cy;
+        const d2 = dx*dx + dy*dy;
+        if (d2 <= TURRET_RANGE_SQ && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
+          target = z;
         } else {
-          s._targetId = null;
+          targetId = null;
         }
       }
 
-      // 2) Retarget if needed (on cadence)
+      // Retarget if needed
       if (!target) {
-        if (!s._nextRetargetAt || now >= s._nextRetargetAt) {
-          s._nextRetargetAt = now + TURRET_RETARGET_MS;
-
-          let best = null, bestDist2 = Infinity;
-          let candidateIds = (game && game._egrid) ? egQueryZombiesInCircle(game, cx, cy, TURRET_RANGE) : Object.keys(zombiesMap);
-          for (const zid of candidateIds) {
+        const lastRet = s._lastRetargetAt || 0;
+        if ((now - lastRet) >= TURRET_RETARGET_MS) {
+          s._lastRetargetAt = now;
+          let best = null, bestId = null, bestDist2 = Infinity;
+          for (const zid in zombiesMap) {
             const z = zombiesMap[zid];
             if (!z) continue;
             const dx = z.x - cx, dy = z.y - cy;
             const d2 = dx*dx + dy*dy;
             if (d2 > TURRET_RANGE_SQ) continue;
-            if (d2 < bestDist2 && !losBlockedForTurret(game, cx, cy, z.x, z.y) && z.hp > 0) {
-              bestDist2 = d2; best = z;
-              if (bestDist2 < 64*64) break; // early exit for very close target
-            }
+            if (z.hp <= 0) continue;
+            if (losBlockedForTurret(game, cx, cy, z.x, z.y)) continue;
+            if (d2 < bestDist2) { bestDist2 = d2; best = z; bestId = zid; if (bestDist2 < 64*64) break; }
           }
-          if (best) {
-            target = best;
-            // store id
-            for (const id in zombiesMap) {
-              if (zombiesMap[id] === best) { s._targetId = id; break; }
-            }
-          } else {
-            s._targetId = null;
-            continue; // nothing to shoot now
-          }
+          if (best) { target = best; targetId = bestId; s._targetId = bestId; }
         } else {
-          continue; // not time to retarget yet
+          continue;
         }
       }
 
@@ -534,7 +532,10 @@ function tickTurrets(game) {
       const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
       target.hp -= dmg;
 
-      laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff' });
+      // FX cache (compact): one per turret
+      const __ang = Math.atan2(target.y - cy, target.x - cx);
+      const __angDeg = Math.round((__ang * 180/Math.PI)) & 0x1FF;
+      _laserMap.set(tx + ',' + ty, { tx, ty, big: (s.type === 'T') ? 1 : 0, x: target.x, y: target.y });
 
       if (target.hp <= 0) {
         // reward owner
@@ -543,35 +544,67 @@ function tickTurrets(game) {
           if (ownerPlayer) {
             const ownerStats = getPlayerStats(ownerPlayer);
             const baseMoney = Math.floor(Math.random() * 11) + 10;
-            const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
+            const moneyEarned = Math.round(baseMoney * ((ownerStats?.turretBonus || 1)));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
-            io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
           }
         }
-
-        game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
-        const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
-        io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
-
-        // delete target zombie
-        for (const zid in zombiesMap) {
-          if (zombiesMap[zid] === target) {
-            delete zombiesMap[zid];
-            game._zombieCount = Math.max(0, game._zombieCount - 1);
-            if (s._targetId === zid) s._targetId = null;
-            break;
+        // delete zombie by id
+        if (targetId && zombiesMap[targetId] === target) {
+          delete zombiesMap[targetId];
+          game._zombieCount = Math.max(0, (game._zombieCount|0) - 1);
+          if (s._targetId === targetId) s._targetId = null;
+        } else {
+          for (const _zid in zombiesMap) {
+            if (zombiesMap[_zid] === target) {
+              delete zombiesMap[_zid];
+              game._zombieCount = Math.max(0, (game._zombieCount|0) - 1);
+              if (s._targetId === _zid) s._targetId = null;
+              break;
+            }
           }
         }
       }
     }
   }
 
-  if (laserBatch.length > 0) {
-    io.to('lobby' + game.id).emit(TURRET_LASER_BATCH_EVENT, laserBatch);
+  // ---- Compact FX emission (server-driven, replace mode) ----
+  {
+    const nowMs = Date.now();
+    const EMIT_MS = 150;
+    const MAX_TURRETS_PER_EMIT = 12;
+    const last = game._lastLaserEmitAt || 0;
+    if (_laserMap && _laserMap.size && (nowMs - last) >= EMIT_MS) {
+      const payload = Array.from(_laserMap.values());
+      if (payload.length > MAX_TURRETS_PER_EMIT) payload.length = MAX_TURRETS_PER_EMIT;
+      _laserMap.clear();
+
+      const recips = [];
+      for (const pid in game.players) {
+        const p = game.players[pid];
+        if (!p) continue;
+        p._fxNextAt = p._fxNextAt || 0;
+        const perPlayerMs = (p.fxLevel === 0) ? 220 : 150;
+        if (nowMs < p._fxNextAt) continue;
+        const cx = p.x || 0, cy = p.y || 0;
+        let visible = false;
+        for (let i = 0; i < payload.length; i++) {
+          const o = payload[i];
+          const ox = o.tx * TILE_SIZE + TILE_SIZE/2;
+          const oy = o.ty * TILE_SIZE + TILE_SIZE/2;
+          const dx = ox - cx, dy = oy - cy;
+          if (dx*dx + dy*dy <= SERVER_VIEW_RADIUS_SQ) { visible = true; break; }
+        }
+        if (visible) { recips.push(pid); p._fxNextAt = nowMs + perPlayerMs; }
+      }
+
+      if (recips.length) {
+        game._fxFrame = (game._fxFrame|0) + 1;
+        io.to(recips).emit('turretFx', { mode: 'replace', frame: game._fxFrame, list: payload });
+      }
+      game._lastLaserEmitAt = nowMs;
+    }
   }
 }
-
-
 
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
@@ -622,29 +655,24 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   return dist <= (aradius + bradius + bonus);
 }
 
-
-
-
-// --- Swept segment vs circle (prevents bullets tunneling through zombies) ---
-function segmentIntersectsCircle(ax, ay, bx, by, cx, cy, r) {
-  // Compute vector AB and AC
-  const abx = bx - ax, aby = by - ay;
-  const acx = cx - ax, acy = cy - ay;
-  const abLen2 = abx*abx + aby*aby;
-  if (abLen2 < 1e-9) {
-    // Segment is a point
-    const dx = ax - cx, dy = ay - cy;
+function segmentIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
+  // Compute the projection of C onto segment AB and clamp to [0,1]
+  const ABx = x2 - x1, ABy = y2 - y1;
+  const ACx = cx - x1, ACy = cy - y1;
+  const ab2 = ABx*ABx + ABy*ABy;
+  if (ab2 <= 1e-6) {
+    // Degenerate segment -> distance point-circle
+    const dx = cx - x1, dy = cy - y1;
     return (dx*dx + dy*dy) <= r*r;
   }
-  // Project AC onto AB, clamp t to [0,1]
-  let t = (acx*abx + acy*aby) / abLen2;
+  let t = (ACx*ABx + ACy*ABy) / ab2;
   if (t < 0) t = 0; else if (t > 1) t = 1;
-  // Closest point on segment to circle center
-  const qx = ax + abx * t;
-  const qy = ay + aby * t;
-  const dx = qx - cx, dy = qy - cy;
+  const px = x1 + ABx * t;
+  const py = y1 + ABy * t;
+  const dx = cx - px, dy = cy - py;
   return (dx*dx + dy*dy) <= r*r;
 }
+
 
 // Remplace TOUT le corps de isCircleColliding par ceci (dans server.js)
 function isCircleColliding(map, x, y, radius) {
@@ -772,11 +800,6 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   }
 }
 
-
-
-
-
-
 function isNearObstacle(map, cx, cy, radius, tileSize) {
   const margin = Math.ceil(radius / tileSize);
   for (let dx = -margin; dx <= margin; dx++) {
@@ -789,6 +812,7 @@ function isNearObstacle(map, cx, cy, radius, tileSize) {
   }
   return false;
 }
+
 
 function findPath(game, startX, startY, endX, endY) {
   // On travaille en cases (grid)
@@ -1007,10 +1031,8 @@ function checkWaveEnd(game) {
 
     console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
+
 }
-
-
-
 
 function startSpawning(game) {
   if (game.spawnInterval) clearInterval(game.spawnInterval);
@@ -1128,7 +1150,7 @@ io.on('connection', socket => {
   });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-    pseudo = (pseudo || '').trim().substring(0, 15);
+pseudo = (pseudo || '').trim().substring(0, 15);
     pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) pseudo = 'Joueur';
     game.lobby.players[socket.id] = { pseudo, ready: true };
@@ -1280,7 +1302,7 @@ socket.on('shoot', (data) => {
   if (dist < 1) return;
 
   const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-  game.bullets[bulletId] = { prevX: player.x, prevY: player.y, 
+  game.bullets[bulletId] = {
     id: bulletId,
     owner: socket.id,
     x: player.x,
@@ -1288,7 +1310,7 @@ socket.on('shoot', (data) => {
     dx: dx / dist,
     dy: dy / dist,
     createdAt: now
-  };
+  , prevX: player.x, prevY: player.y };
   game._bulletCount++; // O(1)
 });
 
@@ -1315,10 +1337,10 @@ socket.on('killAllZombies', () => {
   game._zombieCount = 0; // O(1)
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
+
+
+
 });
-
-
-
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
@@ -1409,7 +1431,6 @@ function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
   }
 }
 
-
 function movePlayers(game, deltaTime) {
   const MAX_STEP = 6;   // px par micro-pas
   const NUDGE    = 1.6; // petit décalage anti-coin
@@ -1488,8 +1509,6 @@ function movePlayers(game, deltaTime) {
   }
 }
 
-
-
 function moveBots(game, deltaTime) {
   const MAX_STEP = 6;
   const NUDGE    = 1.6;
@@ -1565,11 +1584,13 @@ function moveBots(game, deltaTime) {
 if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
   bot.lastShot = now;
   const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-  game.bullets[bulletId] = { prevX: player.x, prevY: player.y, 
+  game.bullets[bulletId] = {
     id: bulletId,
     owner: botId,
-    x: player.x,
-    y: player.y,
+    x: bot.x,
+    y: bot.y,
+    prevX: bot.x,
+    prevY: bot.y,
     dx: dx / dist,
     dy: dy / dist,
     createdAt: now,
@@ -1657,7 +1678,6 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
     }
   }
 }
-
 
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;
@@ -1943,10 +1963,8 @@ function moveZombies(game, deltaTime) {
   }
 }
 
+// Test si un cercle (zombie) touche une tuile (structure)}
 
-
-
-// Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const x0 = tx * TILE_SIZE, y0 = ty * TILE_SIZE;
   const x1 = x0 + TILE_SIZE, y1 = y0 + TILE_SIZE;
@@ -2137,9 +2155,6 @@ function handleZombieAttacks(game) {
   }
 }
 
-
-
-
 function fixHealth(p) {
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
     p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
@@ -2152,83 +2167,72 @@ function fixHealth(p) {
 
 
 
-
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
     const bullet = game.bullets[id];
-    if (!bullet) continue;
 
-    const oldX = (typeof bullet.prevX === 'number') ? bullet.prevX : bullet.x;
-    const oldY = (typeof bullet.prevY === 'number') ? bullet.prevY : bullet.y;
-    const stepX = bullet.dx * BULLET_SPEED * deltaTime;
-    const stepY = bullet.dy * BULLET_SPEED * deltaTime;
-    const nx = bullet.x + stepX;
-    const ny = bullet.y + stepY;
+    // avance
+    const _nx = bullet.x + bullet.dx * BULLET_SPEED * deltaTime;
+    const _ny = bullet.y + bullet.dy * BULLET_SPEED * deltaTime;
+    bullet.prevX = bullet.x; bullet.prevY = bullet.y;
+    bullet.x = _nx; bullet.y = _ny;
     bullet.lifeFrames = (bullet.lifeFrames || 0) + 1;
 
-    // out of bounds
-    if (nx < 0 || nx > MAP_COLS * TILE_SIZE || ny < 0 || ny > MAP_ROWS * TILE_SIZE) {
+    // hors map -> supprime
+    if (
+      bullet.x < 0 || bullet.x > MAP_COLS * TILE_SIZE ||
+      bullet.y < 0 || bullet.y > MAP_ROWS * TILE_SIZE
+    ) {
       delete game.bullets[id];
       game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
 
-    // map walls along path: cheap sample midpoint + end, then precise end
-    if (isCollision(game.map, nx, ny)) {
+    // collisions avec les murs de la MAP
+    if (isCollision(game.map, bullet.x, bullet.y)) {
       delete game.bullets[id];
       game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
 
-    // swept hit test vs zombies along segment [old -> new]
-    let impacted = false;
-    // spatial candidate list if available
-    let cand = null;
-    if (game && game._egrid) {
-      const mx = (oldX + nx) * 0.5, my = (oldY + ny) * 0.5;
-      const segLen = Math.hypot(nx - oldX, ny - oldY);
-      cand = egQueryZombiesInCircle(game, mx, my, segLen * 0.5 + ZOMBIE_RADIUS + 8);
-    }
-    const iter = cand || Object.keys(game.zombies);
-    for (const zid of iter) {
+    // collision avec zombies
+    for (const zid in game.zombies) {
       const z = game.zombies[zid];
-      if (!z) continue;
-      if (z.hp <= 0) continue;
-      if (segmentIntersectsCircle(oldX, oldY, nx, ny, z.x, z.y, ZOMBIE_RADIUS)) {
-        const shooter = game.players[bullet.owner];
-        const stats = shooter ? getPlayerStats(shooter) : {};
-        const dmg = shooter ? (stats.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
-        z.hp -= dmg;
+      if (segmentIntersectsCircle(bullet.prevX ?? bullet.x, bullet.prevY ?? bullet.y, bullet.x, bullet.y, z.x, z.y, ZOMBIE_RADIUS + 4)) {
+        const shooterIsPlayer = !!game.players[bullet.owner];
+        const statsShooter = shooterIsPlayer ? getPlayerStats(game.players[bullet.owner]) : {};
+        const bulletDamage = shooterIsPlayer ? (statsShooter.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
 
-        if (z.hp <= 0) {
-          if (shooter) {
-            shooter.kills = (shooter.kills || 0) + 1;
-            io.to(bullet.owner).emit('killsUpdate', shooter.kills);
-            const baseMoney = Math.floor(Math.random() * 11) + 10;
-            const moneyEarned = Math.round(baseMoney * ((stats.goldGain || 10) / 10));
-            shooter.money = (shooter.money || 0) + moneyEarned;
+        z.hp -= bulletDamage;
+
+        const killed = z.hp <= 0;
+        if (killed) {
+          if (shooterIsPlayer) {
+            game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
+            io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+
+            const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
+            const moneyEarned = Math.round(baseMoney * ((statsShooter.goldGain || 10) / 10));
+            game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
             io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
           }
+
+          // décrément O(1) + remaining
           egRemove(game, 'z', zid);
           delete game.zombies[zid];
           game._zombieCount = Math.max(0, game._zombieCount - 1);
+
           game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
           const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
           io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
         }
 
+        // La balle s'arrête sur impact
         delete game.bullets[id];
         game._bulletCount = Math.max(0, game._bulletCount - 1);
-        impacted = true;
         break;
       }
     }
-    if (impacted) continue;
-
-    bullet.prevX = bullet.x;
-    bullet.prevY = bullet.y;
-    bullet.x = nx;
-    bullet.y = ny;
   }
 }
 
@@ -2327,15 +2331,14 @@ function stepOnce(dt) {
   }
 }
 
-
-
 // ---- Binary state packet (very compact) ----
 // Format (little endian):
 // u8 version(1), u16 nz, u16 nb, u16 nph, u16 round
 // Repeated blocks:
 //  - ZOMBIE: u8 'z', u16 idLen, id UTF-8, f32 x, f32 y, u16 hp, u16 maxHp
 //  - BULLET: u8 'b', u16 idLen, id UTF-8, f32 x, f32 y, f32 dx, f32 dy, u16 ownerLen, owner UTF-8
-//  - PHEALTH: u8 'p', u16 idLen, id UTF-8, f32 x, f32 y, u16 hp, u16 maxHp
+//  - PHEALTH: u8 'p', u16 idLen, id UTF-8, f32 x, f32 y, u16 hp, u16 maxHp}
+
 function buildBinaryStatePacket(zSnap, bSnap, phSnap, round) {
   function strlenUtf8(str){ return new TextEncoder().encode(str).length; }
   function writeStr(view, offset, str){
@@ -2441,13 +2444,15 @@ function gameLoop() {
   }
   setTimeout(gameLoop, 1);
 }
+// Démarrage de la boucle de jeu (appel in-scope)
+try { gameLoop(); } catch (e) { console.error('gameLoop indisponible:', e); }
 
 
 
 
 
 
-gameLoop();
+
 
 const PORT = process.env.PORT || 3000;
 console.log('Avant listen');

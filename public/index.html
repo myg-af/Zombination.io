@@ -523,29 +523,23 @@ socket.on('stateBin', (buf) => {
     const pNew = {}; for (let i=0;i<nph;i++){ if (view.getUint8(off++)!==112) break; const id=readId(); const x=view.getFloat32(off, true); off+=4; const y=view.getFloat32(off, true); off+=4; const hp=view.getUint16(off, true); off+=2; const maxHealth=view.getUint16(off, true); off+=2; pNew[id] = { x, y, health: hp, maxHealth, alive: (hp>0) }; }
 
     // assign to live state
-    zombies = zNew; bullets = bNew; 
-    // Preserve pseudo names between binary snapshots
+    zombies = zNew; bullets = bNew; // preserve pseudo between snapshots and infer bots
     try {
-      if (typeof playersHealth === 'object' && playersHealth) {
+      if (playersHealth && typeof playersHealth === 'object') {
         for (const id in pNew) {
           const prev = playersHealth[id];
-          if (prev && typeof prev.pseudo === 'string' && prev.pseudo.length) {
+          if (prev && prev.pseudo) {
             pNew[id].pseudo = prev.pseudo;
           } else {
-            // Best-effort fallback so names don't collapse to "Joueur"
-            if (!pNew[id].pseudo) {
-              pNew[id].pseudo = id && id.startsWith('bot') ? '[Bot]' : 'Joueur';
-            }
+            if (!pNew[id].pseudo) pNew[id].pseudo = (id && id.startsWith('bot')) ? '[Bot]' : 'Joueur';
           }
         }
       } else {
-        // Global map missing: at least tag bots properly
         for (const id in pNew) {
-          if (!pNew[id].pseudo) pNew[id].pseudo = id && id.startsWith('bot') ? '[Bot]' : 'Joueur';
+          if (!pNew[id].pseudo) pNew[id].pseudo = (id && id.startsWith('bot')) ? '[Bot]' : 'Joueur';
         }
       }
-    } catch(e) { /* non-fatal */ }
-
+    } catch(e) {}
     playersHealth = pNew; currentRound = round;
   } catch(e) { console.warn('stateBin parse error', e); }
 });
@@ -2098,7 +2092,31 @@ socket.on('structuresUpdate', (grid) => {
 
    
    
-	socket.on('zombiesRemaining', (n) => {
+	
+    // Turret FX → draw a long laser from turret center to target position
+    socket.on('turretFx', ({ mode, list, frame }) => {
+      try {
+        if (!Array.isArray(list) || !list.length) return;
+        if (mode === 'replace') { turretLasers.length = 0; }
+        const now = performance.now();
+        for (let i = 0; i < list.length; i++) {
+          const o = list[i];
+          const cx = o.tx * TILE_SIZE + TILE_SIZE/2;
+          const cy = o.ty * TILE_SIZE + TILE_SIZE/2;
+          let x1 = cx, y1 = cy;
+          if (typeof o.x === 'number' && typeof o.y === 'number') {
+            x1 = o.x; y1 = o.y;
+          } else if (typeof o.ang === 'number') {
+            const ang = o.ang * Math.PI / 180;
+            const len = o.big ? 420 : 280;
+            x1 = cx + Math.cos(ang) * len;
+            y1 = cy + Math.sin(ang) * len;
+          }
+          turretLasers.push({ x0: cx, y0: cy, x1, y1, color: (o && o.color) ? o.color : (o.big ? '#f00' : '#6cf'), t: now });
+        }
+      } catch(e) {}
+    });
+socket.on('zombiesRemaining', (n) => {
 	  zombiesRemaining = Number(n) || 0;
 	  drawHUD();
 	});
