@@ -45,16 +45,17 @@ const MAX_ACTIVE_ZOMBIES = 200;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
-  base: { maxHp: 100, speed: 50, regen: 0, damage: 5, goldGain: 10 },
+  base: { maxHp: 100, speed: 40, regen: 0, damage: 5, goldGain: 10 },
   regenPerLevel: 1,                 // 1 PV/sec/niveau
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
-  priceStepAfterTier: 50            // après niv 5 → +50/niv
+  priceStepAfterTier: 75            // après niv 5 → +50/niv
 };
 
 // --- Prix d'achat des structures (serveur autoritatif) ---
 const SHOP_BUILD_PRICES = {
-  T: 1000, // Grande tourelle
+  T: 1000, // Tourelle
   t: 250,  // Mini-tourelle
+  G: 5000, // Big-tourelle
   B: 100,  // Mur
   D: 200   // Porte
 };
@@ -64,7 +65,10 @@ function getUpgradePrice(nextLevel) {
   const tiers = SHOP_CONST.priceTiers;
   const step = SHOP_CONST.priceStepAfterTier;
   if (nextLevel <= tiers.length) return tiers[nextLevel - 1];
-  return tiers[tiers.length - 1] + (nextLevel - tiers.length) * step;
+  if (nextLevel <= 7) return tiers[tiers.length - 1] + (nextLevel - tiers.length) * step;
+  const priceAt7 = tiers[tiers.length - 1] + (7 - tiers.length) * step;
+  const k = nextLevel - 7;
+  return Math.round(priceAt7 * Math.pow(1.2, k));
 }
 
 let activeGames = [];
@@ -132,21 +136,21 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
 
   // 4) Murs barricades autour du carré (épaisseur 1 case)
   for (let c = c0; c <= c1; c++) {
-    setStruct(game, c, r0, { type: 'B', hp: 200 });
-    setStruct(game, c, r1, { type: 'B', hp: 200 });
+    setStruct(game, c, r0, { type: 'B', hp: 500 });
+    setStruct(game, c, r1, { type: 'B', hp: 500 });
   }
   for (let r = r0; r <= r1; r++) {
-    setStruct(game, c0, r, { type: 'B', hp: 200 });
-    setStruct(game, c1, r, { type: 'B', hp: 200 });
+    setStruct(game, c0, r, { type: 'B', hp: 500 });
+    setStruct(game, c1, r, { type: 'B', hp: 500 });
   }
 
   // 5) Portes au milieu de chaque côté (HP = 200)
   const midC = Math.floor((c0 + c1) / 2);
   const midR = Math.floor((r0 + r1) / 2);
-  setStruct(game, midC, r0, { type: 'D', hp: 200 });
-  setStruct(game, midC, r1, { type: 'D', hp: 200 });
-  setStruct(game, c0, midR, { type: 'D', hp: 200 });
-  setStruct(game, c1, midR, { type: 'D', hp: 200 });
+  setStruct(game, midC, r0, { type: 'D', hp: 500 });
+  setStruct(game, midC, r1, { type: 'D', hp: 500 });
+  setStruct(game, c0, midR, { type: 'D', hp: 500 });
+  setStruct(game, c1, midR, { type: 'D', hp: 500 });
 
   // 6) Grande tourelle au centre (HP = 500)
   setStruct(game, midC, midR, { type: 'T', hp: 500, lastShot: 0 });
@@ -248,13 +252,24 @@ function setStruct(game, tx, ty, s) {
   if (typeof game._turretCount !== 'number') game._turretCount = 0;
 
   const prev = game.structures[ty][tx];
-  const prevIsTurret = !!(prev && (prev.type === 'T' || prev.type === 't') && prev.hp > 0);
-  const nextIsTurret = !!(s && (s.type === 'T' || s.type === 't') && s.hp > 0);
+  const prevIsTurret = !!(prev && (prev.type === 'T' || prev.type === 't' || prev.type === 'G') && prev.hp > 0);
+  const nextIsTurret = !!(s && (s.type === 'T' || s.type === 't' || s.type === 'G') && s.hp > 0);
 
   if (prevIsTurret && !nextIsTurret) game._turretCount = Math.max(0, game._turretCount - 1);
   if (!prevIsTurret && nextIsTurret) game._turretCount++;
 
-  game.structures[ty][tx] = s;
+  
+  /* COOLDOWN_ON_DESTROY */
+  if (prev && (!s || (s && s.hp<=0)) && (prev.type==='t' || prev.type==='T' || prev.type==='G')) {
+    const ownerId = prev.placedBy;
+    if (ownerId && game.players[ownerId]) {
+      const p = game.players[ownerId];
+      p.turretDestroyedAt = p.turretDestroyedAt || {};
+      p.turretDestroyedAt[prev.type] = Date.now();
+      try { io.to(ownerId).emit('turretCooldown', { type: prev.type, until: p.turretDestroyedAt[prev.type] + 60000 }); } catch(e){}
+    }
+  }
+game.structures[ty][tx] = s;
 }
 
 
@@ -291,7 +306,7 @@ function canPlaceStructureAt(game, tx, ty, buyerId) {
 function isSolidForPlayer(struct) {
   // Joueurs traversent les portes, mais PAS barricades ni tourelles (grandes ou mini)
   return struct && (
-    (struct.type === 'B' || struct.type === 'T' || struct.type === 't') && struct.hp > 0
+    (struct.type === 'B' || struct.type === 'T' || struct.type === 't' || struct.type === 'G') && struct.hp > 0
   );
 }
 
@@ -350,14 +365,14 @@ function tickTurrets(game) {
   const laserBatch = [];
   const zombiesMap = game.zombies;
 
-  outer_loop:
+  
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
-      if (!s || (s.type !== 'T' && s.type !== 't') || s.hp <= 0) continue;
+      if (!s || (s.type !== 'T' && s.type !== 't' && s.type !== 'G') || s.hp <= 0) continue;
 
       if (!s.lastShot) s.lastShot = 0;
-      const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL;
+      const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : (s.type === 'G' ? BIG_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL);
 
       if (typeof s._jitterCur !== 'number') s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
       if ((now - s.lastShot) < (interval + s._jitterCur)) continue;
@@ -405,16 +420,28 @@ function tickTurrets(game) {
       }
 
       if (!target) continue;
-      if (shotsLeft <= 0) break outer_loop;
+      if (shotsLeft <= 0) break;
 
       shotsLeft--;
       s.lastShot = now;
       s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
 
-      const dmg = (s.type === 'T') ? BULLET_DAMAGE * 2 : BULLET_DAMAGE;
+      let baseDmg = (s.type === 't') ? 10 : (s.type === 'T' ? 20 : (s.type === 'G' ? 50 : 5));
+      // Upgrades bonus per owner: sum of geometric series (+10% per level on the added amount)
+      let bonus = 0;
+      if (s.placedBy && game.players[s.placedBy]) {
+        const up = game.players[s.placedBy].turretUpgrades || {};
+        const lvl = (s.type === 't') ? (up['t']||0) : (s.type === 'T' ? (up['T']||0) : (up['G']||0));
+        if (lvl > 0) {
+          const baseAdd = (s.type === 't') ? 10 : (s.type === 'T' ? 20 : 50);
+          // sum_{i=0..lvl-1} baseAdd * 1.1^i
+          bonus = baseAdd * (Math.pow(1.1, lvl) - 1) / 0.1;
+        }
+      }
+      const dmg = Math.round(baseDmg + bonus);
       target.hp -= dmg;
 
-      laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'T') ? '#ff3b3b' : '#3aa6ff' });
+      laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'G') ? '#c9a9ff' : ((s.type === 'T') ? '#ff3b3b' : '#3aa6ff') });
 
       if (target.hp <= 0) {
         // gains propriétaire inchangés...
@@ -722,8 +749,9 @@ function findPath(game, startX, startY, endX, endY) {
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
-const TURRET_SHOOT_INTERVAL = 500;
-const MINI_TURRET_SHOOT_INTERVAL = 1000;
+const TURRET_SHOOT_INTERVAL = 1000;
+const MINI_TURRET_SHOOT_INTERVAL = 2000;
+const BIG_TURRET_SHOOT_INTERVAL = 500;
 const TURRET_RANGE = 500;
 const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
 // --- Anti-burst tourelles ---
@@ -971,14 +999,61 @@ io.on('connection', socket => {
     started: game.lobby.started,
   });
 
+// --- Turret upgrades (t/T/G) ---
+socket.on('upgradeTurret', ({ type }) => {
+  try {
+    console.log('[upgradeTurret] recv', { sid: socket.id, type });
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game) { console.log('[upgradeTurret] no game'); return; }
+    if (!['t','T','G'].includes(type)) { console.log('[upgradeTurret] invalid type', type); return; }
+    const player = game.players[socket.id];
+    if (!player) { console.log('[upgradeTurret] no player'); return; }
+    player.turretUpgrades = player.turretUpgrades || {};
+    const current = player.turretUpgrades[type] || 0;
+    const basePrice = (type === 't') ? 500 : (type === 'T' ? 2000 : 5000);
+    const growth = (type === 'G') ? 1.20 : 1.30; // G 20%, others 30%
+    const price = Math.round(basePrice * Math.pow(growth, current));
+    if ((player.money||0) < price) {
+      console.log('[upgradeTurret] not enough money', { have: player.money, need: price });
+      socket.emit('upgradeTurretResult', { ok:false, reason:'not_enough_money' });
+      return;
+    }
+    player.money -= price;
+    player.turretUpgrades[type] = current + 1;
+    console.log('[upgradeTurret] OK', { type, newLevel: player.turretUpgrades[type], newMoney: player.money });
+    socket.emit('upgradeTurretResult', { ok:true, type, level: player.turretUpgrades[type], newMoney: player.money });
+  } catch(e) {
+    console.error('[upgradeTurret] error', e);
+    socket.emit('upgradeTurretResult', { ok:false, reason:'server_error' });
+  }
+});
+
+
+
   socket.on('giveMillion', () => {
     const player = game.players[socket.id];
     if (player && player.pseudo === 'Myg') {
       player.money = 1000000;
       socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
-      socket.emit('upgradeBought', { upgId: null, newLevel: null, newMoney: player.money });
+
+// Turret upgrade handler
     }
-  });
+});
+
+
+socket.on('skipRound', () => {
+  const gameId = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gameId);
+  if (!game) return;
+  const player = game.players[socket.id];
+  if (!player || player.pseudo !== 'Myg') return;
+  game.zombies = {};
+  game._zombieCount = 0;
+  game.zombiesSpawnedThisWave = game.totalZombiesToSpawn;
+  io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
+  checkWaveEnd(game);
+});
 
   socket.on('setPseudoAndReady', (pseudo) => {
     pseudo = (pseudo || '').trim().substring(0, 15);
@@ -1060,7 +1135,7 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
   }
 
   // Validation entrée
-  if (!['T','t','B','D'].includes(type)) {
+  if (!['T','t','G','B','D'].includes(type)) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'invalid_type' });
     return;
   }
@@ -1070,7 +1145,36 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
     return;
   }
 
-  // Prix
+  
+  // Limits and cooldowns per player
+  const TURRET_LIMITS = { 't': 2, 'T': 2, 'G': 1 };
+  if (!player.turretDestroyedAt) player.turretDestroyedAt = {};
+  // Count turrets placed by this player
+  function countTurretsByType(type) {
+    let c = 0;
+    for (let y=0; y<MAP_ROWS; y++) for (let x=0; x<MAP_COLS; x++) {
+      const ss = getStruct(game, x, y);
+      if (ss && ss.type === type && ss.placedBy === socket.id && ss.hp > 0) c++;
+    }
+    return c;
+  }
+  // Enforce cooldown after destruction
+  if (type === 't' || type === 'T' || type === 'G') {
+    const lim = TURRET_LIMITS[type];
+    const cur = countTurretsByType(type);
+    // cooldown check only if currently under limit but flagged
+    const lastD = player.turretDestroyedAt[type] || 0;
+    const remaining = 60000 - (Date.now() - lastD);
+    if (remaining > 0 && cur < lim) {
+      io.to(socket.id).emit('buildResult', { ok: false, reason: 'cooldown', ms: remaining });
+      return;
+    }
+    if (cur >= lim) {
+      io.to(socket.id).emit('buildResult', { ok: false, reason: 'limit_reached' });
+      return;
+    }
+  }
+// Prix
   const price = SHOP_BUILD_PRICES[type] || 0;
   if ((player.money || 0) < price) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'not_enough_money' });
@@ -1085,10 +1189,11 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
 
   // Création structure
   let s = null;
-  if (type === 'B') s = { type: 'B', hp: 200, placedBy: socket.id };
-  if (type === 'D') s = { type: 'D', hp: 200, placedBy: socket.id };
+  if (type === 'B') s = { type: 'B', hp: 500, placedBy: socket.id };
+  if (type === 'D') s = { type: 'D', hp: 500, placedBy: socket.id };
   if (type === 'T') s = { type: 'T', hp: 500, lastShot: 0, placedBy: socket.id };
   if (type === 't') s = { type: 't', hp: 200, lastShot: 0, placedBy: socket.id };
+  if (type === 'G') s = { type: 'G', hp: 2500, lastShot: 0, placedBy: socket.id };
 
   // Débit argent
   player.money = (player.money || 0) - price;
@@ -1167,7 +1272,7 @@ socket.on('killAllZombies', () => {
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 50, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  const base = { maxHp: 100, speed: 40, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
@@ -1509,7 +1614,7 @@ function moveZombies(game, deltaTime) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
       for (let tx = 0; tx < MAP_COLS; tx++) {
         const s = getStruct(game, tx, ty);
-        if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
+        if (s && (s.type === 'T' || s.type === 't' || s.type === 'G') && s.hp > 0) {
           turretTargets.push({
             x: tx * TILE_SIZE + TILE_SIZE / 2,
             y: ty * TILE_SIZE + TILE_SIZE / 2,
@@ -1807,7 +1912,7 @@ function handleZombieAttacks(game) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
       for (let tx = 0; tx < MAP_COLS; tx++) {
         const s = getStruct(game, tx, ty);
-        if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
+        if (s && (s.type === 'T' || s.type === 't' || s.type === 'G') && s.hp > 0) {
           turretTargets.push({
             x: tx * TILE_SIZE + TILE_SIZE / 2,
             y: ty * TILE_SIZE + TILE_SIZE / 2,
@@ -1865,14 +1970,17 @@ function handleZombieAttacks(game) {
         if (now - z.lastAttackTimes[key] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
           z.lastAttackTimes[key] = now;
           const s = getStruct(game, t.tx, t.ty);
-          if (s && (s.type === 'T' || s.type === 't') && s.hp > 0) {
+          if (s && (s.type === 'T' || s.type === 't' || s.type === 'G') && s.hp > 0) {
             const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
             s.hp = Math.max(0, s.hp - DAMAGE);
             if (s.hp <= 0) {
               setStruct(game, t.tx, t.ty, null);
               structuresChanged = true;
             }
-          }
+          
+            // NEW: push live HP update for turret under attack
+            io.to('lobby' + game.id).volatile.emit('structureHP', { tx: t.tx, ty: t.ty, hp: s.hp });
+}
           // <-- gèle le zombie qui vient de frapper
           z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
@@ -1908,7 +2016,13 @@ function handleZombieAttacks(game) {
           setStruct(game, tgt.tx, tgt.ty, null);
           structuresChanged = true;
         }
-        // <-- gèle le zombie qui vient de frapper
+        
+            
+            // NEW: push live HP update for structure under attack
+            io.to('lobby' + game.id).volatile.emit('structureHP', { tx: tgt.tx, ty: tgt.ty, hp: tgt.s.hp });
+// NEW: push live HP update for structure under attack
+            io.to('lobby' + game.id).volatile.emit('structureHP', { tx: tgt.tx, ty: tgt.ty, hp: tgt.s.hp });
+// <-- gèle le zombie qui vient de frapper
         z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
         hasAttackedAny = true;
       }
@@ -1951,7 +2065,13 @@ function handleZombieAttacks(game) {
               setStruct(game, tgt.tx, tgt.ty, null);
               structuresChanged = true;
             }
-            // <-- gèle le zombie qui vient de frapper
+            
+            
+            // NEW: push live HP update for structure under attack
+            io.to('lobby' + game.id).volatile.emit('structureHP', { tx: tgt.tx, ty: tgt.ty, hp: tgt.s.hp });
+// NEW: push live HP update for structure under attack
+            io.to('lobby' + game.id).volatile.emit('structureHP', { tx: tgt.tx, ty: tgt.ty, hp: tgt.s.hp });
+// <-- gèle le zombie qui vient de frapper
             z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
             hasAttackedAny = true;
           }

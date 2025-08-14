@@ -93,10 +93,13 @@
       user-select: none;
     }
 	#shopModal {
-	  animation: shopPopIn 0.22s;
-	  backdrop-filter: blur(0.5px);
-	  -webkit-overflow-scrolling: touch; /* ← Ajout ici */
-	}
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: min(78vh, 640px);
+  overflow: hidden;
+}
+
 	#shopModal { z-index: 10010 !important; }
 	#shopModal:focus-within { outline: 2px solid #4dfc82; }
 	#shopModal::-webkit-scrollbar { width: 6px; }
@@ -109,10 +112,17 @@
 	}
 
 	#shopUpgrades {
-	  overflow-y: auto;
-	  /* prend toute la hauteur restante du panneau */
-	  max-height: 100%;
-	}
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  -webkit-overflow-scrolling: touch;
+  height:auto;
+  max-height: calc(100dvh - 180px);
+  padding-right:6px;
+}
+
+
 
 
 		
@@ -166,6 +176,7 @@
   </style>
 </head>
 <body>
+<div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
   <canvas id="gameCanvas"></canvas>
   <div id="hudStats">
     <div id="hudAlive"></div>
@@ -227,40 +238,43 @@
 
 
   <!-- Conteneur horizontal des 4 tuiles -->
-  <div id="buildTiles" style="display:flex; gap:10px;">
-<!-- Grande tourelle (avec petit carré noir central) -->
-<button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 10, Cadence: 2 tirs/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-  <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
-    <!-- Petit carré noir central -->
-    <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-  </div>
-  <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
-</button>
+  <div id="buildTiles" style="display:flex; gap:10px; flex-wrap:wrap;">
+  <!-- Grande tourelle -->
+  <button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 20, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
+      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+    </div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
+  </button>
 
+  <!-- Big-tourelle -->
+  <button class="build-tile" data-type="G" data-tip="Big-tourelle (HP: 2500, Dégâts: 50, Cadence: 2/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007; position:relative;">
+      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+    </div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$5000</div>
+  </button>
 
-<!-- Mini-tourelle (avec petit carré noir central) -->
-<button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-  <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
-    <!-- Petit carré noir central -->
-    <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-  </div>
-  <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
-</button>
+  <!-- Mini-tourelle -->
+  <button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 10, Cadence: 1 tir / 2s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
+      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+    </div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
+  </button>
 
+  <!-- Mur (barricade) -->
+  <button class="build-tile" data-type="B" data-tip="Mur (HP: 500)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
+  </button>
 
-    <!-- Mur (barricade) -->
-    <button class="build-tile" data-type="B" data-tip="Mur (HP: 200)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
-    </button>
-
-    <!-- Porte -->
-    <button class="build-tile" data-type="D" data-tip="Porte (HP: 200)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-      <div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-      <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
-    </button>
-  </div>
-
+  <!-- Porte -->
+  <button class="build-tile" data-type="D" data-tip="Porte (HP: 500)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
+  </button>
+</div>
   <!-- Tooltip hover -->
   <div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
 </div>
@@ -268,7 +282,7 @@
 
 	
 	
-	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; min-width:340px; min-height:280px; padding:32px 26px 22px 26px;">
+	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
 	  <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 	  <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
 		<img src="/icons/cart.svg" alt="Shop" style="width:30px; filter:brightness(1.2); vertical-align:middle;">
@@ -419,31 +433,45 @@
 
     // --- JEU ---
     const socket = io({ transports: ['websocket'] });
-// ---- Throttle pour moveDir (anti-flood) ----
-let lastMoveSent = { x: 0, y: 0 };
-let lastMoveEmitTs = 0;
-const MOVE_EMIT_INTERVAL_MS = 50;   // max ~20 Hz
-const MOVE_EPS = 0.02;              // tolérance de changement (évite les micros variations)
-const MOVE_HEARTBEAT_MS = 500;      // pour éviter les timeouts si on reste immobile
 
-function nearlyEqual(a, b, eps) { return Math.abs(a - b) < eps; }
 
-function emitMoveThrottled(move) {
-  const now = performance.now();
-  const changed =
-    !nearlyEqual(move.x, lastMoveSent.x, MOVE_EPS) ||
-    !nearlyEqual(move.y, lastMoveSent.y, MOVE_EPS);
 
-  const due = (now - lastMoveEmitTs) >= MOVE_EMIT_INTERVAL_MS;
-  const heartbeatDue = (now - lastMoveEmitTs) >= MOVE_HEARTBEAT_MS;
+window.socket = socket;
 
-  if ((changed && due) || heartbeatDue) {
-    socket.emit('moveDir', move);
-    lastMoveSent = { x: move.x, y: move.y };
-    lastMoveEmitTs = now;
+// === Mouvement: envoi côté serveur avec limitation de fréquence ===
+let __lastMoveEmit = 0;
+/**
+ * @param {{x:number, y:number}} move - vecteur de déplacement normalisé
+ */
+function emitMoveThrottled(move){
+  try{
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (!socket || !socket.connected) return;
+    if (now - __lastMoveEmit < 40) return; // ~25/s max
+    __lastMoveEmit = now;
+    socket.emit('moveDir', { x: move.x||0, y: move.y||0 });
+  }catch(e){
+    // évite de casser la boucle de jeu si quelque chose cloche
   }
 }
 
+
+// Listen result from turret upgrade and refresh UI/HUD
+socket.on('upgradeTurretResult', function(res){
+  
+
+  const msg = document.getElementById('turretUpgradesMsg');
+  if (res && res.ok) {
+    if (typeof myTurretUp === 'object' && res.type) { myTurretUp[res.type] = res.level || 0; }
+    if (typeof res.newMoney === 'number') { myMoney = res.newMoney; }
+    if (msg) { msg.textContent = `Upgrade ${res.type} niveau ${res.level} réussi. Argent: $${res.newMoney}`; msg.style.color = '#9f9'; }
+    if (typeof window !== 'undefined' && typeof window.refreshShop === 'function') window.refreshShop();
+    if (typeof renderShopUpgrades === 'function') renderShopUpgrades();
+    if (typeof drawHUD === 'function') drawHUD();
+  } else {
+    if (msg) { msg.textContent = (res && res.reason === 'not_enough_money') ? "Pas assez d'argent." : "Action impossible."; msg.style.color = '#f99'; }
+  }
+});
 let currentRound = 1;
 let playersHealth = {};
 let zombies = {};
@@ -463,7 +491,7 @@ const TURRET_TARGET_MAX_DIST2 = TURRET_TARGET_MAX_DIST * TURRET_TARGET_MAX_DIST;
 // Met à jour la liste plate des zombies une seule fois par frame
 function refreshZombiesFrame() {
   if (ZOMBIES_FRAME_ID !== FRAME_ID) {
-    // Array “plat” (évite Object.values(...) X fois)
+    // Array “plat” (évite Object.values() X fois)
     ZOMBIES_FRAME = [];
     for (const z of Object.values(zombies)) {
       // on peut ignorer les morts si jamais présents
@@ -538,19 +566,19 @@ socket.on('stateUpdate', (payload) => {
 
         if (typeof cell === 'object') {
           const type = cell.type;
-          let hp = (typeof cell.hp === 'number') ? cell.hp
-                  : (typeof hpFromGrid === 'number') ? hpFromGrid
-                  : (typeof previousHP === 'number') ? previousHP
-                  : (type === 'T' ? 500 : (type === 't' ? 200 : 200));
+let hp = (typeof cell.hp === 'number') ? cell.hp
+  : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+    : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+      : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
           if (hp <= 0) return null;
-          return { type, hp };
+          return { type, hp, placedBy: cell.placedBy };
         }
 
         if (typeof cell === 'string') {
           const type = cell;
-          let hp = (typeof hpFromGrid === 'number') ? hpFromGrid
-                  : (typeof previousHP === 'number') ? previousHP
-                  : (type === 'T' ? 500 : (type === 't' ? 200 : 200));
+let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+    : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+      : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
           if (hp <= 0) return null;
           return { type, hp };
         }
@@ -569,6 +597,19 @@ socket.on('stateUpdate', (payload) => {
   }
 
   drawHUD();
+  // --- FPS counter ---
+  if (!window.__fps_last) window.__fps_last = performance.now();
+  const __now = performance.now();
+  const dt = __now - window.__fps_last;
+  window.__fps_last = __now;
+  if (!window.__fps_s) { window.__fps_s = 0; window.__fps_n = 0; }
+  window.__fps_s += dt; window.__fps_n += 1;
+  if (window.__fps_s >= 500) { // update twice per second
+    const fps = Math.round(1000 / (window.__fps_s / window.__fps_n));
+    const el = document.getElementById('fpsCounter'); if (el) el.textContent = 'FPS: ' + fps;
+    window.__fps_s = 0; window.__fps_n = 0;
+  }
+
 });
 
 	
@@ -579,6 +620,7 @@ socket.on('stateUpdate', (payload) => {
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
 	let mapBuffer = null, mapBufCtx = null, mapBufW = 0, mapBufH = 0;
     const hudAlive = document.getElementById('hudAlive');
     const hudZombies = document.getElementById('hudZombies');
@@ -606,7 +648,7 @@ const UPGRADES = [
     desc: "Déplace-toi plus vite.",
     icon: "/icons/speed.svg",
     getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
-    baseValue: 50,
+    baseValue: 40,
     statLabel: "Vitesse",
     format: v => v + " px/s"
   },
@@ -1254,7 +1296,53 @@ function drawStructures() {
         ctx.fillStyle = '#000'; // Noir
         ctx.fillRect(centerX - 8, centerY - 8, 16, 16); // Dessiner un carré de 16px au centre
       }
-    }
+      else if (cell.type === 'G') {
+        ctx.fillStyle = '#b48cff';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        ctx.strokeStyle = '#2b1b3a';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+        const centerX = x + TILE_SIZE / 2;
+        const centerY = y + TILE_SIZE / 2;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(centerX - 8, centerY - 8, 16, 16);
+      }
+
+    
+      // --- Health bar for structures (walls/doors/turrets) ---
+      let hp = 0, maxHp = 0;
+      // Prefer object hp if >0, else grid hp >0, else previousHP >0, else default by type
+      let rowArr = (typeof structHPGrid !== 'undefined' && Array.isArray(structHPGrid) && Array.isArray(structHPGrid[row])) ? structHPGrid[row] : null;
+let hpFromGrid = (rowArr && typeof rowArr[col] === 'number') ? rowArr[col] : undefined;
+let prevRowArr = (typeof structPrevHPGrid !== 'undefined' && Array.isArray(structPrevHPGrid) && Array.isArray(structPrevHPGrid[row])) ? structPrevHPGrid[row] : null;
+let previousHP = (prevRowArr && typeof prevRowArr[col] === 'number') ? prevRowArr[col] : undefined;
+      const defaultByType = (cell && cell.type)
+        ? ((cell.type === 'B' || cell.type === 'D') ? 500 : (cell.type === 'T' ? 500 : (cell.type === 't' ? 200 : (cell.type === 'G' ? 2500 : 200))))
+        : 0;
+      if (cell && typeof cell.hp === 'number' && cell.hp > 0) hp = cell.hp;
+      else if (typeof hpFromGrid === 'number' && hpFromGrid > 0) hp = hpFromGrid;
+      else if (typeof previousHP === 'number' && previousHP > 0) hp = previousHP;
+      else hp = defaultByType;
+      // If no explicit cell.hp and no previous positive HP and grid HP < default, assume brand new => full default
+      if (!(cell && typeof cell.hp === 'number' && cell.hp > 0) &&
+          !(typeof previousHP === 'number' && previousHP > 0) &&
+          (typeof hpFromGrid !== 'number' || hpFromGrid < defaultByType)) {
+        hp = defaultByType;
+      }
+      maxHp = (cell && cell.type)
+        ? ((cell.type === 'B' || cell.type === 'D') ? 500 : (cell.type === 'T' ? 500 : (cell.type === 't' ? 200 : (cell.type === 'G' ? 2500 : 0))))
+        : 0;
+      // Clamp: if hp non-positive (first frame after placement), show full bar
+      if (hp <= 0 && maxHp > 0) hp = maxHp;
+      if (maxHp > 0) {
+        const ratio = Math.max(0, Math.min(1, hp / maxHp));
+        const bw = TILE_SIZE - 8, bh = 5;
+        ctx.fillStyle = '#000a';
+        ctx.fillRect(x + 4, y - 8, bw, bh);
+        ctx.fillStyle = ratio > 0.6 ? '#3f3' : (ratio > 0.3 ? '#fc3' : '#f33');
+        ctx.fillRect(x + 4, y - 8, bw * ratio, bh);
+      }
+}
   }
 }
 
@@ -1334,35 +1422,38 @@ function drawZombies() {
 function drawBullets() {
   const viewW = canvas.width / renderScale;
   const viewH = canvas.height / renderScale;
-
-  // marge pour éviter pop-in/out
   const M = 40;
   const minX = cameraX - M, maxX = cameraX + viewW + M;
   const minY = cameraY - M, maxY = cameraY + viewH + M;
 
+  ctx.save();
+  ctx.lineWidth = 3;
+
+  // Two batches: mine vs others to minimize state changes
+  ctx.strokeStyle = 'yellow';
+  ctx.beginPath();
   for (const id in bullets) {
     const b = bullets[id];
-    // culling rapide
+    if (b.owner !== myId) continue;
     if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
-    ctx.lineWidth = 3;
     ctx.moveTo(b.x - cameraX, b.y - cameraY);
-    ctx.lineTo(
-      b.x - cameraX - b.dx * 8,
-      b.y - cameraY - b.dy * 8
-    );
-    ctx.stroke();
-    ctx.restore();
+    ctx.lineTo(b.x - cameraX - b.dx * 8, b.y - cameraY - b.dy * 8);
   }
-}
+  ctx.stroke();
 
+  ctx.strokeStyle = '#ff0';
+  ctx.beginPath();
+  for (const id in bullets) {
+    const b = bullets[id];
+    if (b.owner === myId) continue;
+    if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+    ctx.moveTo(b.x - cameraX, b.y - cameraY);
+    ctx.lineTo(b.x - cameraX - b.dx * 8, b.y - cameraY - b.dy * 8);
+  }
+  ctx.stroke();
 
-
-
-function drawTurretLasers() {
+  ctx.restore();
+}function drawTurretLasers() {
   if (!turretLasers.length) return;
 
   const now = performance.now();
@@ -1817,6 +1908,7 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
   // ↘️ on attend l’ACK du serveur pour savoir si on sort du mode placement
   try {
     socket.emit('buyStructure', payload, (ack) => {
+      if (ack && ack.type && ack.type === 'T_big') { if (structures) { let t = structures.find(s=>s && s.type==='T_big'); if (t) t.hp = t.maxHP||t.hp; } }
       console.debug('[ack] buyStructure', ack);
       if (ack && ack.ok) {
         // succès confirmé → sortir du mode placement
@@ -1922,8 +2014,11 @@ function gameLoop(timestamp = 0) {
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
       lobbyData = {
-        ...data,
-        players: {...data.players}
+        started: !!data.started,
+        count: Number(data.count)||0,
+        max: Number(data.max)||0,
+        timeLeft: Number(data.timeLeft)||0,
+        players: data.players || {}
       };
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
@@ -1971,7 +2066,7 @@ function gameLoop(timestamp = 0) {
       setTimeout(()=>{ gameLoop(); }, 400);
 	  structures = data.structures || null;
 	if (data.structurePrices) {
-	  STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...data.structurePrices };
+	  STRUCTURE_PRICES = data.structurePrices;
 	}
 	updateBuildTilesState(); // rafraîchir les étiquettes + disabled
     });
@@ -1987,7 +2082,42 @@ socket.on('waveStarted', ({ totalZombies }) => {
 // --- MISE À JOUR DES STRUCTURES PAR LE SERVEUR ---
 // Reçoit une grille 2D (chaque case = null ou { type, hp } ou juste "type")
 socket.on('structuresUpdate', (grid) => {
-  structures = grid;
+  // Normalise la grille reçue pour garantir des HP corrects
+  if (!grid || !grid.length) { structures = grid; return; }
+  const rows = grid.length;
+  const cols = grid[0]?.length || 0;
+  const newGrid = Array.from({ length: rows }, (_, y) =>
+    Array.from({ length: cols }, (_, x) => {
+      const cell = grid[y][x];
+      if (!cell || cell === 0) return null;
+
+      // HP depuis structHPGrid (si dispo) sinon HP précédent sinon valeur par défaut selon type
+      const hpFromGrid = structHPGrid?.[y]?.[x];
+      const previousHP = structures?.[y]?.[x]?.hp;
+
+      if (typeof cell === 'object') {
+          const type = cell.type;
+let hp = (typeof cell.hp === 'number') ? cell.hp
+          : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+            : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+              : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
+        if (hp <= 0) return null;
+          return { type, hp, placedBy: cell.placedBy };
+        }
+
+      if (typeof cell === 'string') {
+        const type = cell;
+        let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+          : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+            : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
+        if (hp <= 0) return null;
+        return { type, hp };
+      }
+
+      return null;
+    })
+  );
+  structures = newGrid;
 
   // seed/rafraîchir structHPGrid si la grille contient des hp
   if (!structHPGrid) structHPGrid = [];
@@ -2067,7 +2197,7 @@ socket.on('zombieDied', () => {
 
 
 socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
-  if (u) myUpgrades = { ...myUpgrades, ...u };
+  if (u) myUpgrades = u;
   if (typeof m === 'number') myMoney = m;
   renderShopUpgrades();
   drawHUD();
@@ -2147,7 +2277,7 @@ if (autoBtn) {
 const buildBar = document.getElementById('buildBar');
 const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
 const buildTooltip = document.getElementById('buildTooltip');
-let STRUCTURE_PRICES = { T: 1000, t: 250, B: 100, D: 200 };
+let STRUCTURE_PRICES = { T: 1000, t: 250, G: 5000, B: 100, D: 200 };
 
 // Hover → tooltip
 buildTiles.forEach(btn => {
@@ -2177,13 +2307,13 @@ buildTiles.forEach(btn => {
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
-      try { console.log(`[build] Mode placement annulé pour '${type}'.`); } catch {}
+      
       return;
     }
 
     // Sinon, on entre en mode placement pour ce type
     buildMode = type;
-    try { console.log(`[build] Mode placement pour '${type}'. Clique/tape une case vide.`); } catch {}
+    
   });
 });
 
@@ -2348,7 +2478,7 @@ socket.on('buildResult', (payload) => {
     myMoney = newMoney;
   }
   if (structurePrices) {
-    STRUCTURE_PRICES = { ...STRUCTURE_PRICES, ...structurePrices };
+    STRUCTURE_PRICES = { STRUCTURE_PRICES, structurePrices };
   }
 
   // Rafraîchir l’UI
@@ -2370,10 +2500,7 @@ socket.on('buildResult', (payload) => {
     return;
   }
 
-  // ✅ Succès : on pose localement la structure pour l'afficher tout de suite
-  console.log(`[buildResult] OK: posé '${type}' en ${tx},${ty}`);
-
-  // S'assure que la grille existe
+  // ✅ Succès : on pose localement la structure pour l'afficher tout de suite// S'assure que la grille existe
   if (!structures) {
     structures = Array.from({ length: MAP_ROWS }, () => Array(MAP_COLS).fill(null));
   } else if (!structures[ty]) {
@@ -2381,11 +2508,11 @@ socket.on('buildResult', (payload) => {
   }
 
   // HP par défaut si non fourni par le serveur
-  const defaultHp = (type === 'T') ? 500 : (type === 't' ? 200 : 200);
+  const defaultHp = (type === 'T') ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200)));
   const hp = (typeof hpFromServer === 'number') ? hpFromServer : defaultHp;
 
   // Place localement
-  structures[ty][tx] = { type, hp };
+  structures[ty][tx] = { type, hp, placedBy: myId };
   
  // Maintenir aussi la grille HP si on l'utilise
 if (structHPGrid) {
@@ -2419,13 +2546,40 @@ function updateBuildTilesState() {
 
     // maj de l’étiquette sous la tuile (2e div)
     const priceLabel = btn.querySelector('div:nth-child(2)');
-    if (priceLabel) priceLabel.textContent = `$${price}`;
+    if (priceLabel) {
+      let label = `$${price}`;
+      if (type==='t'||type==='T'||type==='G') {
+        const limits = { t:2, T:2, G:1 };
+        let count=0;
+        if (structures) {
+          for (let r=0;r<structures.length;r++) for (let c=0;c<structures[r].length;c++){
+            const sc = structures[r][c];
+            if (sc && sc.type===type && sc.hp>0 && sc.placedBy===myId) count++;
+          }
+        }
+        label += ` • ${count}/${limits[type]}`;
+      }
+      priceLabel.textContent = label;
+    }
 
     // état “achetable”
     const afford = myMoney >= price;
     btn.style.opacity = afford ? '1' : '0.55';
     btn.style.cursor  = afford ? 'pointer' : 'not-allowed';
     btn.disabled = !afford;
+    // enforce per-type max counts per player
+    if (type==='t' || type==='T' || type==='G') {
+      const limits = { 't': 2, 'T': 2, 'G': 1 };
+      let count=0;
+      if (structures) {
+        for (let r=0;r<structures.length;r++) for (let c=0;c<structures[r].length;c++) {
+          const sc = structures[r][c];
+          if (sc && sc.type===type && sc.hp>0 && sc.placedBy===myId) count++;
+        }
+      }
+      if (count>=limits[type]) { btn.disabled=true; btn.style.opacity='0.5'; btn.style.cursor='not-allowed'; }
+    }
+
   });
 }
 
@@ -2433,21 +2587,97 @@ function updateBuildTilesState() {
 
 
 const PRICE_TIERS = [10, 25, 50, 75, 100];
-const PRICE_STEP_AFTER_TIER = 50;
+const PRICE_STEP_AFTER_TIER = 75;
 function getUpgradePrice(nextLevel) {
   if (nextLevel <= PRICE_TIERS.length) return PRICE_TIERS[nextLevel - 1];
-  return PRICE_TIERS[PRICE_TIERS.length - 1] + (nextLevel - PRICE_TIERS.length) * PRICE_STEP_AFTER_TIER;
+  if (nextLevel <= 7) return PRICE_TIERS[PRICE_TIERS.length - 1] + (nextLevel - PRICE_TIERS.length) * PRICE_STEP_AFTER_TIER;
+  const priceAt7 = PRICE_TIERS[PRICE_TIERS.length - 1] + (7 - PRICE_TIERS.length) * PRICE_STEP_AFTER_TIER;
+  const k = nextLevel - 7;
+  return Math.round(priceAt7 * Math.pow(1.2, k));
 }
 
 function renderShopUpgrades() {
+  if (!window.myTurretUp || typeof myTurretUp !== 'object') { window.myTurretUp = {}; }
   const el = document.getElementById('shopUpgrades');
   el.innerHTML = "";
+
+  // Event delegation for turret upgrade buttons (survives innerHTML changes)
+  try {
+    if (!el._turretDelegation) {
+      el.addEventListener('click', (ev) => {
+        const btn = ev.target.closest && ev.target.closest('.btn-turret-up');
+        if (!btn) return;
+        const type = btn.getAttribute('data-type');
+        if (btn.hasAttribute('disabled')) {return;
+        }
+        
+        socket.emit('upgradeTurret', { type });
+      });
+      el._turretDelegation = true;}
+  } catch(e) { console.error('[UI] turret delegation error', e); }
+
+
+  // --- Upgrades Tourelles (3 slots, même design) ---
+  const turretDefs = [
+      
+    { type:'G', name:'Big-tourelle +Dégâts',  color:'#b48cff', border:'#2b1b3a', basePrice:5000, scale:1.2 },
+    { type:'T', name:'Tourelle +Dégâts',      color:'#ff3b3b', border:'#2b0b0b', basePrice:2000, scale:1.3 },
+    { type:'t', name:'Mini-tourelle +Dégâts', color:'#3aa6ff', border:'#0b2436', basePrice:500,  scale:1.3 }
+  
+
+  ];
+  try { turretDefs.forEach(td => {
+    const lvl = (myTurretUp && (myTurretUp[td.type]||0)) || 0;
+    const next = lvl + 1;
+    const price = Math.round(td.basePrice * Math.pow(td.scale, lvl));
+    const dmgNow = computeTurretDamageDisplay(td.type);
+    // simulate next damage (preview)
+    const tmp = (myTurretUp && myTurretUp[td.type]) || 0;
+    myTurretUp[td.type] = (myTurretUp[td.type]||0) + 1;
+    const dmgNext = computeTurretDamageDisplay(td.type);
+    myTurretUp[td.type] = tmp;
+
+    const disabled = myMoney < price;
+    
+
+    el.innerHTML += `
+      <div class="shop-upg-item" style="display:flex; align-items:center; gap:14px; margin:10px 0; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
+        <div style="width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:2px solid ${td.border}; background:${td.color}22;">
+          <div style="width:18px; height:18px; background:${td.color}; border:2px solid ${td.border}; border-radius:3px;"></div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:18px;"><b>${td.name}</b></div>
+          <div style="color:#9ab; font-size:13px;">Améliore les dégâts des tourelles ${td.type==='t'?'mini':td.type==='T'?'normales':'big'}.</div>
+          <div style="margin-top:6px; color:#9f9; font-size:14px;">Dégâts : <b>${dmgNow}</b> → <b>${dmgNext}</b></div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+          <div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
+          <button class="btn-turret-up" data-type="${td.type}" style="min-width:64px; padding:8px 10px; border-radius:10px; border:none; background:${disabled ? '#444' : '#393'}; color:#fff; cursor:${disabled?'not-allowed':'pointer'}; opacity:${disabled?'0.5':'1'};">
+            +1<br>$${price}
+          </button>
+        </div>
+      </div>`;
+  });
+
+  // Re-bind achat upgrades tourelles (après TOUT le contenu est inséré)
+  try {
+    const turretBtns = el.querySelectorAll('.btn-turret-up');turretBtns.forEach(btn => {
+      const type = btn.getAttribute('data-type');
+      btn.onclick = () => {  socket.emit('upgradeTurret', { type }); };
+    });
+  } catch(e) { console.error('[UI] late-bind turret error', e); }
+
+} catch(e) { console.error('[UI] renderShopUpgrades turret section error', e); }
+
+
+  // --- Upgrades joueur (les 5 existants) ---
   UPGRADES.forEach(upg => {
-    const lvl = myUpgrades[upg.id] || 0;                 // <-- définis d’abord
-    const price = getUpgradePrice(lvl + 1);              // <-- prix synchro serveur
+    const lvl = myUpgrades[upg.id] || 0;
+    const price = getUpgradePrice(lvl + 1);
     const value = upg.getValue(upg.baseValue, lvl);
     const nextValue = upg.getValue(upg.baseValue, lvl + 1);
     const disabled = myMoney < price;
+    
 
     el.innerHTML += `
       <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
@@ -2459,18 +2689,17 @@ function renderShopUpgrades() {
             <span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${upg.format(nextValue)}</span>
           </div>
         </div>
-        <div style="background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;min-width:30px;text-align:center;padding:2px 0 1px 0;margin-right:10px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">
-          <span style="font-size:15px;">${lvl}</span>
-        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:8px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
         <button
           style="font-size:16px;background:${disabled ? '#444' : '#393'};color:#fff;border:none;border-radius:7px;padding:7px 18px;box-shadow:0 2px 8px #0004;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? '0.5' : '1'};margin-left:8px;transition: background 0.16s;"
-          data-upgid="${upg.id}" ${disabled?'disabled':''}>
+          data-upgid="${upg.id}" ${disabled?'disabled':''} ${disabled ? "disabled" : ""}>
           +1<br>$${price}
-        </button>
+        </button></div>
       </div>
     `;
   });
 
+  // Bind achat upgrades joueur
   el.querySelectorAll('button[data-upgid]').forEach(btn => {
     const upgId = btn.getAttribute('data-upgid');
     btn.onclick = () => socket.emit('upgradeBuy', { upgId });
@@ -2505,6 +2734,9 @@ function renderShopUpgrades() {
       }
       if (e.key.toLowerCase() === 'o' && myPseudo === 'Myg') {
         socket.emit('giveMillion');
+      }
+      if (e.key.toLowerCase() === 'm' && myPseudo === 'Myg') {
+        socket.emit('skipRound');
       }
     });
 	
@@ -2607,6 +2839,81 @@ function applyBuildUICollapse() {
   
 
 
+
+
+<script>
+/* SWAP_G_T_IN_BUILD */
+document.addEventListener('DOMContentLoaded', function(){
+  const cont = document.getElementById('buildTiles');
+  if (!cont) return;
+  const g = cont.querySelector('.build-tile[data-type="G"]');
+  const t = cont.querySelector('.build-tile[data-type="T"]');
+  if (g && t && g.nextElementSibling !== t) {
+    cont.insertBefore(g, t);
+  }
+});
+</script>
+
+
+<script>
+/* TURRET_UPGRADE_CLIENT */
+let myTurretUp = { t:0, T:0, G:0 };
+function turretUpgradeBaseAdd(type){ return type==='t'?10: (type==='T'?20:50); }
+function turretBaseDamage(type){ return type==='t'?10: (type==='T'?20:50); }
+function turretBonusFromLevels(type, lvl){
+  const a = turretUpgradeBaseAdd(type);
+  if (lvl<=0) return 0;
+  return a * (Math.pow(1.1, lvl) - 1) / 0.1;
+}
+function computeTurretDamageDisplay(type){
+  const base = turretBaseDamage(type);
+  const bonus = turretBonusFromLevels(type, myTurretUp[type]||0);
+  return Math.round(base + bonus);
+}
+
+// Cooldown display
+const turretCooldownUntil = { t:0, T:0, G:0 };
+socket.on('turretCooldown', (p)=>{
+  if (!p || !p.type) return;
+  turretCooldownUntil[p.type] = p.until || 0;
+});
+// Tooltip damage update
+const buildTilesCont = document.getElementById('buildTiles');
+if (buildTilesCont){
+  buildTilesCont.querySelectorAll('.build-tile').forEach(btn=>{
+    btn.addEventListener('mouseenter', ()=>{
+      const type = btn.getAttribute('data-type');
+      const tip0 = btn.getAttribute('data-tip') || '';
+      if (['t','T','G'].includes(type)){
+        const dmg = computeTurretDamageDisplay(type);
+        const tip = tip0.replace(/Dégâts:\s*\d+/, 'Dégâts: '+dmg);
+        const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
+      }
+    }, {passive:true});
+  });
+}
+setInterval(()=>{
+  document.querySelectorAll('#buildTiles .build-tile').forEach(btn=>{
+    const type = btn.getAttribute('data-type');
+    const priceLabel = btn.querySelector('div:nth-child(2)');
+    let cd = btn.querySelector('.cd-label');
+    if (!cd){
+      cd = document.createElement('div');
+      cd.className = 'cd-label';
+      cd.style.fontSize = '11px';
+      cd.style.color = '#ff9';
+      cd.style.marginTop = '2px';
+      btn.appendChild(cd);
+    }
+    if (['t','T','G'].includes(type)){
+      const rem = Math.max(0, turretCooldownUntil[type] - Date.now());
+      cd.textContent = rem>0 ? (Math.ceil(rem/1000)+'s') : '';
+    } else {
+      cd.textContent = '';
+    }
+  });
+}, 500);
+</script>
 
 </body>
 </html>
