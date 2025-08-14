@@ -620,7 +620,6 @@ let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-ctx.imageSmoothingEnabled = false;
 	let mapBuffer = null, mapBufCtx = null, mapBufW = 0, mapBufH = 0;
     const hudAlive = document.getElementById('hudAlive');
     const hudZombies = document.getElementById('hudZombies');
@@ -1422,38 +1421,35 @@ function drawZombies() {
 function drawBullets() {
   const viewW = canvas.width / renderScale;
   const viewH = canvas.height / renderScale;
+
+  // marge pour éviter pop-in/out
   const M = 40;
   const minX = cameraX - M, maxX = cameraX + viewW + M;
   const minY = cameraY - M, maxY = cameraY + viewH + M;
 
-  ctx.save();
-  ctx.lineWidth = 3;
-
-  // Two batches: mine vs others to minimize state changes
-  ctx.strokeStyle = 'yellow';
-  ctx.beginPath();
   for (const id in bullets) {
     const b = bullets[id];
-    if (b.owner !== myId) continue;
+    // culling rapide
     if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
-    ctx.moveTo(b.x - cameraX, b.y - cameraY);
-    ctx.lineTo(b.x - cameraX - b.dx * 8, b.y - cameraY - b.dy * 8);
-  }
-  ctx.stroke();
 
-  ctx.strokeStyle = '#ff0';
-  ctx.beginPath();
-  for (const id in bullets) {
-    const b = bullets[id];
-    if (b.owner === myId) continue;
-    if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
+    ctx.lineWidth = 3;
     ctx.moveTo(b.x - cameraX, b.y - cameraY);
-    ctx.lineTo(b.x - cameraX - b.dx * 8, b.y - cameraY - b.dy * 8);
+    ctx.lineTo(
+      b.x - cameraX - b.dx * 8,
+      b.y - cameraY - b.dy * 8
+    );
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.stroke();
+}
 
-  ctx.restore();
-}function drawTurretLasers() {
+
+
+
+function drawTurretLasers() {
   if (!turretLasers.length) return;
 
   const now = performance.now();

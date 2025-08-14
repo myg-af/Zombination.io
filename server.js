@@ -365,7 +365,7 @@ function tickTurrets(game) {
   const laserBatch = [];
   const zombiesMap = game.zombies;
 
-  
+  outer_loop:
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
@@ -420,7 +420,7 @@ function tickTurrets(game) {
       }
 
       if (!target) continue;
-      if (shotsLeft <= 0) break;
+      if (shotsLeft <= 0) break outer_loop;
 
       shotsLeft--;
       s.lastShot = now;
