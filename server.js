@@ -661,6 +661,11 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       money: 0,
       upgrades: { maxHp: 0, speed: 0, regen: 0, damage: 0, goldGain: 0 },
       maxHealth: 100,
+    
+      spectator: false,
+      viewX: null,
+      viewY: null,
+      _lastSpectateMoveAt: 0,
     };
 
     const stats = getPlayerStats(game.players[sid]);
@@ -1263,7 +1268,9 @@ socket.on('shoot', (data) => {
 socket.on('requestZombies', () => {
   const p = game.players[socket.id];
   if (!p) return;
-  const zSnap = getZombiesFiltered(game, p.x || 0, p.y || 0, SERVER_VIEW_RADIUS);
+  const cx_req = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
+  const cy_req = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
+  const zSnap = getZombiesFiltered(game, cx_req, cy_req, SERVER_VIEW_RADIUS);
   io.to(socket.id).emit('zombiesUpdate', zSnap);
 });
 
@@ -1274,6 +1281,48 @@ socket.on('requestZombies', () => {
       io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
     }
   });
+  // Enter spectator mode (keeps socket alive and continues receiving updates)
+  socket.on('enterSpectator', () => {
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game) return;
+    const p = game.players[socket.id];
+    if (!p) return;
+    // Only possible if game still running and player exists
+    if (!game.lobby.started) return;
+    p.spectator = true;
+    p.viewX = (p.x || 0);
+    p.viewY = (p.y || 0);
+    p._lastSpectateMoveAt = Date.now();
+  });
+
+  // Spectator movement: WASD/Arrows at 500 px/s, clamped to map bounds
+  socket.on('spectatorMove', (dir) => {
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game) return;
+    const p = game.players[socket.id];
+    if (!p || !p.spectator) return;
+    const now = Date.now();
+    const dt = Math.min(0.25, Math.max(0, (now - (p._lastSpectateMoveAt || now)) / 1000));
+    p._lastSpectateMoveAt = now;
+    const speed = 500; // px/sec
+    let dx = (dir && typeof dir.x === 'number') ? dir.x : 0;
+    let dy = (dir && typeof dir.y === 'number') ? dir.y : 0;
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-6) { dx /= len; dy /= len; }
+    p.viewX = (p.viewX == null ? (p.x || 0) : p.viewX) + dx * speed * dt;
+    p.viewY = (p.viewY == null ? (p.y || 0) : p.viewY) + dy * speed * dt;
+    // Clamp to world bounds
+    const worldW = MAP_COLS * TILE_SIZE;
+    const worldH = MAP_ROWS * TILE_SIZE;
+    if (p.viewX < 0) p.viewX = 0;
+    if (p.viewY < 0) p.viewY = 0;
+    if (p.viewX > worldW) p.viewX = worldW;
+    if (p.viewY > worldH) p.viewY = worldH;
+  });
+
+
 
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
 socket.on('killAllZombies', () => {
@@ -2247,8 +2296,8 @@ function stepOnce(dt) {
         const p = game.players[sid];
         if (!p) continue;
 
-        const cx = p.x || 0;
-        const cy = p.y || 0;
+        const cx = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
+          const cy = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
 
         const zSnap  = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
