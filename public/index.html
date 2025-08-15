@@ -177,6 +177,7 @@
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
+  <div id="devPerfPanel" style="position:fixed;left:8px;top:30px;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:10000;display:none;max-width:44vw;pointer-events:none;white-space:pre;line-height:1.2"></div>
   <canvas id="gameCanvas"></canvas>
   <div id="hudStats">
     <div id="hudAlive"></div>
@@ -295,8 +296,22 @@
 	</div>
   <div id="versionBox">Version 1.0.0 par Myg</div>
   <div id="waveMessage"></div>
-  <script src="/translations.js"></script>
   <script src="/socket.io/socket.io.js"></script>
+<script>
+// === Global orientation caches ===
+window.prevPlayerPos = {};
+window.lastPlayerAngle = {};
+window.prevZombiePos = {};
+window.lastZombieAngle = {};
+
+const socket = io({ transports: ['websocket'] });
+</script>
+
+<script src="/translations.js"></script>
+<script>
+  if (typeof TRANSLATIONS === "undefined") { window.TRANSLATIONS = { fr: {}, en: {} }; }
+</script>
+  
   
   
     <!-- === Mobile Build Buttons === -->
@@ -359,7 +374,24 @@
 
 
 
-  window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+  
+  // === Early globals for sprites & orientation ===
+  // Provide globals before any game loop starts to avoid TDZ issues
+  window.recentShootDir = window.recentShootDir || new Map();
+  // Default sprite base rotation: images face DOWN; we need RIGHT at angle 0 => -90deg
+  const SHOOT_DIR_TTL_MS = 650; // keep facing target between bullets (<=500ms gap)
+  window.SPRITE_BASE_ROT = (typeof window.SPRITE_BASE_ROT === 'number') ? window.SPRITE_BASE_ROT : -Math.PI/2;
+  const recentShootDir = window.recentShootDir;
+
+  if (typeof window.playerImg === 'undefined') {
+    window.playerImg = new Image();
+    window.playerImg.src = '/stv.png';
+  }
+  if (typeof window.zombieImg === 'undefined') {
+    window.zombieImg = new Image();
+    window.zombieImg.src = '/zm.png';
+  }
+window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
     // --- LANG/LOBBY ---
     const LANGS = [
       { code: 'en', flag: 'gb.png', label: 'English' },
@@ -432,7 +464,11 @@
     renderLangFlags(); initLobbyTexts();
 
     // --- JEU ---
-    const socket = io({ transports: ['websocket'] });
+    
+
+
+
+
 
 
 
@@ -620,6 +656,12 @@ let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
+
+
+
+// Shots direction cache (owner -> recent aim)
+// recentShootDir is provided globally earlier
+
 	let mapBuffer = null, mapBufCtx = null, mapBufW = 0, mapBufH = 0;
     const hudAlive = document.getElementById('hudAlive');
     const hudZombies = document.getElementById('hudZombies');
@@ -1347,68 +1389,125 @@ let previousHP = (prevRowArr && typeof prevRowArr[col] === 'number') ? prevRowAr
 
 
 
-	function drawPlayers() {
+	
+function drawPlayers() {
   const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
   const vx = me ? me.x : 0;
   const vy = me ? me.y : 0;
   const VIEW_MARGIN = 8;
   const R2 = (CLIENT_VIEW_RADIUS - VIEW_MARGIN) * (CLIENT_VIEW_RADIUS - VIEW_MARGIN);
 
-	  for (const id in playersHealth) {
-		const p = playersHealth[id];
-		if (!p.alive) continue;
-		
-        if (id !== myId) {
-          const dx = p.x - vx;
-          const dy = p.y - vy;
-          if (dx*dx + dy*dy > R2) continue; // hors halo: ne pas afficher
+  for (const id in playersHealth) {
+    const p = playersHealth[id];
+    if (!p || !p.alive) continue;
+
+    // Culling autour du joueur local
+    if (id !== myId) {
+      const dxv = p.x - vx, dyv = p.y - vy;
+      if (dxv*dxv + dyv*dyv > R2) continue;
+    }
+
+    const screenX = p.x - cameraX;
+    const screenY = p.y - cameraY;
+
+    // --- Angle de visée prioritaire si le joueur vient de tirer
+    let angle = 0;
+    const nowPerf = (typeof performance!=='undefined' && performance.now)?performance.now():Date.now();
+    /* keep facing while holding fire */
+    if (myId && playersHealth[myId] && mouseDown) {
+      const angHold = Math.atan2(aimDir.y, aimDir.x);
+      recentShootDir.set(myId, { ang: angHold, t: nowPerf });
+    }
+
+    const recent = recentShootDir.get(id);
+    if (recent && (nowPerf - recent.t) < (window.SHOOT_DIR_TTL_MS || SHOOT_DIR_TTL_MS)) {
+      angle = recent.ang;
+    } else {
+      // Sinon, angle de déplacement (avec mémoire si à l'arrêt)
+      const prev = prevPlayerPos[id];
+      if (prev) {
+        const dx = p.x - prev.x, dy = p.y - prev.y;
+        const sp2 = dx*dx + dy*dy;
+        if (sp2 > 0.01) {
+          angle = Math.atan2(dy, dx);
+          lastPlayerAngle[id] = angle;
+        } else {
+          angle = (lastPlayerAngle[id] !== undefined) ? lastPlayerAngle[id] : 0;
         }
-const screenX = p.x - cameraX;
-		const screenY = p.y - cameraY;
-		ctx.beginPath();
-		ctx.fillStyle = (id === myId) ? 'lime' : '#cfc';
-		ctx.arc(screenX, screenY, PLAYER_RADIUS, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.font = "bold 17px Arial";
-		ctx.textAlign = "center";
-		ctx.fillStyle = "#aad8ff";
-		ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
-		// <-- largeur fixe 30 pour joueur
-		drawHealthBar(
-		  screenX,
-		  screenY - PLAYER_RADIUS - 13,
-		  p.health,
-		  p.maxHealth || 100,
-		  30
-		);
+      } else {
+        angle = (lastPlayerAngle[id] !== undefined) ? lastPlayerAngle[id] : 0;
       }
-	}
+    }
+    prevPlayerPos[id] = { x: p.x, y: p.y };
+
+    // Dessin sprite joueur
+    const size = PLAYER_RADIUS * 2 * 2; // un peu plus grand que le cercle
+    const half = size / 2;
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.rotate(angle + (window.SPRITE_BASE_ROT||0));
+    ctx.drawImage(playerImg, -half, -half, size, size);
+    ctx.restore();
+
+    // Pseudo + barre de vie (inchangé)
+    ctx.font = "bold 17px Arial";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#aad8ff";
+    ctx.fillText(p.pseudo || "Joueur", screenX, screenY - PLAYER_RADIUS - 22);
+    drawHealthBar(
+      screenX,
+      screenY - PLAYER_RADIUS - 13,
+      p.health,
+      p.maxHealth || 100,
+      30
+    );
+  }
+}
 	
 	
+
 function drawZombies() {
   if (!myId || !playersHealth[myId]) return;
   const me = playersHealth[myId];
-  const vx = me.x;
-  const vy = me.y;
+  const vx = me.x, vy = me.y;
 
-  // Petite marge pour éviter le "clignotement" sur le bord du cercle
   const VIEW_MARGIN = 8;
   const R2 = (CLIENT_VIEW_RADIUS - VIEW_MARGIN) * (CLIENT_VIEW_RADIUS - VIEW_MARGIN);
 
   for (const id in zombies) {
     const z = zombies[id];
+    if (!z || z.hp <= 0) continue;
 
-    // ❌ N’AFFICHE PAS les zombies au-delà de la zone visible
-    const dx = z.x - vx;
-    const dy = z.y - vy;
-    if ((dx * dx + dy * dy) > R2) continue;
+    const dxv = z.x - vx, dyv = z.y - vy;
+    if ((dxv*dxv + dyv*dyv) > R2) continue;
 
     const screenX = z.x - cameraX;
     const screenY = z.y - cameraY;
-    ctx.beginPath();
-    ctx.fillStyle = 'red';
-    ctx.arc(screenX, screenY, ZOMBIE_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+
+    // Angle basé sur déplacement avec mémoire
+    let angle = 0;
+    const prev = prevZombiePos[id];
+    if (prev) {
+      const dx = z.x - prev.x, dy = z.y - prev.y;
+      const sp2 = dx*dx + dy*dy;
+      if (sp2 > 0.01) {
+        angle = Math.atan2(dy, dx);
+        lastZombieAngle[id] = angle;
+      } else {
+        angle = (lastZombieAngle[id] !== undefined) ? lastZombieAngle[id] : 0;
+      }
+    } else {
+      angle = (lastZombieAngle[id] !== undefined) ? lastZombieAngle[id] : 0;
+    }
+    prevZombiePos[id] = { x: z.x, y: z.y };
+
+    const size = ZOMBIE_RADIUS * 2 * 2;
+    const half = size / 2;
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.rotate(angle + (window.SPRITE_BASE_ROT||0));
+    ctx.drawImage(zombieImg, -half, -half, size, size);
+    ctx.restore();
 
     // Barre de vie
     drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
@@ -1417,8 +1516,8 @@ function drawZombies() {
 
 
 
-
 function drawBullets() {
+  const nowPerf = (typeof performance!=='undefined' && performance.now)?performance.now():Date.now();
   const viewW = canvas.width / renderScale;
   const viewH = canvas.height / renderScale;
 
@@ -1443,6 +1542,12 @@ function drawBullets() {
     );
     ctx.stroke();
     ctx.restore();
+
+    // Memorize last shooting direction per owner (used to orient sprites while shooting)
+    if (b && typeof b.dx === 'number' && typeof b.dy === 'number' && b.owner) {
+      const ang = Math.atan2(b.dy, b.dx);
+      recentShootDir.set(b.owner, { ang, t: nowPerf });
+    }
   }
 }
 
@@ -2909,6 +3014,431 @@ setInterval(()=>{
     }
   });
 }, 500);
+</script>
+
+
+<!-- perf overlay patch: sort by consumption desc and 1s refresh -->
+<script>
+(function(){
+  if (!window || !window.__DEV_PERF) return;
+  const wanted = [
+    'CPU/Update',
+    'Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'
+  ];
+  const DEV = window.__DEV_PERF;
+  DEV.intervalMs = 1000;        // refresh every 1s
+  DEV._lastRender = DEV._lastRender || 0;
+  DEV._forceNext = DEV._forceNext || false;
+
+  DEV.renderOverlay = function(extraCounts){
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    const box = document.getElementById('devPerfPanel');
+    if (!box) return;
+    if (!this.on) { box.style.display='none'; return; }
+    if (!this._lastRender) this._lastRender = 0;
+    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
+    this._forceNext = false;
+    this._lastRender = now;
+
+    const total = Math.max(0.001, this.lastFrameMs);
+    const lines = [];
+    lines.push('— GPU/CPU profiler —');
+    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
+    if (extraCounts) {
+      const cls = [
+        `Zombies:${extraCounts.z||0}`,
+        `Turrets:${extraCounts.t||0}`,
+        `Players:${extraCounts.p||0}`,
+        `Bots:${extraCounts.b||0}`,
+        `Bullets:${extraCounts.bul||0}`,
+        `Structures:${extraCounts.s||0}`,
+        `Lasers:${extraCounts.l||0}`,
+        `Map:${extraCounts.mapw||0}x${extraCounts.maph||0}`,
+      ];
+      lines.push(cls.join(' • '));
+    }
+    lines.push('');
+
+    // build and sort entries by ms desc
+    const entries = wanted.map(k => ({
+      k,
+      ms: (this.ema && this.ema[k]) ? this.ema[k] : 0,
+      tag: (k === 'CPU/Update') ? 'CPU' : 'GPU'
+    })).sort((a,b)=> b.ms - a.ms);
+
+    for (const e of entries) {
+      const pct = Math.min(999, (e.ms / total) * 100);
+      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
+    }
+
+    box.textContent = lines.join('\n');
+    box.style.display='block';
+  };
+})();
+</script>
+
+
+<!-- dev-perf-restore-patch -->
+<script>
+(function(){"use strict";
+  if (!window.__DEV_PERF) window.__DEV_PERF = {
+    on: false,
+    ema: Object.create(null),
+    lastFrameMs: 16.7,
+    add(name, ms){ if(Number.isFinite(ms)) this.ema[name]=(this.ema[name]||0)+0.2*(ms-(this.ema[name]||0)); },
+    setFrame(ms){ this.lastFrameMs = this.lastFrameMs + 0.2 * (ms - this.lastFrameMs); }
+  };
+  const DEV = window.__DEV_PERF;
+  DEV.intervalMs = 1000;
+  DEV._lastRender = DEV._lastRender || 0;
+  DEV._forceNext = !!DEV._forceNext;
+  const WANTED = ['CPU/Update','Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'];
+  const orig = typeof DEV.renderOverlay === 'function' ? DEV.renderOverlay.bind(DEV) : null;
+  DEV.renderOverlay = function(extraCounts) { 
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    const box = document.getElementById('devPerfPanel'); if (!box) return;
+    if (!this.on) { box.style.display = 'none'; return; }
+    if (!this._lastRender) this._lastRender = 0;
+    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
+    this._forceNext = false; this._lastRender = now;
+    const total = Math.max(0.001, this.lastFrameMs);
+    const lines = [];
+    lines.push('— GPU/CPU profiler —');
+    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
+    if (extraCounts) {
+      const cls = [
+        `Zombies:${extraCounts?.z||0}`,
+        `Turrets:${extraCounts?.t||0}`,
+        `Players:${extraCounts?.p||0}`,
+        `Bots:${extraCounts?.b||0}`,
+        `Bullets:${extraCounts?.bul||0}`,
+        `Structures:${extraCounts?.s||0}`,
+        `Lasers:${extraCounts?.l||0}`,
+        `Map:${extraCounts?.mapw||0}x${extraCounts?.maph||0}`,
+      ];
+      lines.push(cls.join(' • '));
+    }
+    lines.push('');
+    const entries = WANTED.map(k=>({ k, ms: (this.ema && this.ema[k]) ? this.ema[k] : 0, tag: (k==='CPU/Update')?'CPU':'GPU' })).sort((a,b)=> b.ms - a.ms);
+    for (const e of entries) {
+      const pct = Math.min(999, (e.ms / total) * 100);
+      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
+    }
+    box.textContent = lines.join('\n');
+    box.style.display = 'block';
+    if (orig) try { orig(extraCounts); } catch(_){}
+  };
+  if (!window.__DEV_PERF__iBound) {
+    window.__DEV_PERF__iBound = true;
+    window.addEventListener('keydown', function(e){
+      const k = e && (e.key||e.code);
+      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg') {
+        DEV.on = !DEV.on;
+        DEV._forceNext = true;
+        try { DEV.renderOverlay(null); } catch(_){}
+      }
+    }, {passive:true});
+  }
+})();
+</script>
+
+
+<!-- dev-perf-instrumentation-patch -->
+<script>
+(function(){
+  "use strict";
+  // Ensure object exists
+  if (!window.__DEV_PERF) window.__DEV_PERF = {
+    on: false,
+    ema: Object.create(null),
+    lastFrameMs: 16.7,
+    add(name, ms){ if(Number.isFinite(ms)){ const a=0.2; const p=this.ema[name]||0; this.ema[name]=p + a*(ms - p);} },
+    setFrame(ms){ const a=0.2; this.lastFrameMs = this.lastFrameMs + a*(ms - this.lastFrameMs); },
+    renderOverlay: function(){}
+  };
+  const DEV = window.__DEV_PERF;
+  DEV.intervalMs = 1000;
+  DEV._lastRender = DEV._lastRender || 0;
+  DEV._forceNext = !!DEV._forceNext;
+
+  // Helper to wrap global functions if present
+  function wrapFn(fnName, label){
+    try{
+      const root = (window);
+      const orig = root[fnName];
+      if (typeof orig !== 'function') return;
+      if (orig.__wrapped__) return;
+      function wrapped(){
+        const t0 = (performance && performance.now) ? performance.now() : Date.now();
+        try { return orig.apply(this, arguments); }
+        finally {
+          const t1 = (performance && performance.now) ? performance.now() : Date.now();
+          DEV.add(label || fnName, t1 - t0);
+        }
+      }
+      wrapped.__wrapped__ = true;
+      root[fnName] = wrapped;
+    }catch(e){/* ignore */}
+  }
+
+  // Known draw/update functions mapping to display categories
+  const MAPS = [
+    ['update','CPU/Update'],
+    ['updateCamera','CPU/Update'],
+    ['drawMap','Map'],
+    ['drawBuildPreview','BuildPreview'],
+    ['drawStructures','Structures'],
+    ['drawBullets','Bullets'],
+    ['drawTurretLasers','Turrets'],
+    ['drawZombies','Zombies'],
+    ['drawMoneyFloatingTexts','MoneyTexts'],
+    ['drawPlayers','Players'],
+    ['drawAimLine','AimLine'],
+    ['drawLightMask','Light'],
+    ['drawHUD','HUD'],
+  ];
+  // Try wrapping now and also on first game tick
+  MAPS.forEach(([n,l])=>wrapFn(n,l));
+  // In case functions are defined later, retry a few times
+  let retries = 20;
+  const retryTimer = setInterval(function(){
+    MAPS.forEach(([n,l])=>wrapFn(n,l));
+    if (--retries <= 0) clearInterval(retryTimer);
+  }, 250);
+
+  // Approximate frame time via RAF deltas (fallback)
+  (function(){
+    const _origRAF = window.requestAnimationFrame;
+    if (typeof _origRAF === 'function' && !_origRAF.__wrapped__){
+      window.requestAnimationFrame = function(cb){
+        return _origRAF.call(this, function(ts){
+          try {
+            if (typeof window !== 'undefined'){
+              const last = window.__DEV_PERF_LAST_TS;
+              if (typeof ts === 'number' && typeof last === 'number'){
+                DEV.setFrame(ts - last);
+              }
+              window.__DEV_PERF_LAST_TS = ts;
+            }
+          } catch(e){}
+          cb(ts);
+        });
+      };
+      window.requestAnimationFrame.__wrapped__ = true;
+    }
+  })();
+
+  // Counts snapshot
+  function getCounts(){
+    try{
+      const players = (typeof playersHealth==='object' && playersHealth) ? Object.values(playersHealth) : [];
+      const bots = players.filter(p => p && typeof p.pseudo==='string' && p.pseudo.startsWith('[BOT')).length;
+      const playersCount = players.length;
+      const zCount = (typeof zombies==='object' && zombies) ? Object.keys(zombies).length : 0;
+      const bCount = (typeof bullets==='object' && bullets) ? Object.keys(bullets).length : 0;
+      const lasers = (typeof turretLasers!=='undefined' && turretLasers && turretLasers.length) ? turretLasers.length : 0;
+      let structCount = 0, turretCount = 0;
+      if (Array.isArray(structures)){
+        for (let r=0; r<structures.length; r++){
+          const row = structures[r]; if (!row) continue;
+          for (let c=0; c<row.length; c++){
+            const s = row[c]; if (s && s.hp>0){ structCount++; if (s.type==='T'||s.type==='t'||s.type==='G') turretCount++; }
+          }
+        }
+      }
+      const mapw = (typeof MAP_COLS==='number') ? MAP_COLS : 0;
+      const maph = (typeof MAP_ROWS==='number') ? MAP_ROWS : 0;
+      return { z: zCount, t: turretCount, p: playersCount, b: bots, bul: bCount, s: structCount, l: lasers, mapw, maph };
+    }catch(e){ return null; }
+  }
+
+  // Force periodic overlay render when ON
+  if (!window.__DEV_PERF__tick){
+    window.__DEV_PERF__tick = setInterval(function(){
+      if (!DEV.on) return;
+      DEV._forceNext = true;
+      try { DEV.renderOverlay(getCounts()); } catch(e){}
+    }, DEV.intervalMs);
+  }
+
+  // Ensure toggle key works
+  if (!window.__DEV_PERF__toggleBound){
+    window.__DEV_PERF__toggleBound = true;
+    window.addEventListener('keydown', function(e){
+      const k = e && (e.key||e.code);
+      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg'){
+        DEV.on = !DEV.on;
+        DEV._forceNext = true;
+        try { DEV.renderOverlay(getCounts()); } catch(e){}
+      }
+    }, {passive:true});
+  }
+})();
+</script>
+
+
+<!-- dev-perf-core-patch v2 -->
+<script>
+(function(){
+  "use strict";
+  // === Core object (idempotent) ===
+  if (!window.__DEV_PERF) window.__DEV_PERF = {
+    on: false,
+    ema: Object.create(null),
+    lastFrameMs: 16.7,
+    intervalMs: 1000,         // refresh every 1s
+    _lastRender: 0,
+    _forceNext: false,
+    add(name, ms){
+      if (!Number.isFinite(ms)) return;
+      const a = 0.2;
+      const prev = this.ema[name] || 0;
+      this.ema[name] = prev + a * (ms - prev);
+    },
+    setFrame(ms){
+      const a = 0.2;
+      this.lastFrameMs = this.lastFrameMs + a * (ms - this.lastFrameMs);
+    },
+    renderOverlay: function(extraCounts){
+      // Overridden below
+      const box = document.getElementById('devPerfPanel');
+      if (!box) return;
+      box.textContent = 'Perf overlay actif';
+      box.style.display = this.on ? 'block' : 'none';
+    }
+  };
+  const DEV = window.__DEV_PERF;
+
+  // === Robust overlay renderer with throttle + sorting ===
+  DEV.renderOverlay = function(extraCounts){
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    const box = document.getElementById('devPerfPanel');
+    if (!box) return;
+    if (!this.on) { box.style.display='none'; return; }
+    if (!this._lastRender) this._lastRender = 0;
+    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
+    this._forceNext = false;
+    this._lastRender = now;
+
+    const total = Math.max(0.001, this.lastFrameMs);
+    const wanted = ['CPU/Update','Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'];
+    const lines = [];
+    lines.push('— GPU/CPU profiler —');
+    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
+
+    if (extraCounts) {
+      const cls = [
+        `Zombies:${extraCounts.z||0}`,
+        `Turrets:${extraCounts.t||0}`,
+        `Players:${extraCounts.p||0}`,
+        `Bots:${extraCounts.b||0}`,
+        `Bullets:${extraCounts.bul||0}`,
+        `Structures:${extraCounts.s||0}`,
+        `Lasers:${extraCounts.l||0}`,
+        `Map:${extraCounts.mapw||0}x${extraCounts.maph||0}`,
+      ];
+      lines.push(cls.join(' • '));
+    }
+    lines.push('');
+
+    // Sort by descending ms
+    const entries = wanted.map(k => ({
+      k,
+      ms: (this.ema && this.ema[k]) ? this.ema[k] : 0,
+      tag: (k === 'CPU/Update') ? 'CPU' : 'GPU'
+    })).sort((a,b)=> b.ms - a.ms);
+
+    for (const e of entries) {
+      const pct = Math.min(999, (e.ms / total) * 100);
+      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
+    }
+
+    box.textContent = lines.join('\n');
+    box.style.display='block';
+  };
+
+  // === Instrumentation (wrap if present) ===
+  function wrapFn(name, alias){
+    try {
+      const root = window;
+      const orig = root[name];
+      if (typeof orig !== 'function') return;
+      if (orig.__perfWrapped) return;
+      function wrapped(){
+        const t0 = (performance && performance.now) ? performance.now() : Date.now();
+        try { return orig.apply(this, arguments); }
+        finally {
+          const t1 = (performance && performance.now) ? performance.now() : Date.now();
+          DEV.add(alias || name, t1 - t0);
+        }
+      }
+      wrapped.__perfWrapped = true;
+      root[name] = wrapped;
+    } catch(e){}
+  }
+  [['update','CPU/Update'],['updateCamera','CPU/Update'],['drawMap','Map'],['drawBuildPreview','BuildPreview'],
+   ['drawStructures','Structures'],['drawBullets','Bullets'],['drawTurretLasers','Turrets'],['drawZombies','Zombies'],
+   ['drawMoneyFloatingTexts','MoneyTexts'],['drawPlayers','Players'],['drawAimLine','AimLine'],['drawLightMask','Light'],['drawHUD','HUD']
+  ].forEach(([n,a])=>wrapFn(n,a));
+
+  // Also keep a best-effort frame time via RAF
+  (function(){
+    const r = window.requestAnimationFrame;
+    if (typeof r === 'function' && !r.__perfWrapped){
+      window.requestAnimationFrame = function(cb){
+        return r.call(this, function(ts){
+          try {
+            if (typeof ts === 'number' && typeof window.__DEV_PERF_LAST_TS === 'number') {
+              DEV.setFrame(ts - window.__DEV_PERF_LAST_TS);
+            }
+            window.__DEV_PERF_LAST_TS = ts;
+          } catch(e){}
+          cb(ts);
+        });
+      };
+      window.requestAnimationFrame.__perfWrapped = true;
+    }
+  })();
+
+  // === Periodic tick to refresh when ON ===
+  if (!window.__DEV_PERF_TICK){
+    window.__DEV_PERF_TICK = setInterval(function(){
+      if (!DEV.on) return;
+      DEV._forceNext = true;
+      // live counts (safe)
+      let z=0,t=0,p=0,b=0,bul=0,s=0,l=0,mapw=0,maph=0;
+      try{
+        const ph = (typeof playersHealth==='object' && playersHealth) ? Object.values(playersHealth) : [];
+        p = ph.length;
+        b = ph.filter(v=>v && typeof v.pseudo==='string' && v.pseudo.startsWith('[BOT')).length;
+        z = (typeof zombies==='object' && zombies) ? Object.keys(zombies).length : 0;
+        bul = (typeof bullets==='object' && bullets) ? Object.keys(bullets).length : 0;
+        l = (typeof turretLasers!=='undefined' && turretLasers && turretLasers.length) ? turretLasers.length : 0;
+        if (Array.isArray(structures)){
+          for (let r=0;r<structures.length;r++){ const row = structures[r]; if(!row) continue;
+            for (let c=0;c<row.length;c++){ const cell=row[c]; if(cell && cell.hp>0){ s++; if(cell.type==='T'||cell.type==='t'||cell.type==='G') t++; } }
+          }
+        }
+        mapw = (typeof MAP_COLS==='number') ? MAP_COLS : 0;
+        maph = (typeof MAP_ROWS==='number') ? MAP_ROWS : 0;
+      }catch(e){}
+      try { DEV.renderOverlay({z,t,p,b,bul,s,l,mapw,maph}); } catch(e){}
+    }, DEV.intervalMs);
+  }
+
+  // === Toggle 'i' for Myg (idempotent, high priority) ===
+  if (!window.__DEV_PERF_I_BOUND){
+    window.__DEV_PERF_I_BOUND = true;
+    window.addEventListener('keydown', function(e){
+      const k = e && (e.key || e.code);
+      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg'){
+        DEV.on = !DEV.on;
+        DEV._forceNext = true;
+        try { DEV.renderOverlay(null); } catch(e){}
+      }
+    }, {passive:true});
+  }
+})();
 </script>
 
 </body>
