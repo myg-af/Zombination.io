@@ -42,6 +42,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const MAX_PLAYERS = 6;
 const LOBBY_TIME = 5 * 1000;
 const MAX_ACTIVE_ZOMBIES = 200;
+const MAX_ZOMBIES_PER_WAVE = 500;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
@@ -89,7 +90,7 @@ function createNewGame() {
     zombies: {},
     bullets: {},
     currentRound: 1,
-    totalZombiesToSpawn: 50,
+    totalZombiesToSpawn: MAX_ZOMBIES_PER_WAVE,
     zombiesSpawnedThisWave: 0,
     zombiesKilledThisWave: 0,
     map: null,
@@ -183,6 +184,7 @@ const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 // === Interest management (zone de vue par joueur) ===
 const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
+const BUILD_VIEW_RADIUS = 420; // rayon de halo autorisant le placement
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
@@ -284,7 +286,19 @@ function canPlaceStructureAt(game, tx, ty, buyerId) {
   const existing = getStruct(game, tx, ty);
   if (existing) return false;
 
-  // 3) aucun joueur/BOT dont le CERCLE touche la tuile (y compris l'acheteur)
+  
+  // 2bis) doit être dans le halo de visibilité de l'acheteur
+  if (buyerId && game.players && game.players[buyerId]) {
+    const p = game.players[buyerId];
+    const px = (tx + 0.5) * TILE_SIZE;
+    const py = (ty + 0.5) * TILE_SIZE;
+    const dx = p.x - px, dy = p.y - py;
+    const r2 = BUILD_VIEW_RADIUS * BUILD_VIEW_RADIUS;
+    if ((dx*dx + dy*dy) > r2) return false;
+  } else if (buyerId) {
+    return false; // si acheteur inconnu, refuse par sécurité
+  }
+// 3) aucun joueur/BOT dont le CERCLE touche la tuile (y compris l'acheteur)
   //    (avant on ne testait que la tuile du centre du joueur → pouvait coincer)
   for (const [pid, p] of Object.entries(game.players)) {
     if (!p || !p.alive) continue;
@@ -453,6 +467,8 @@ function tickTurrets(game) {
             const moneyEarned = Math.round(baseMoney * ((ownerStats.goldGain || 10) / 10));
             ownerPlayer.money = (ownerPlayer.money || 0) + moneyEarned;
             io.to(s.placedBy).emit('moneyEarned', { amount: moneyEarned, x: target.x, y: target.y });
+            ownerPlayer.kills = (ownerPlayer.kills || 0) + 1;
+            io.to(s.placedBy).emit('killsUpdate', ownerPlayer.kills);
           }
         }
 
@@ -843,6 +859,8 @@ function startLobbyTimer(game) {
 }
 
 function spawnZombies(game, count) {
+  if (game.totalZombiesToSpawn > MAX_ZOMBIES_PER_WAVE) game.totalZombiesToSpawn = MAX_ZOMBIES_PER_WAVE;
+
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
   if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) return;
 
@@ -881,8 +899,8 @@ function checkWaveEnd(game) {
     game.currentRound++;
     game.zombiesSpawnedThisWave = 0;
     game.zombiesKilledThisWave = 0;
-    game.totalZombiesToSpawn = Math.ceil(game.totalZombiesToSpawn * 1.2);
-
+    const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
+    game.totalZombiesToSpawn = Math.min(_nextTotal, MAX_ZOMBIES_PER_WAVE);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
     io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
@@ -924,7 +942,7 @@ function launchGame(game, readyPlayersArr = null) {
   game._turretCount = 0;
 
   game.currentRound = 1;
-  game.totalZombiesToSpawn = 50;
+  game.totalZombiesToSpawn = Math.min(50, MAX_ZOMBIES_PER_WAVE);
   game.zombiesSpawnedThisWave = 0;
   game.zombiesKilledThisWave = 0;
   game.spawningActive = false;

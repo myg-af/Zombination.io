@@ -1510,7 +1510,7 @@ function drawZombies() {
     ctx.restore();
 
     // Barre de vie
-    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp);
+    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp, 30);
   }
 }
 
@@ -1894,6 +1894,15 @@ function screenToWorldTile(clientX, clientY) {
   };
 }
 
+
+// Test d'intersection cercle-rectangle (client)
+function circleIntersectsTileClient(cx, cy, cr, tx, ty) {
+  const rx = tx * TILE_SIZE, ry = ty * TILE_SIZE;
+  const closestX = Math.max(rx, Math.min(cx, rx + TILE_SIZE));
+  const closestY = Math.max(ry, Math.min(cy, ry + TILE_SIZE));
+  const dx = cx - closestX, dy = cy - closestY;
+  return (dx*dx + dy*dy) <= cr*cr;
+}
 // Survol pour l'aperçu de placement
 canvas.addEventListener('mousemove', (e) => {
   if (!buildMode) return;
@@ -1950,7 +1959,29 @@ function drawBuildPreview() {
   if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) return;
 
   // rouge si bloqué, vert si OK
-  const blocked = isWallAt(tx, ty) || (structures?.[ty]?.[tx]);
+  const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
+  let blocked = isWallAt(tx, ty) || (structures?.[ty]?.[tx]);
+  // Hors halo de visibilité
+  if (me) {
+    const cx = (tx + 0.5) * TILE_SIZE;
+    const cy = (ty + 0.5) * TILE_SIZE;
+    const dx = me.x - cx, dy = me.y - cy;
+    const R2 = (CLIENT_VIEW_RADIUS - 8) * (CLIENT_VIEW_RADIUS - 8);
+    if ((dx*dx + dy*dy) > R2) blocked = true;
+  }
+  // Collision avec entités (joueurs/bots/zombies)
+  if (!blocked) {
+    for (const id in playersHealth) {
+      const p = playersHealth[id]; if (!p || !p.alive) continue;
+      if (circleIntersectsTileClient(p.x, p.y, PLAYER_RADIUS, tx, ty)) { blocked = true; break; }
+    }
+  }
+  if (!blocked) {
+    for (const zid in zombies) {
+      const z = zombies[zid]; if (!z) continue;
+      if (circleIntersectsTileClient(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) { blocked = true; break; }
+    }
+  }
   const x = tx * TILE_SIZE - cameraX;
   const y = ty * TILE_SIZE - cameraY;
 
@@ -1963,7 +1994,22 @@ function drawBuildPreview() {
   else if (buildMode === 'D') ctx.fillStyle = '#a57b4a';
   else ctx.fillStyle = '#888';
 
-  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  if (buildMode === 'T' || buildMode === 't' || buildMode === 'G') {
+    // même design que la tourelle
+    const isBig = (buildMode === 'T');
+    const isG = (buildMode === 'G');
+    ctx.fillStyle = isG ? '#b48cff' : (isBig ? '#d33' : '#3aa6ff');
+    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+    ctx.strokeStyle = isG ? '#2b1b3a' : (isBig ? '#3a0b0b' : '#0b1b2a');
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+    const centerX = x + TILE_SIZE / 2;
+    const centerY = y + TILE_SIZE / 2;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(centerX - 8, centerY - 8, 16, 16);
+  } else {
+    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  }
 
   // liseré rouge si bloqué / vert sinon
   ctx.globalAlpha = 1;
@@ -1990,6 +2036,36 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
   }
 
   // bloc déjà occupé par une structure ?
+
+  // halo de visibilité
+  const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
+  if (me) {
+    const cx = (tx + 0.5) * TILE_SIZE;
+    const cy = (ty + 0.5) * TILE_SIZE;
+    const dx = me.x - cx, dy = me.y - cy;
+    const R2 = (CLIENT_VIEW_RADIUS - 8) * (CLIENT_VIEW_RADIUS - 8);
+    if ((dx*dx + dy*dy) > R2) {
+      console.debug('[build] Hors halo', { tx, ty });
+      return;
+    }
+  }
+
+  // collision avec entités (joueurs/bots/zombies)
+  for (const id in playersHealth) {
+    const p = playersHealth[id]; if (!p || !p.alive) continue;
+    if (circleIntersectsTileClient(p.x, p.y, PLAYER_RADIUS, tx, ty)) {
+      console.debug('[build] Collision avec joueur/bot', { tx, ty });
+      return;
+    }
+  }
+  for (const zid in zombies) {
+    const z = zombies[zid]; if (!z) continue;
+    if (circleIntersectsTileClient(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) {
+      console.debug('[build] Collision avec zombie', { tx, ty });
+      return;
+    }
+  }
+
   if (structures?.[ty]?.[tx]) {
     console.debug('[build] Case déjà occupée par une structure', { tx, ty, existing: structures[ty][tx] });
     return;
