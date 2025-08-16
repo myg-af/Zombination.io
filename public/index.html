@@ -1,11 +1,11 @@
 <!DOCTYPE html>
+
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport"
-    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Zombination.io</title>
-  <style>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport"/>
+<title>Zombination.io</title>
+<style>
     html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #222; color: white; font-family: Arial, sans-serif; }
     #gameCanvas { display: block; background: #222; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
 	#gameCanvas { touch-action: none; }
@@ -180,126 +180,107 @@
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
-  <div id="devPerfPanel" style="position:fixed;left:8px;top:30px;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:10000;display:none;max-width:44vw;pointer-events:none;white-space:pre;line-height:1.2"></div>
-  <canvas id="gameCanvas"></canvas>
-  <div id="hudStats">
-    <div id="hudAlive"></div>
-	<div id="hudMoney"></div>
-    <div id="hudZombies"></div>
-    <div id="hudKills"></div>
-    <div id="hudRound"></div>
-    <div id="hudHP"></div>
-  </div>
-
-  <div id="deathScreen">
-    <div id="deathScreenInner">
-      <h2 id="deathTitle"></h2>
-      <div id="deathStats"></div>
-      <div style="display:flex; justify-content:center; gap:10px;"><button id="btnReplay"></button><button id="btnSpectate"></button></div>
-    </div>
-  </div>
-  <div id="lobbyScreen">
-    <div id="lobbyBox">
-      <div id="lobbyTitle" style="font-size: 28px; margin-bottom: 18px;"><b>Zombination.io</b></div>
-      <div id="lobbyPlayers"></div>
-      <div id="lobbyTimer"></div>
-      <div id="lobbyStatus"></div>
-      <input type="text" id="pseudoInput" maxlength="15" placeholder="" />
-      <br>
-      <button id="lobbyJoin"></button>
-      <div id="langSelectRow"></div>
-    </div>
-  </div>
-	 <button id="shopBtn" title="Boutique" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;">
-	  <img src="/icons/cart.svg" alt="Shop" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);" />
+<div id="devPerfPanel" style="position:fixed;left:8px;top:30px;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:10000;display:none;max-width:44vw;pointer-events:none;white-space:pre;line-height:1.2"></div>
+<canvas id="gameCanvas"></canvas>
+<div id="hudStats">
+<div id="hudAlive"></div>
+<div id="hudMoney"></div>
+<div id="hudZombies"></div>
+<div id="hudKills"></div>
+<div id="hudRound"></div>
+<div id="hudHP"></div>
+</div>
+<div id="deathScreen">
+<div id="deathScreenInner">
+<h2 id="deathTitle"></h2>
+<p id="deathStats"></p><div style="display: flex; justify-content: center; gap: 10px; margin-top: 16px;"><button id="btnReplay">Replay</button><button id="btnSpectate">Spectate</button></div></div>
+</div>
+<div id="lobbyScreen">
+<div id="lobbyBox">
+<div id="lobbyTitle" style="font-size: 28px; margin-bottom: 18px;"><b>Zombination.io</b></div>
+<div id="lobbyPlayers"></div>
+<div id="lobbyTimer"></div>
+<div id="lobbyStatus"></div>
+<input id="pseudoInput" maxlength="15" placeholder="" type="text"/>
+<br/>
+<button id="lobbyJoin"></button>
+<div id="langSelectRow"></div>
+</div>
+</div>
+<button id="shopBtn" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;" title="Boutique">
+<img alt="Shop" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
 	  SHOP
 	</button>
-	
-	
-	
-
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
 <div id="buildBar" style="position:fixed; right:20px; bottom:122px; z-index:10006; display:flex; gap:10px; flex-direction:column; align-items:flex-end;">
-  <!-- Réduction/affichage de la barre de construction + Auto-fire -->
-  <button id="toggleBuildUI"
-    style="align-self:flex-end; margin-bottom:8px; padding:6px 10px;
+<!-- Réduction/affichage de la barre de construction + Auto-fire -->
+<button id="toggleBuildUI" style="align-self:flex-end; margin-bottom:8px; padding:6px 10px;
            border-radius:10px; border:1px solid #444; background:#1c1c1f;
-           color:#ddd; font-weight:700; cursor:pointer; box-shadow:0 2px 8px #0007;"
-    title="Réduire/Afficher les boutons">
+           color:#ddd; font-weight:700; cursor:pointer; box-shadow:0 2px 8px #0007;" title="Réduire/Afficher les boutons">
     –
   </button>
-
-  <!-- === AUTO-FIRE TOGGLE BUTTON (au-dessus des 4 blocs) === -->
-  <button id="autoFireBtn"
-    style="display:flex; align-items:center; gap:10px;
+<!-- === AUTO-FIRE TOGGLE BUTTON (au-dessus des 4 blocs) === -->
+<button id="autoFireBtn" style="display:flex; align-items:center; gap:10px;
            padding:8px 14px; border-radius:12px; border:2px solid #4a1111;
            background:#5a2226; color:#f1d6d6; font-weight:700; letter-spacing:0.3px;
            box-shadow:0 2px 10px #0007; cursor:pointer; user-select:none;">
-    <span style="width:10px;height:10px;border-radius:50%;background:#742f36;box-shadow:0 0 8px #000 inset;"></span>
-    <span id="autoFireLabel">Auto fire OFF</span>
-  </button>
-  <!-- /AUTO-FIRE TOGGLE -->
-
-
-  <!-- Conteneur horizontal des 4 tuiles -->
-  <div id="buildTiles" style="display:flex; gap:10px; flex-wrap:wrap;">
-  <!-- Grande tourelle -->
-  <button class="build-tile" data-type="T" data-tip="Tourelle (HP: 500, Dégâts: 20, Cadence: 1/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-    <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
-      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-    </div>
-    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
-  </button>
-
-  <!-- Big-tourelle -->
-  <button class="build-tile" data-type="G" data-tip="Big-tourelle (HP: 2500, Dégâts: 50, Cadence: 2/s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-    <div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007; position:relative;">
-      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-    </div>
-    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$5000</div>
-  </button>
-
-  <!-- Mini-tourelle -->
-  <button class="build-tile" data-type="t" data-tip="Mini-tourelle (HP: 200, Dégâts: 10, Cadence: 1 tir / 2s)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-    <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
-      <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-    </div>
-    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
-  </button>
-
-  <!-- Mur (barricade) -->
-  <button class="build-tile" data-type="B" data-tip="Mur (HP: 500)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-    <div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
-  </button>
-
-  <!-- Porte -->
-  <button class="build-tile" data-type="D" data-tip="Porte (HP: 500)" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-    <div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-    <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
-  </button>
+<span style="width:10px;height:10px;border-radius:50%;background:#742f36;box-shadow:0 0 8px #000 inset;"></span>
+<span id="autoFireLabel">Auto fire OFF</span>
+</button>
+<!-- /AUTO-FIRE TOGGLE -->
+<!-- Conteneur horizontal des 4 tuiles -->
+<div id="buildTiles" style="display:flex; gap:10px; flex-wrap:wrap;">
+<!-- Grande tourelle -->
+<button class="build-tile" data-tip="Tourelle (HP: 500, Dégâts: 20, Cadence: 1/s)" data-type="T" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
+<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
 </div>
-  <!-- Tooltip hover -->
-  <div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
+</button>
+<!-- Big-tourelle -->
+<button class="build-tile" data-tip="Big-tourelle (HP: 2500, Dégâts: 50, Cadence: 2/s)" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007; position:relative;">
+<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
 </div>
-
-
-	
-	
-	<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
-	  <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
-	  <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-		<img src="/icons/cart.svg" alt="Shop" style="width:30px; filter:brightness(1.2); vertical-align:middle;">
-		<span>SHOP</span>
-	  </div>
-	  <div id="shopUpgrades">
-		<!-- Ici viendront les lignes d’améliorations à l’étape suivante -->
-		<div style="color:#fff6; font-size:17px; margin-top:18px;">Boutique à venir : <i>Affichage des améliorations ici à l’étape 3</i></div>
-	  </div>
-	</div>
-  <div id="versionBox">Version 1.0.0 par Myg</div>
-  <div id="waveMessage"></div>
-  <script src="/socket.io/socket.io.js"></script>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$5000</div>
+</button>
+<!-- Mini-tourelle -->
+<button class="build-tile" data-tip="Mini-tourelle (HP: 200, Dégâts: 10, Cadence: 1 tir / 2s)" data-type="t" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
+<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
+</div>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
+</button>
+<!-- Mur (barricade) -->
+<button class="build-tile" data-tip="Mur (HP: 500)" data-type="B" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
+</button>
+<!-- Porte -->
+<button class="build-tile" data-tip="Porte (HP: 500)" data-type="D" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
+</button>
+</div>
+<!-- Tooltip hover -->
+<div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
+</div>
+<div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
+<button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
+<div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+<img alt="Shop" src="/icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
+<span>SHOP</span>
+</div>
+<div id="shopUpgrades">
+<!-- Ici viendront les lignes d’améliorations à l’étape suivante -->
+<div style="color:#fff6; font-size:17px; margin-top:18px;">Boutique à venir : <i>Affichage des améliorations ici à l’étape 3</i></div>
+</div>
+</div>
+<div id="versionBox">Version 1.0.0 par Myg</div>
+<div id="waveMessage"></div>
+<script src="/socket.io/socket.io.js">
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
 <script>
 // === Global orientation caches ===
 window.prevPlayerPos = {};
@@ -308,23 +289,24 @@ window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
 const socket = io({ transports: ['websocket'] });
-</script>
 
-<script src="/translations.js"></script>
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<script src="/translations.js">
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
 <script>
   if (typeof TRANSLATIONS === "undefined") { window.TRANSLATIONS = { fr: {}, en: {} }; }
-</script>
-  
-  
-  
-    <!-- === Mobile Build Buttons === -->
-<div id="mobile-build" class="mobile-build">
-  <button class="mb-btn" data-type="B" aria-label="Construire Mur (B)">Mur</button>
-  <button class="mb-btn" data-type="D" aria-label="Construire Porte (D)">Porte</button>
-  <button class="mb-btn" data-type="t" aria-label="Construire Mini-Tourelle (t)">Mini-T</button>
-  <button class="mb-btn" data-type="T" aria-label="Construire Grande Tourelle (T)">Tourelle</button>
-</div>
 
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<!-- === Mobile Build Buttons === -->
+<div class="mobile-build" id="mobile-build">
+<button aria-label="Construire Mur (B)" class="mb-btn" data-type="B">Mur</button>
+<button aria-label="Construire Porte (D)" class="mb-btn" data-type="D">Porte</button>
+<button aria-label="Construire Mini-Tourelle (t)" class="mb-btn" data-type="t">Mini-T</button>
+<button aria-label="Construire Grande Tourelle (T)" class="mb-btn" data-type="T">Tourelle</button>
+</div>
 <style>
   /* Mobile only */
   
@@ -369,10 +351,254 @@ const socket = io({ transports: ['websocket'] });
   }
 </style>
 <!-- === /Mobile Build Buttons === -->
-  
-  
-  
-  <script>
+<script>
+// === Toggle (réduire/afficher) la barre Auto-Fire + 4 constructions ===
+let BUILD_UI_COLLAPSED = (localStorage.getItem('buildUICollapsed') === '1');
+
+function applyBuildUICollapse() {
+  const autoBtn = document.getElementById('autoFireBtn');
+  const tiles = document.getElementById('buildTiles');
+  const tgl = document.getElementById('toggleBuildUI');
+  if (!tgl) return;
+  if (BUILD_UI_COLLAPSED) {
+    if (autoBtn) autoBtn.style.display = 'none';
+    if (tiles) tiles.style.display = 'none';
+    tgl.textContent = '+';
+    tgl.title = 'Afficher les boutons';
+  } else {
+    if (autoBtn) autoBtn.style.display = 'flex';
+    if (tiles) tiles.style.display = 'flex';
+    tgl.textContent = '–';
+    tgl.title = 'Réduire les boutons';
+  }
+  // repositionne si besoin pour mobile
+  if (typeof positionShopUI === 'function') {
+    positionShopUI();
+  }
+}
+
+(function initBuildUIToggle(){
+  const tgl = document.getElementById('toggleBuildUI');
+  if (!tgl) return;
+  tgl.addEventListener('click', () => {
+    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
+    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
+    applyBuildUICollapse();
+  }, {passive:true});
+  tgl.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
+    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
+    applyBuildUICollapse();
+  }, {passive:false});
+  applyBuildUICollapse();
+})();
+// === /Toggle build UI ===
+
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<script>
+/* SWAP_G_T_IN_BUILD */
+document.addEventListener('DOMContentLoaded', function(){
+  const cont = document.getElementById('buildTiles');
+  if (!cont) return;
+  const g = cont.querySelector('.build-tile[data-type="G"]');
+  const t = cont.querySelector('.build-tile[data-type="T"]');
+  if (g && t && g.nextElementSibling !== t) {
+    cont.insertBefore(g, t);
+  }
+});
+
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<script>
+/* TURRET_UPGRADE_CLIENT */
+let myTurretUp = { t:0, T:0, G:0 };
+function turretUpgradeBaseAdd(type){ return type==='t'?10: (type==='T'?20:50); }
+function turretBaseDamage(type){ return type==='t'?10: (type==='T'?20:50); }
+function turretBonusFromLevels(type, lvl){
+  const a = turretUpgradeBaseAdd(type);
+  if (lvl<=0) return 0;
+  return a * (Math.pow(1.1, lvl) - 1) / 0.1;
+}
+function computeTurretDamageDisplay(type){
+  const base = turretBaseDamage(type);
+  const bonus = turretBonusFromLevels(type, myTurretUp[type]||0);
+  return Math.round(base + bonus);
+}
+
+// Cooldown display
+const turretCooldownUntil = { t:0, T:0, G:0 };
+socket.on('turretCooldown', (p)=>{
+  if (!p || !p.type) return;
+  turretCooldownUntil[p.type] = p.until || 0;
+});
+// Tooltip damage update
+const buildTilesCont = document.getElementById('buildTiles');
+if (buildTilesCont){
+  buildTilesCont.querySelectorAll('.build-tile').forEach(btn=>{
+    btn.addEventListener('mouseenter', ()=>{
+      const type = btn.getAttribute('data-type');
+      const tip0 = btn.getAttribute('data-tip') || '';
+      if (['t','T','G'].includes(type)){
+        const dmg = computeTurretDamageDisplay(type);
+        const tip = tip0.replace(/Dégâts:\s*\d+/, 'Dégâts: '+dmg);
+        const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
+      }
+    }, {passive:true});
+  });
+}
+setInterval(()=>{
+  document.querySelectorAll('#buildTiles .build-tile').forEach(btn=>{
+    const type = btn.getAttribute('data-type');
+    const priceLabel = btn.querySelector('div:nth-child(2)');
+    let cd = btn.querySelector('.cd-label');
+    if (!cd){
+      cd = document.createElement('div');
+      cd.className = 'cd-label';
+      cd.style.fontSize = '11px';
+      cd.style.color = '#ff9';
+      cd.style.marginTop = '2px';
+      btn.appendChild(cd);
+    }
+    if (['t','T','G'].includes(type)){
+      const rem = Math.max(0, turretCooldownUntil[type] - Date.now());
+      cd.textContent = rem>0 ? (Math.ceil(rem/1000)+'s') : '';
+    } else {
+      cd.textContent = '';
+    }
+  });
+}, 500);
+
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<!-- perf overlay patch: sort by consumption desc and 1s refresh -->
+<script>
+(function(){
+  if (!window || !window.__DEV_PERF) return;
+  const wanted = [
+    'CPU/Update',
+    'Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'
+  ];
+  const DEV = window.__DEV_PERF;
+  DEV.intervalMs = 1000;        // refresh every 1s
+  DEV._lastRender = DEV._lastRender || 0;
+  DEV._forceNext = DEV._forceNext || false;
+
+  DEV.renderOverlay = function(extraCounts){
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    const box = document.getElementById('devPerfPanel');
+    if (!box) return;
+    if (!this.on) { box.style.display='none'; return; }
+    if (!this._lastRender) this._lastRender = 0;
+    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
+    this._forceNext = false;
+    this._lastRender = now;
+
+    const total = Math.max(0.001, this.lastFrameMs);
+    const lines = [];
+    lines.push('— GPU/CPU profiler —');
+    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
+    if (extraCounts) {
+      const cls = [
+        `Zombies:${extraCounts.z||0}`,
+        `Turrets:${extraCounts.t||0}`,
+        `Players:${extraCounts.p||0}`,
+        `Bots:${extraCounts.b||0}`,
+        `Bullets:${extraCounts.bul||0}`,
+        `Structures:${extraCounts.s||0}`,
+        `Lasers:${extraCounts.l||0}`,
+        `Map:${extraCounts.mapw||0}x${extraCounts.maph||0}`,
+      ];
+      lines.push(cls.join(' • '));
+    }
+    lines.push('');
+
+    // build and sort entries by ms desc
+    const entries = wanted.map(k => ({
+      k,
+      ms: (this.ema && this.ema[k]) ? this.ema[k] : 0,
+      tag: (k === 'CPU/Update') ? 'CPU' : 'GPU'
+    })).sort((a,b)=> b.ms - a.ms);
+
+    for (const e of entries) {
+      const pct = Math.min(999, (e.ms / total) * 100);
+      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
+    }
+
+    box.textContent = lines.join('\n');
+    box.style.display='block';
+  };
+})();
+
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<!-- dev-perf-restore-patch -->
+<script>
+(function(){"use strict";
+  if (!window.__DEV_PERF) window.__DEV_PERF = {
+    on: false,
+    ema: Object.create(null),
+    lastFrameMs: 16.7,
+    add(name, ms){ if(Number.isFinite(ms)) this.ema[name]=(this.ema[name]||0)+0.2*(ms-(this.ema[name]||0)); },
+    setFrame(ms){ this.lastFrameMs = this.lastFrameMs + 0.2 * (ms - this.lastFrameMs); }
+  };
+  const DEV = window.__DEV_PERF;
+  DEV.intervalMs = 1000;
+  DEV._lastRender = DEV._lastRender || 0;
+  DEV._forceNext = !!DEV._forceNext;
+  const WANTED = ['CPU/Update','Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'];
+  const orig = typeof DEV.renderOverlay === 'function' ? DEV.renderOverlay.bind(DEV) : null;
+  DEV.renderOverlay = function(extraCounts) { 
+    const now = (performance && performance.now) ? performance.now() : Date.now();
+    const box = document.getElementById('devPerfPanel'); if (!box) return;
+    if (!this.on) { box.style.display = 'none'; return; }
+    if (!this._lastRender) this._lastRender = 0;
+    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
+    this._forceNext = false; this._lastRender = now;
+    const total = Math.max(0.001, this.lastFrameMs);
+    const lines = [];
+    lines.push('— GPU/CPU profiler —');
+    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
+    if (extraCounts) {
+      const cls = [
+        `Zombies:${extraCounts?.z||0}`,
+        `Turrets:${extraCounts?.t||0}`,
+        `Players:${extraCounts?.p||0}`,
+        `Bots:${extraCounts?.b||0}`,
+        `Bullets:${extraCounts?.bul||0}`,
+        `Structures:${extraCounts?.s||0}`,
+        `Lasers:${extraCounts?.l||0}`,
+        `Map:${extraCounts?.mapw||0}x${extraCounts?.maph||0}`,
+      ];
+      lines.push(cls.join(' • '));
+    }
+    lines.push('');
+    const entries = WANTED.map(k=>({ k, ms: (this.ema && this.ema[k]) ? this.ema[k] : 0, tag: (k==='CPU/Update')?'CPU':'GPU' })).sort((a,b)=> b.ms - a.ms);
+    for (const e of entries) {
+      const pct = Math.min(999, (e.ms / total) * 100);
+      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
+    }
+    box.textContent = lines.join('\n');
+    box.style.display = 'block';
+    if (orig) try { orig(extraCounts); } catch(_){}
+  };
+  if (!window.__DEV_PERF__iBound) {
+    window.__DEV_PERF__iBound = true;
+    window.addEventListener('keydown', function(e){
+      const k = e && (e.key||e.code);
+      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg') {
+        DEV.on = !DEV.on;
+        DEV._forceNext = true;
+        try { DEV.renderOverlay(null); } catch(_){}
+      }
+    }, {passive:true});
+  }
+})();
+
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
+<script>
   
 
 
@@ -429,8 +655,10 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
       document.getElementById('lobbyTitle').innerHTML = `<b>${tr.zombination}</b>`;
       pseudoInput.placeholder = tr.enterPseudo;
       lobbyJoin.textContent = lobbyJoined ? tr.waiting : tr.join;
-      document.getElementById('deathTitle').textContent = tr.youDied;
-      btnReplay.textContent = tr.replay;
+      const deathTitle = document.getElementById('deathTitle');
+      if (deathTitle) deathTitle.textContent = tr.youDied;
+      const btnReplay = document.getElementById('btnReplay');
+      if (btnReplay) btnReplay.textContent = tr.replay;
       if (!lobbyStarted) { updateLobbyTexts(); }
     }
     const langSelectRow = document.getElementById('langSelectRow');
@@ -560,36 +788,20 @@ socket.on('stateUpdate', (payload) => {
   if (payload.playersHealth)  playersHealth = payload.playersHealth;
   if (typeof payload.round === 'number') currentRound = payload.round;
 
-  // 1) Grille HP optionnelle + application immédiate aux structures existantes
-  if (payload.structuresHP) {
-    structHPGrid = payload.structuresHP;
-
-    // Si on n'a PAS reçu de nouvelle grille de structures,
-    // on pousse quand même les HP dans la grille locale pour mettre à jour les barres
-    if (structures && !payload.structures) {
-      const rows = Math.min(structHPGrid.length, MAP_ROWS);
-      for (let y = 0; y < rows; y++) {
-        const cols = Math.min(structHPGrid[y]?.length || 0, MAP_COLS);
-        for (let x = 0; x < cols; x++) {
-          const hp = structHPGrid[y][x];
-          const cell = structures[y]?.[x];
-          if (cell) {
-            if (typeof cell === 'object') {
-              cell.hp = hp;
-            } else if (typeof cell === 'string') {
-              structures[y][x] = { type: cell, hp };
-            }
-            // si HP <= 0 → on supprime visuellement
-            if (typeof hp === 'number' && hp <= 0) {
-              structures[y][x] = null;
-            }
-          }
-        }
-      }
-    }
+  // Apply destroyed structures
+  if (Array.isArray(payload.destroyedStructures)) {
+    payload.destroyedStructures.forEach(({ tx, ty }) => {
+      if (structures?.[ty]) structures[ty][tx] = null;
+      if (structHPGrid?.[ty]) structHPGrid[ty][tx] = 0;
+    });
   }
 
-  // 2) Normalisation/merge de la grille structures reçue
+  // Update HP overlay grid
+  if (payload.structuresHP) {
+    structHPGrid = payload.structuresHP;
+  }
+
+  // Replace/merge structures grid
   if (payload.structures) {
     const grid = payload.structures;
     const rows = grid.length || 0;
@@ -600,25 +812,24 @@ socket.on('stateUpdate', (payload) => {
         const cell = grid[y][x];
         if (!cell || cell === 0) return null;
 
-        // HP prioritaire : structuresHP, sinon ancien HP local, sinon valeur par défaut
         const hpFromGrid = structHPGrid?.[y]?.[x];
         const previousHP = structures?.[y]?.[x]?.hp;
 
         if (typeof cell === 'object') {
           const type = cell.type;
-let hp = (typeof cell.hp === 'number') ? cell.hp
-  : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
-    : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
-      : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
+          let hp = (typeof cell.hp === 'number') ? cell.hp
+            : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+            : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+              : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
           if (hp <= 0) return null;
           return { type, hp, placedBy: cell.placedBy };
         }
 
         if (typeof cell === 'string') {
           const type = cell;
-let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
-    : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
-      : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
+          let hp = (typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
+            : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
+              : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200)))));
           if (hp <= 0) return null;
           return { type, hp };
         }
@@ -626,30 +837,38 @@ let hp = ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
         return null;
       })
     );
-  }
-
-  // 3) Destructions éventuelles en lot
-  if (Array.isArray(payload.destroyedStructures)) {
-    payload.destroyedStructures.forEach(({ tx, ty }) => {
-      if (structures?.[ty]) structures[ty][tx] = null;
-      if (structHPGrid?.[ty]) structHPGrid[ty][tx] = 0;
-    });
+  } else if (structHPGrid && structures) {
+    // Apply HP overlay to existing structures
+    const rows = Math.min(structHPGrid.length, structures.length);
+    for (let y = 0; y < rows; y++) {
+      const cols = Math.min(structHPGrid[y]?.length || 0, structures[y]?.length || 0);
+      for (let x = 0; x < cols; x++) {
+        const cell = structures[y][x];
+        if (!cell) continue;
+        const hp = structHPGrid[y][x];
+        if (typeof hp === 'number') {
+          if (hp <= 0) structures[y][x] = null; else cell.hp = hp;
+        }
+      }
+    }
   }
 
   drawHUD();
-  // --- FPS counter ---
-  if (!window.__fps_last) window.__fps_last = performance.now();
-  const __now = performance.now();
-  const dt = __now - window.__fps_last;
-  window.__fps_last = __now;
-  if (!window.__fps_s) { window.__fps_s = 0; window.__fps_n = 0; }
-  window.__fps_s += dt; window.__fps_n += 1;
-  if (window.__fps_s >= 500) { // update twice per second
-    const fps = Math.round(1000 / (window.__fps_s / window.__fps_n));
-    const el = document.getElementById('fpsCounter'); if (el) el.textContent = 'FPS: ' + fps;
-    window.__fps_s = 0; window.__fps_n = 0;
-  }
 
+  // Lightweight FPS meter
+  try {
+    if (!window.__fps_last) window.__fps_last = performance.now();
+    const now = performance.now();
+    const dt = now - window.__fps_last;
+    window.__fps_last = now;
+    if (!window.__fps_s) { window.__fps_s = 0; window.__fps_n = 0; }
+    window.__fps_s += dt; window.__fps_n += 1;
+    if (window.__fps_s >= 500) {
+      const fps = Math.round(1000 / (window.__fps_s / window.__fps_n));
+      const el = document.getElementById('fpsCounter'); if (el) el.textContent = 'FPS: ' + fps;
+      window.__fps_s = 0; window.__fps_n = 0;
+    }
+  } catch(e) {}
 });
 
 	
@@ -858,20 +1077,20 @@ function losBlockedForZombieClient(x0, y0, x1, y1) {
 function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   const now = performance.now();
 
-  // 1) Si on a un angle récent, on le réutilise (cache TTL)
+  // 1  Si on a un angle récent, on le réutilise (cache TTL)
   const cached = turretAngleCache.get(turretKey);
   if (cached && (now - cached.t) <= TURRET_ANGLE_TTL_MS) {
     return cached.ang;
   }
 
-  // 2) Throttle: on n'autorise un recalcul complet qu'à partir d'un certain moment
+  // 2  Throttle: on n'autorise un recalcul complet qu'à partir d'un certain moment
   const nextAt = turretAngleNextAt.get(turretKey) || 0;
   if (now < nextAt && cached) {
     // encore trop tôt → on garde l'angle précédent
     return cached.ang;
   }
 
-  // 3) Cherche la cible la plus proche dans la portée, LOS avec pas par tuile
+  // 3  Cherche la cible la plus proche dans la portée, LOS avec pas par tuile
   let bestDist2 = Infinity;
   let bdx = 1, bdy = 0;
 
@@ -894,7 +1113,7 @@ function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
 
   const ang = Math.atan2(bdy, bdx);
 
-  // 4) Mémos
+  // 4  Mémos
   turretAngleCache.set(turretKey, { ang, t: now });
   turretAngleNextAt.set(turretKey, now + TURRET_RECALC_MIN_MS);
 
@@ -1408,7 +1627,7 @@ function drawPlayers() {
     if (!p || !p.alive) continue;
 
     // Culling autour du joueur local
-    if (id !== myId) {
+    if (!isSpectator && id !== myId) {
       const dxv = p.x - vx, dyv = p.y - vy;
       if (dxv*dxv + dyv*dyv > R2) continue;
     }
@@ -1485,7 +1704,7 @@ function drawZombies() {
     if (!z || z.hp <= 0) continue;
 
     const dxv = z.x - vx, dyv = z.y - vy;
-    if ((dxv*dxv + dyv*dyv) > R2) continue;
+    if (!isSpectator && (dxv*dxv + dyv*dyv) > R2) continue;
 
     const screenX = z.x - cameraX;
     const screenY = z.y - cameraY;
@@ -1999,15 +2218,16 @@ function drawBuildPreview() {
   // rouge si bloqué, vert si OK
   const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
   let blocked = isWallAt(tx, ty) || (structures?.[ty]?.[tx]);
-  // Hors halo de visibilité
-  if (me) {
+  // Hors halo de visibilité (désactivé en spectateur)
+  if (me && !isSpectator) {
     const cx = (tx + 0.5) * TILE_SIZE;
     const cy = (ty + 0.5) * TILE_SIZE;
     const dx = me.x - cx, dy = me.y - cy;
     const R2 = (CLIENT_VIEW_RADIUS - 8) * (CLIENT_VIEW_RADIUS - 8);
     if ((dx*dx + dy*dy) > R2) blocked = true;
   }
-  // Collision avec entités (joueurs/bots/zombies)
+
+  // collision avec entités (joueurs/bots/zombies)
   if (!blocked) {
     for (const id in playersHealth) {
       const p = playersHealth[id]; if (!p || !p.alive) continue;
@@ -2020,6 +2240,7 @@ function drawBuildPreview() {
       if (circleIntersectsTileClient(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) { blocked = true; break; }
     }
   }
+
   const x = tx * TILE_SIZE - cameraX;
   const y = ty * TILE_SIZE - cameraY;
 
@@ -2030,29 +2251,67 @@ function drawBuildPreview() {
   else if (buildMode === 't') ctx.fillStyle = '#3aa6ff';
   else if (buildMode === 'B') ctx.fillStyle = '#7b4b2a';
   else if (buildMode === 'D') ctx.fillStyle = '#a57b4a';
+  else if (buildMode === 'G') ctx.fillStyle = '#b48cff';
   else ctx.fillStyle = '#888';
 
-  if (buildMode === 'T' || buildMode === 't' || buildMode === 'G') {
-    // même design que la tourelle
-    const isBig = (buildMode === 'T');
-    const isG = (buildMode === 'G');
-    ctx.fillStyle = isG ? '#b48cff' : (isBig ? '#d33' : '#3aa6ff');
-    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-    ctx.strokeStyle = isG ? '#2b1b3a' : (isBig ? '#3a0b0b' : '#0b1b2a');
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
-    const centerX = x + TILE_SIZE / 2;
-    const centerY = y + TILE_SIZE / 2;
-    ctx.fillStyle = '#000';
-    ctx.fillRect(centerX - 8, centerY - 8, 16, 16);
-  } else {
-    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  // prévisualisation
+  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+  ctx.strokeStyle = blocked ? '#ff3b3b' : '#34e05a';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+  ctx.restore();
+}
+
+function drawBuildPreview() {
+  if (!buildMode || buildHover.tx < 0 || buildHover.ty < 0) return;
+
+  const tx = buildHover.tx, ty = buildHover.ty;
+  if (tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS) return;
+
+  // rouge si bloqué, vert si OK
+  const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
+  let blocked = isWallAt(tx, ty) || (structures?.[ty]?.[tx]);
+
+  // Hors halo de visibilité (désactivé en spectateur)
+  if (me && !isSpectator) {
+    const cx = (tx + 0.5) * TILE_SIZE;
+    const cy = (ty + 0.5) * TILE_SIZE;
+    const dx = me.x - cx, dy = me.y - cy;
+    const R2 = (CLIENT_VIEW_RADIUS - 8) * (CLIENT_VIEW_RADIUS - 8);
+    if ((dx*dx + dy*dy) > R2) blocked = true;
   }
 
-  // liseré rouge si bloqué / vert sinon
-  ctx.globalAlpha = 1;
-  ctx.lineWidth = 2;
+  // collision avec entités (joueurs/bots/zombies)
+  if (!blocked) {
+    for (const id in playersHealth) {
+      const p = playersHealth[id]; if (!p || !p.alive) continue;
+      if (circleIntersectsTileClient(p.x, p.y, PLAYER_RADIUS, tx, ty)) { blocked = true; break; }
+    }
+  }
+  if (!blocked) {
+    for (const zid in zombies) {
+      const z = zombies[zid]; if (!z) continue;
+      if (circleIntersectsTileClient(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) { blocked = true; break; }
+    }
+  }
+
+  const x = tx * TILE_SIZE - cameraX;
+  const y = ty * TILE_SIZE - cameraY;
+
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  // couleur selon le type
+  if (buildMode === 'T') ctx.fillStyle = '#d33';
+  else if (buildMode === 't') ctx.fillStyle = '#3aa6ff';
+  else if (buildMode === 'B') ctx.fillStyle = '#7b4b2a';
+  else if (buildMode === 'D') ctx.fillStyle = '#a57b4a';
+  else if (buildMode === 'G') ctx.fillStyle = '#b48cff';
+  else ctx.fillStyle = '#888';
+
+  // prévisualisation du bloc
+  ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
   ctx.strokeStyle = blocked ? '#ff3b3b' : '#34e05a';
+  ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
   ctx.restore();
 }
@@ -2077,7 +2336,7 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 
   // halo de visibilité
   const me = (myId && playersHealth[myId]) ? playersHealth[myId] : null;
-  if (me) {
+  if (me && !isSpectator) {
     const cx = (tx + 0.5) * TILE_SIZE;
     const cy = (ty + 0.5) * TILE_SIZE;
     const dx = me.x - cx, dy = me.y - cy;
@@ -2194,17 +2453,30 @@ function drawHUD() {
 
     function showDeathScreen(kills = myKills, round = currentRound) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      deathStats.innerHTML = `${tr.zombiesKilled}: <b>${kills}</b><br>${tr.roundReached}: <b>${round}</b>`;
+      const deathStats = document.getElementById('deathStats');
+      if (deathStats) {
+        deathStats.innerHTML = `${tr.zombiesKilled}: <b>${kills}</b><br>${tr.roundReached}: <b>${round}</b>`;
+      }
       // Met à jour les libellés
-      document.getElementById('deathTitle').textContent = tr.youDied || 'You died!';
-      btnReplay.textContent = tr.replay || 'Replay';
+      const deathTitle = document.getElementById('deathTitle');
+      if (deathTitle) deathTitle.textContent = tr.youDied || 'You died!';
+      const btnReplay = document.getElementById('btnReplay');
+      if (btnReplay) btnReplay.textContent = tr.replay || 'Replay';
       if (btnSpectate) {
         btnSpectate.textContent = (tr.spectate || 'Spectate');
-        btnSpectate.style.display = (lobbyStarted ? 'inline-block' : 'none');
+        // Affiche Spectate seulement s'il reste au moins un autre joueur vivant
+        try {
+          const hasOtherAlive = Object.keys(playersHealth || {}).some(id => {
+            if (id === myId) return false;
+            const p = playersHealth[id];
+            return p && p.alive;
+          });
+          btnSpectate.style.display = hasOtherAlive ? 'inline-block' : 'none';
+        } catch(e) { btnSpectate.style.display = 'none'; }
       }
       deathScreen.style.display = 'flex';
     }
-    btnReplay.onclick = () => { location.reload(); };
+
 
 const spectateReplayBtn = document.getElementById('spectateReplayBtn');
 if (btnSpectate) {
@@ -2231,13 +2503,12 @@ function enterSpectatorMode() {
   }
   isSpectator = true;
   deathScreen.style.display = 'none';
-  spectateReplayBtn.style.display = 'block';
+        if (spectateReplayBtn) spectateReplayBtn.style.display = 'block';
 }
 // Config bouton Spectate (seulement si la partie est encore en cours)
 if (btnSpectate) {
   btnSpectate.onclick = () => {
-    // si la partie est terminée (retour lobby), on bloque
-    if (!lobbyStarted) { enterSpectatorMode(); }
+    if (btnSpectate.style.display !== 'none') enterSpectatorMode();
   };
 }
 
@@ -2650,7 +2921,7 @@ socket.on('structureHP', (payload) => {
 
   if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(hp)) return;
 
-  // --- 2) Miroir HP (grille) : on met à jour la case "normale",
+  // --- 2  Miroir HP (grille) : on met à jour la case "normale",
   // et si nécessaire on tente aussi l’inversion [tx][ty] (serveur inversé)
   if (!structHPGrid) structHPGrid = [];
   if (!structHPGrid[ty]) structHPGrid[ty] = [];
@@ -2663,7 +2934,7 @@ socket.on('structureHP', (payload) => {
     structHPGrid[tx][ty] = hp;
   }
 
-  // --- 3) Mise à jour de la grille visuelle (si elle existe déjà) ---
+  // --- 3  Mise à jour de la grille visuelle (si elle existe déjà) ---
   const applyHP = (r, c) => {
     if (!structures || !structures[r]) return false;
     const cell = structures[r][c];
@@ -2687,10 +2958,7 @@ socket.on('structureHP', (payload) => {
 
   // Essai en [ty][tx], puis fallback en [tx][ty] si besoin
   if (!applyHP(ty, tx)) applyHP(tx, ty);
-});
-
-
-function clearStructureAt(tx, ty) {
+});function clearStructureAt(tx, ty) {
   if (!structures) return false;
 
   // chemin “normal” [ty][tx]
@@ -3056,555 +3324,7 @@ function renderShopUpgrades() {
 })();
 	
   
-// === Toggle (réduire/afficher) la barre Auto-Fire + 4 constructions ===
-let BUILD_UI_COLLAPSED = (localStorage.getItem('buildUICollapsed') === '1');
 
-function applyBuildUICollapse() {
-  const autoBtn = document.getElementById('autoFireBtn');
-  const tiles = document.getElementById('buildTiles');
-  const tgl = document.getElementById('toggleBuildUI');
-  if (!tgl) return;
-  if (BUILD_UI_COLLAPSED) {
-    if (autoBtn) autoBtn.style.display = 'none';
-    if (tiles) tiles.style.display = 'none';
-    tgl.textContent = '+';
-    tgl.title = 'Afficher les boutons';
-  } else {
-    if (autoBtn) autoBtn.style.display = 'flex';
-    if (tiles) tiles.style.display = 'flex';
-    tgl.textContent = '–';
-    tgl.title = 'Réduire les boutons';
-  }
-  // repositionne si besoin pour mobile
-  if (typeof positionShopUI === 'function') {
-    positionShopUI();
-  }
-}
-
-(function initBuildUIToggle(){
-  const tgl = document.getElementById('toggleBuildUI');
-  if (!tgl) return;
-  tgl.addEventListener('click', () => {
-    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
-    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
-    applyBuildUICollapse();
-  }, {passive:true});
-  tgl.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
-    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
-    applyBuildUICollapse();
-  }, {passive:false});
-  applyBuildUICollapse();
-})();
-// === /Toggle build UI ===
-</script>
-  
-  
-
-
-
-
-<script>
-/* SWAP_G_T_IN_BUILD */
-document.addEventListener('DOMContentLoaded', function(){
-  const cont = document.getElementById('buildTiles');
-  if (!cont) return;
-  const g = cont.querySelector('.build-tile[data-type="G"]');
-  const t = cont.querySelector('.build-tile[data-type="T"]');
-  if (g && t && g.nextElementSibling !== t) {
-    cont.insertBefore(g, t);
-  }
-});
-</script>
-
-
-<script>
-/* TURRET_UPGRADE_CLIENT */
-let myTurretUp = { t:0, T:0, G:0 };
-function turretUpgradeBaseAdd(type){ return type==='t'?10: (type==='T'?20:50); }
-function turretBaseDamage(type){ return type==='t'?10: (type==='T'?20:50); }
-function turretBonusFromLevels(type, lvl){
-  const a = turretUpgradeBaseAdd(type);
-  if (lvl<=0) return 0;
-  return a * (Math.pow(1.1, lvl) - 1) / 0.1;
-}
-function computeTurretDamageDisplay(type){
-  const base = turretBaseDamage(type);
-  const bonus = turretBonusFromLevels(type, myTurretUp[type]||0);
-  return Math.round(base + bonus);
-}
-
-// Cooldown display
-const turretCooldownUntil = { t:0, T:0, G:0 };
-socket.on('turretCooldown', (p)=>{
-  if (!p || !p.type) return;
-  turretCooldownUntil[p.type] = p.until || 0;
-});
-// Tooltip damage update
-const buildTilesCont = document.getElementById('buildTiles');
-if (buildTilesCont){
-  buildTilesCont.querySelectorAll('.build-tile').forEach(btn=>{
-    btn.addEventListener('mouseenter', ()=>{
-      const type = btn.getAttribute('data-type');
-      const tip0 = btn.getAttribute('data-tip') || '';
-      if (['t','T','G'].includes(type)){
-        const dmg = computeTurretDamageDisplay(type);
-        const tip = tip0.replace(/Dégâts:\s*\d+/, 'Dégâts: '+dmg);
-        const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
-      }
-    }, {passive:true});
-  });
-}
-setInterval(()=>{
-  document.querySelectorAll('#buildTiles .build-tile').forEach(btn=>{
-    const type = btn.getAttribute('data-type');
-    const priceLabel = btn.querySelector('div:nth-child(2)');
-    let cd = btn.querySelector('.cd-label');
-    if (!cd){
-      cd = document.createElement('div');
-      cd.className = 'cd-label';
-      cd.style.fontSize = '11px';
-      cd.style.color = '#ff9';
-      cd.style.marginTop = '2px';
-      btn.appendChild(cd);
-    }
-    if (['t','T','G'].includes(type)){
-      const rem = Math.max(0, turretCooldownUntil[type] - Date.now());
-      cd.textContent = rem>0 ? (Math.ceil(rem/1000)+'s') : '';
-    } else {
-      cd.textContent = '';
-    }
-  });
-}, 500);
-</script>
-
-
-<!-- perf overlay patch: sort by consumption desc and 1s refresh -->
-<script>
-(function(){
-  if (!window || !window.__DEV_PERF) return;
-  const wanted = [
-    'CPU/Update',
-    'Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'
-  ];
-  const DEV = window.__DEV_PERF;
-  DEV.intervalMs = 1000;        // refresh every 1s
-  DEV._lastRender = DEV._lastRender || 0;
-  DEV._forceNext = DEV._forceNext || false;
-
-  DEV.renderOverlay = function(extraCounts){
-    const now = (performance && performance.now) ? performance.now() : Date.now();
-    const box = document.getElementById('devPerfPanel');
-    if (!box) return;
-    if (!this.on) { box.style.display='none'; return; }
-    if (!this._lastRender) this._lastRender = 0;
-    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
-    this._forceNext = false;
-    this._lastRender = now;
-
-    const total = Math.max(0.001, this.lastFrameMs);
-    const lines = [];
-    lines.push('— GPU/CPU profiler —');
-    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
-    if (extraCounts) {
-      const cls = [
-        `Zombies:${extraCounts.z||0}`,
-        `Turrets:${extraCounts.t||0}`,
-        `Players:${extraCounts.p||0}`,
-        `Bots:${extraCounts.b||0}`,
-        `Bullets:${extraCounts.bul||0}`,
-        `Structures:${extraCounts.s||0}`,
-        `Lasers:${extraCounts.l||0}`,
-        `Map:${extraCounts.mapw||0}x${extraCounts.maph||0}`,
-      ];
-      lines.push(cls.join(' • '));
-    }
-    lines.push('');
-
-    // build and sort entries by ms desc
-    const entries = wanted.map(k => ({
-      k,
-      ms: (this.ema && this.ema[k]) ? this.ema[k] : 0,
-      tag: (k === 'CPU/Update') ? 'CPU' : 'GPU'
-    })).sort((a,b)=> b.ms - a.ms);
-
-    for (const e of entries) {
-      const pct = Math.min(999, (e.ms / total) * 100);
-      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
-    }
-
-    box.textContent = lines.join('\n');
-    box.style.display='block';
-  };
-})();
-</script>
-
-
-<!-- dev-perf-restore-patch -->
-<script>
-(function(){"use strict";
-  if (!window.__DEV_PERF) window.__DEV_PERF = {
-    on: false,
-    ema: Object.create(null),
-    lastFrameMs: 16.7,
-    add(name, ms){ if(Number.isFinite(ms)) this.ema[name]=(this.ema[name]||0)+0.2*(ms-(this.ema[name]||0)); },
-    setFrame(ms){ this.lastFrameMs = this.lastFrameMs + 0.2 * (ms - this.lastFrameMs); }
-  };
-  const DEV = window.__DEV_PERF;
-  DEV.intervalMs = 1000;
-  DEV._lastRender = DEV._lastRender || 0;
-  DEV._forceNext = !!DEV._forceNext;
-  const WANTED = ['CPU/Update','Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'];
-  const orig = typeof DEV.renderOverlay === 'function' ? DEV.renderOverlay.bind(DEV) : null;
-  DEV.renderOverlay = function(extraCounts) { 
-    const now = (performance && performance.now) ? performance.now() : Date.now();
-    const box = document.getElementById('devPerfPanel'); if (!box) return;
-    if (!this.on) { box.style.display = 'none'; return; }
-    if (!this._lastRender) this._lastRender = 0;
-    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
-    this._forceNext = false; this._lastRender = now;
-    const total = Math.max(0.001, this.lastFrameMs);
-    const lines = [];
-    lines.push('— GPU/CPU profiler —');
-    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
-    if (extraCounts) {
-      const cls = [
-        `Zombies:${extraCounts?.z||0}`,
-        `Turrets:${extraCounts?.t||0}`,
-        `Players:${extraCounts?.p||0}`,
-        `Bots:${extraCounts?.b||0}`,
-        `Bullets:${extraCounts?.bul||0}`,
-        `Structures:${extraCounts?.s||0}`,
-        `Lasers:${extraCounts?.l||0}`,
-        `Map:${extraCounts?.mapw||0}x${extraCounts?.maph||0}`,
-      ];
-      lines.push(cls.join(' • '));
-    }
-    lines.push('');
-    const entries = WANTED.map(k=>({ k, ms: (this.ema && this.ema[k]) ? this.ema[k] : 0, tag: (k==='CPU/Update')?'CPU':'GPU' })).sort((a,b)=> b.ms - a.ms);
-    for (const e of entries) {
-      const pct = Math.min(999, (e.ms / total) * 100);
-      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
-    }
-    box.textContent = lines.join('\n');
-    box.style.display = 'block';
-    if (orig) try { orig(extraCounts); } catch(_){}
-  };
-  if (!window.__DEV_PERF__iBound) {
-    window.__DEV_PERF__iBound = true;
-    window.addEventListener('keydown', function(e){
-      const k = e && (e.key||e.code);
-      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg') {
-        DEV.on = !DEV.on;
-        DEV._forceNext = true;
-        try { DEV.renderOverlay(null); } catch(_){}
-      }
-    }, {passive:true});
-  }
-})();
-</script>
-
-
-<!-- dev-perf-instrumentation-patch -->
-<script>
-(function(){
-  "use strict";
-  // Ensure object exists
-  if (!window.__DEV_PERF) window.__DEV_PERF = {
-    on: false,
-    ema: Object.create(null),
-    lastFrameMs: 16.7,
-    add(name, ms){ if(Number.isFinite(ms)){ const a=0.2; const p=this.ema[name]||0; this.ema[name]=p + a*(ms - p);} },
-    setFrame(ms){ const a=0.2; this.lastFrameMs = this.lastFrameMs + a*(ms - this.lastFrameMs); },
-    renderOverlay: function(){}
-  };
-  const DEV = window.__DEV_PERF;
-  DEV.intervalMs = 1000;
-  DEV._lastRender = DEV._lastRender || 0;
-  DEV._forceNext = !!DEV._forceNext;
-
-  // Helper to wrap global functions if present
-  function wrapFn(fnName, label){
-    try{
-      const root = (window);
-      const orig = root[fnName];
-      if (typeof orig !== 'function') return;
-      if (orig.__wrapped__) return;
-      function wrapped(){
-        const t0 = (performance && performance.now) ? performance.now() : Date.now();
-        try { return orig.apply(this, arguments); }
-        finally {
-          const t1 = (performance && performance.now) ? performance.now() : Date.now();
-          DEV.add(label || fnName, t1 - t0);
-        }
-      }
-      wrapped.__wrapped__ = true;
-      root[fnName] = wrapped;
-    }catch(e){/* ignore */}
-  }
-
-  // Known draw/update functions mapping to display categories
-  const MAPS = [
-    ['update','CPU/Update'],
-    ['updateCamera','CPU/Update'],
-    ['drawMap','Map'],
-    ['drawBuildPreview','BuildPreview'],
-    ['drawStructures','Structures'],
-    ['drawBullets','Bullets'],
-    ['drawTurretLasers','Turrets'],
-    ['drawZombies','Zombies'],
-    ['drawMoneyFloatingTexts','MoneyTexts'],
-    ['drawPlayers','Players'],
-    ['drawAimLine','AimLine'],
-    ['drawLightMask','Light'],
-    ['drawHUD','HUD'],
-  ];
-  // Try wrapping now and also on first game tick
-  MAPS.forEach(([n,l])=>wrapFn(n,l));
-  // In case functions are defined later, retry a few times
-  let retries = 20;
-  const retryTimer = setInterval(function(){
-    MAPS.forEach(([n,l])=>wrapFn(n,l));
-    if (--retries <= 0) clearInterval(retryTimer);
-  }, 250);
-
-  // Approximate frame time via RAF deltas (fallback)
-  (function(){
-    const _origRAF = window.requestAnimationFrame;
-    if (typeof _origRAF === 'function' && !_origRAF.__wrapped__){
-      window.requestAnimationFrame = function(cb){
-        return _origRAF.call(this, function(ts){
-          try {
-            if (typeof window !== 'undefined'){
-              const last = window.__DEV_PERF_LAST_TS;
-              if (typeof ts === 'number' && typeof last === 'number'){
-                DEV.setFrame(ts - last);
-              }
-              window.__DEV_PERF_LAST_TS = ts;
-            }
-          } catch(e){}
-          cb(ts);
-        });
-      };
-      window.requestAnimationFrame.__wrapped__ = true;
-    }
-  })();
-
-  // Counts snapshot
-  function getCounts(){
-    try{
-      const players = (typeof playersHealth==='object' && playersHealth) ? Object.values(playersHealth) : [];
-      const bots = players.filter(p => p && typeof p.pseudo==='string' && p.pseudo.startsWith('[BOT')).length;
-      const playersCount = players.length;
-      const zCount = (typeof zombies==='object' && zombies) ? Object.keys(zombies).length : 0;
-      const bCount = (typeof bullets==='object' && bullets) ? Object.keys(bullets).length : 0;
-      const lasers = (typeof turretLasers!=='undefined' && turretLasers && turretLasers.length) ? turretLasers.length : 0;
-      let structCount = 0, turretCount = 0;
-      if (Array.isArray(structures)){
-        for (let r=0; r<structures.length; r++){
-          const row = structures[r]; if (!row) continue;
-          for (let c=0; c<row.length; c++){
-            const s = row[c]; if (s && s.hp>0){ structCount++; if (s.type==='T'||s.type==='t'||s.type==='G') turretCount++; }
-          }
-        }
-      }
-      const mapw = (typeof MAP_COLS==='number') ? MAP_COLS : 0;
-      const maph = (typeof MAP_ROWS==='number') ? MAP_ROWS : 0;
-      return { z: zCount, t: turretCount, p: playersCount, b: bots, bul: bCount, s: structCount, l: lasers, mapw, maph };
-    }catch(e){ return null; }
-  }
-
-  // Force periodic overlay render when ON
-  if (!window.__DEV_PERF__tick){
-    window.__DEV_PERF__tick = setInterval(function(){
-      if (!DEV.on) return;
-      DEV._forceNext = true;
-      try { DEV.renderOverlay(getCounts()); } catch(e){}
-    }, DEV.intervalMs);
-  }
-
-  // Ensure toggle key works
-  if (!window.__DEV_PERF__toggleBound){
-    window.__DEV_PERF__toggleBound = true;
-    window.addEventListener('keydown', function(e){
-      const k = e && (e.key||e.code);
-      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg'){
-        DEV.on = !DEV.on;
-        DEV._forceNext = true;
-        try { DEV.renderOverlay(getCounts()); } catch(e){}
-      }
-    }, {passive:true});
-  }
-})();
-</script>
-
-
-<!-- dev-perf-core-patch v2 -->
-<script>
-(function(){
-  "use strict";
-  // === Core object (idempotent) ===
-  if (!window.__DEV_PERF) window.__DEV_PERF = {
-    on: false,
-    ema: Object.create(null),
-    lastFrameMs: 16.7,
-    intervalMs: 1000,         // refresh every 1s
-    _lastRender: 0,
-    _forceNext: false,
-    add(name, ms){
-      if (!Number.isFinite(ms)) return;
-      const a = 0.2;
-      const prev = this.ema[name] || 0;
-      this.ema[name] = prev + a * (ms - prev);
-    },
-    setFrame(ms){
-      const a = 0.2;
-      this.lastFrameMs = this.lastFrameMs + a * (ms - this.lastFrameMs);
-    },
-    renderOverlay: function(extraCounts){
-      // Overridden below
-      const box = document.getElementById('devPerfPanel');
-      if (!box) return;
-      box.textContent = 'Perf overlay actif';
-      box.style.display = this.on ? 'block' : 'none';
-    }
-  };
-  const DEV = window.__DEV_PERF;
-
-  // === Robust overlay renderer with throttle + sorting ===
-  DEV.renderOverlay = function(extraCounts){
-    const now = (performance && performance.now) ? performance.now() : Date.now();
-    const box = document.getElementById('devPerfPanel');
-    if (!box) return;
-    if (!this.on) { box.style.display='none'; return; }
-    if (!this._lastRender) this._lastRender = 0;
-    if (!this._forceNext && (now - this._lastRender) < this.intervalMs) return;
-    this._forceNext = false;
-    this._lastRender = now;
-
-    const total = Math.max(0.001, this.lastFrameMs);
-    const wanted = ['CPU/Update','Map','Structures','Bullets','Turrets','Zombies','Players','AimLine','MoneyTexts','BuildPreview','Light','HUD','Other'];
-    const lines = [];
-    lines.push('— GPU/CPU profiler —');
-    lines.push(`Frame ~ ${total.toFixed(1)} ms (${Math.round(1000/total)} FPS)`);
-
-    if (extraCounts) {
-      const cls = [
-        `Zombies:${extraCounts.z||0}`,
-        `Turrets:${extraCounts.t||0}`,
-        `Players:${extraCounts.p||0}`,
-        `Bots:${extraCounts.b||0}`,
-        `Bullets:${extraCounts.bul||0}`,
-        `Structures:${extraCounts.s||0}`,
-        `Lasers:${extraCounts.l||0}`,
-        `Map:${extraCounts.mapw||0}x${extraCounts.maph||0}`,
-      ];
-      lines.push(cls.join(' • '));
-    }
-    lines.push('');
-
-    // Sort by descending ms
-    const entries = wanted.map(k => ({
-      k,
-      ms: (this.ema && this.ema[k]) ? this.ema[k] : 0,
-      tag: (k === 'CPU/Update') ? 'CPU' : 'GPU'
-    })).sort((a,b)=> b.ms - a.ms);
-
-    for (const e of entries) {
-      const pct = Math.min(999, (e.ms / total) * 100);
-      lines.push(`${e.k}: ${e.tag} = ${pct.toFixed(1)}% (${e.ms.toFixed(2)}ms)`);
-    }
-
-    box.textContent = lines.join('\n');
-    box.style.display='block';
-  };
-
-  // === Instrumentation (wrap if present) ===
-  function wrapFn(name, alias){
-    try {
-      const root = window;
-      const orig = root[name];
-      if (typeof orig !== 'function') return;
-      if (orig.__perfWrapped) return;
-      function wrapped(){
-        const t0 = (performance && performance.now) ? performance.now() : Date.now();
-        try { return orig.apply(this, arguments); }
-        finally {
-          const t1 = (performance && performance.now) ? performance.now() : Date.now();
-          DEV.add(alias || name, t1 - t0);
-        }
-      }
-      wrapped.__perfWrapped = true;
-      root[name] = wrapped;
-    } catch(e){}
-  }
-  [['update','CPU/Update'],['updateCamera','CPU/Update'],['drawMap','Map'],['drawBuildPreview','BuildPreview'],
-   ['drawStructures','Structures'],['drawBullets','Bullets'],['drawTurretLasers','Turrets'],['drawZombies','Zombies'],
-   ['drawMoneyFloatingTexts','MoneyTexts'],['drawPlayers','Players'],['drawAimLine','AimLine'],['drawLightMask','Light'],['drawHUD','HUD']
-  ].forEach(([n,a])=>wrapFn(n,a));
-
-  // Also keep a best-effort frame time via RAF
-  (function(){
-    const r = window.requestAnimationFrame;
-    if (typeof r === 'function' && !r.__perfWrapped){
-      window.requestAnimationFrame = function(cb){
-        return r.call(this, function(ts){
-          try {
-            if (typeof ts === 'number' && typeof window.__DEV_PERF_LAST_TS === 'number') {
-              DEV.setFrame(ts - window.__DEV_PERF_LAST_TS);
-            }
-            window.__DEV_PERF_LAST_TS = ts;
-          } catch(e){}
-          cb(ts);
-        });
-      };
-      window.requestAnimationFrame.__perfWrapped = true;
-    }
-  })();
-
-  // === Periodic tick to refresh when ON ===
-  if (!window.__DEV_PERF_TICK){
-    window.__DEV_PERF_TICK = setInterval(function(){
-      if (!DEV.on) return;
-      DEV._forceNext = true;
-      // live counts (safe)
-      let z=0,t=0,p=0,b=0,bul=0,s=0,l=0,mapw=0,maph=0;
-      try{
-        const ph = (typeof playersHealth==='object' && playersHealth) ? Object.values(playersHealth) : [];
-        p = ph.length;
-        b = ph.filter(v=>v && typeof v.pseudo==='string' && v.pseudo.startsWith('[BOT')).length;
-        z = (typeof zombies==='object' && zombies) ? Object.keys(zombies).length : 0;
-        bul = (typeof bullets==='object' && bullets) ? Object.keys(bullets).length : 0;
-        l = (typeof turretLasers!=='undefined' && turretLasers && turretLasers.length) ? turretLasers.length : 0;
-        if (Array.isArray(structures)){
-          for (let r=0;r<structures.length;r++){ const row = structures[r]; if(!row) continue;
-            for (let c=0;c<row.length;c++){ const cell=row[c]; if(cell && cell.hp>0){ s++; if(cell.type==='T'||cell.type==='t'||cell.type==='G') t++; } }
-          }
-        }
-        mapw = (typeof MAP_COLS==='number') ? MAP_COLS : 0;
-        maph = (typeof MAP_ROWS==='number') ? MAP_ROWS : 0;
-      }catch(e){}
-      try { DEV.renderOverlay({z,t,p,b,bul,s,l,mapw,maph}); } catch(e){}
-    }, DEV.intervalMs);
-  }
-
-  // === Toggle 'i' for Myg (idempotent, high priority) ===
-  if (!window.__DEV_PERF_I_BOUND){
-    window.__DEV_PERF_I_BOUND = true;
-    window.addEventListener('keydown', function(e){
-      const k = e && (e.key || e.code);
-      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg'){
-        DEV.on = !DEV.on;
-        DEV._forceNext = true;
-        try { DEV.renderOverlay(null); } catch(e){}
-      }
-    }, {passive:true});
-  }
-})();
-</script>
-
-<button id="spectateReplayBtn">Replay</button>
-
-</body>
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script></body>
 </html>
