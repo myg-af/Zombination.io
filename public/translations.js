@@ -1,7 +1,7 @@
 const TRANSLATIONS = {
   en: {
     zombination: "Zombination.io",
-    join: "Join",
+    join: 'Solo',
     waiting: "Waiting...",
     enterPseudo: "Enter your nickname",
     playersInGame: "Players in game",
@@ -17,10 +17,36 @@ const TRANSLATIONS = {
     youDied: "You died!",
     zombiesKilled: "Zombies killed",
     roundReached: "Wave reached",
+  
+    shop: 'Upgrades',
+    joinLobby: 'Join lobby',
+    createLobby: 'Create lobby',
+    start: 'Start',
+    back: 'Back',
+    availableLobbies: 'Available lobbies',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Only the creator can start.',
+    noLobbyAvailable: 'No lobby available.',
+    emptySlot: 'empty',
+    spectate: 'Spectate',
+    buildWall: 'Wall',
+    buildDoor: 'Door',
+    buildMiniTurret: 'Mini-T',
+    buildTurret: 'Turret',
+    money: 'Money',
+    turretDescMini: 'Improves damage of mini turrets.',
+    turretDescNormal: 'Improves damage of normal turrets.',
+    turretDescBig: 'Improves damage of big turrets.',
+    damage: 'Damage',
+    turretType: { t: 'mini turret', T: 'turret', G: 'big turret' },
+    turretUpgradeSuccess: 'Upgrade {type} lvl {level} succeeded. Money: ${money}',
+    notEnoughMoney: 'Not enough money.',
+    actionImpossible: 'Action impossible.',
+    upgrades: { maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Gold gain', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
   },
   cn: {
     zombination: "Zombination.io",
-    join: "加入",
+    join: '单人',
     waiting: "等待中...",
     enterPseudo: "输入昵称",
     playersInGame: "游戏玩家",
@@ -36,10 +62,36 @@ const TRANSLATIONS = {
     youDied: "你死了！",
     zombiesKilled: "击杀僵尸",
     roundReached: "达到波次",
+  
+    shop: '升级',
+    joinLobby: '加入房间',
+    createLobby: '创建房间',
+    start: '开始',
+    back: '返回',
+    availableLobbies: '可用房间',
+    lobby: '房间',
+    onlyCreatorStart: '只有创建者可以开始。',
+    noLobbyAvailable: '暂无可用房间。',
+    emptySlot: '空位',
+    spectate: '旁观',
+    buildWall: '墙',
+    buildDoor: '门',
+    buildMiniTurret: '小型炮台',
+    buildTurret: '炮台',
+    money: '金钱',
+    turretDescMini: '提升小型炮台的伤害。',
+    turretDescNormal: '提升普通炮台的伤害。',
+    turretDescBig: '提升大型炮台的伤害。',
+    damage: '伤害',
+    turretType: { t: '小型炮台', T: '炮台', G: '大型炮台' },
+    turretUpgradeSuccess: '升级 {type} 等级 {level} 成功。金钱: ${money}',
+    notEnoughMoney: '金钱不足。',
+    actionImpossible: '无法执行操作。',
+    upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+7% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金币获取', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
   },
   ru: {
     zombination: "Zombination.io",
-    join: "Войти",
+    join: 'Соло',
     waiting: "Ожидание...",
     enterPseudo: "Введите ник",
     playersInGame: "Игроков в игре",
@@ -55,10 +107,36 @@ const TRANSLATIONS = {
     youDied: "Вы умерли!",
     zombiesKilled: "Убито зомби",
     roundReached: "Достигнута волна",
+  
+    shop: 'Улучшения',
+    joinLobby: 'Присоединиться к лобби',
+    createLobby: 'Создать лобби',
+    start: 'Старт',
+    back: 'Назад',
+    availableLobbies: 'Доступные лобби',
+    lobby: 'Лобби',
+    onlyCreatorStart: 'Только создатель может начать.',
+    noLobbyAvailable: 'Нет доступных лобби.',
+    emptySlot: 'пусто',
+    spectate: 'Наблюдать',
+    buildWall: 'Стена',
+    buildDoor: 'Дверь',
+    buildMiniTurret: 'Мини‑Т',
+    buildTurret: 'Турель',
+    money: 'Деньги',
+    turretDescMini: 'Улучшает урон мини‑турелей.',
+    turretDescNormal: 'Улучшает урон обычных турелей.',
+    turretDescBig: 'Улучшает урон больших турелей.',
+    damage: 'Урон',
+    turretType: { t: 'мини‑турель', T: 'турель', G: 'большая турель' },
+    turretUpgradeSuccess: 'Улучшение {type} ур. {level} выполнено. Деньги: ${money}',
+    notEnoughMoney: 'Недостаточно денег.',
+    actionImpossible: 'Действие невозможно.',
+    upgrades: { maxHp: { label: '+10% Макс. HP', desc: 'Увеличивает максимальный запас HP.', statLabel: 'Макс. HP' }, speed: { label: '+7% Скорость', desc: 'Двигайтесь быстрее.', statLabel: 'Скорость' }, regen: { label: '+0,05 HP/с', desc: 'Постепенное восстановление здоровья.', statLabel: 'Регенерация' }, damage: { label: '+10% Урон', desc: 'Повышает ваш урон.', statLabel: 'Урон' }, goldGain: { label: '+10% Золото', desc: 'Больше золота за убийства.', statLabel: 'Золото' } },
   },
   es: {
     zombination: "Zombination.io",
-    join: "Unirse",
+    join: 'Solo',
     waiting: "Esperando...",
     enterPseudo: "Introduce tu apodo",
     playersInGame: "Jugadores en la partida",
@@ -74,10 +152,36 @@ const TRANSLATIONS = {
     youDied: "¡Has muerto!",
     zombiesKilled: "Zombies eliminados",
     roundReached: "Oleada alcanzada",
+  
+    shop: 'Mejoras',
+    joinLobby: 'Unirse a un lobby',
+    createLobby: 'Crear lobby',
+    start: 'Iniciar',
+    back: 'Atrás',
+    availableLobbies: 'Lobbies disponibles',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Solo el creador puede iniciar.',
+    noLobbyAvailable: 'No hay lobbys disponibles.',
+    emptySlot: 'vacío',
+    spectate: 'Observar',
+    buildWall: 'Muro',
+    buildDoor: 'Puerta',
+    buildMiniTurret: 'Mini‑T',
+    buildTurret: 'Torreta',
+    money: 'Dinero',
+    turretDescMini: 'Mejora el daño de las torretas mini.',
+    turretDescNormal: 'Mejora el daño de las torretas normales.',
+    turretDescBig: 'Mejora el daño de las torretas grandes.',
+    damage: 'Daño',
+    turretType: { t: 'minitorreta', T: 'torreta', G: 'torreta grande' },
+    turretUpgradeSuccess: 'Mejora {type} niv {level} completada. Dinero: ${money}',
+    notEnoughMoney: 'No hay suficiente dinero.',
+    actionImpossible: 'Acción imposible.',
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Oro ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
   },
   pt: {
     zombination: "Zombination.io",
-    join: "Entrar",
+    join: 'Solo',
     waiting: "Aguardando...",
     enterPseudo: "Digite seu apelido",
     playersInGame: "Jogadores na partida",
@@ -93,10 +197,36 @@ const TRANSLATIONS = {
     youDied: "Você morreu!",
     zombiesKilled: "Zumbis mortos",
     roundReached: "Onda alcançada",
+  
+    shop: 'Melhorias',
+    joinLobby: 'Entrar no lobby',
+    createLobby: 'Criar lobby',
+    start: 'Iniciar',
+    back: 'Voltar',
+    availableLobbies: 'Lobbies disponíveis',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Apenas o criador pode iniciar.',
+    noLobbyAvailable: 'Nenhum lobby disponível.',
+    emptySlot: 'vazio',
+    spectate: 'Assistir',
+    buildWall: 'Muro',
+    buildDoor: 'Porta',
+    buildMiniTurret: 'Mini‑T',
+    buildTurret: 'Torreta',
+    money: 'Dinheiro',
+    turretDescMini: 'Melhora o dano das mini torretas.',
+    turretDescNormal: 'Melhora o dano das torretas normais.',
+    turretDescBig: 'Melhora o dano das torretas grandes.',
+    damage: 'Dano',
+    turretType: { t: 'mini torreta', T: 'torreta', G: 'torreta grande' },
+    turretUpgradeSuccess: 'Upgrade {type} nv {level} concluído. Dinheiro: ${money}',
+    notEnoughMoney: 'Dinheiro insuficiente.',
+    actionImpossible: 'Ação impossível.',
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Ouro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
   },
   de: {
     zombination: "Zombination.io",
-    join: "Beitreten",
+    join: 'Solo',
     waiting: "Warten...",
     enterPseudo: "Spitznamen eingeben",
     playersInGame: "Spieler im Spiel",
@@ -112,10 +242,36 @@ const TRANSLATIONS = {
     youDied: "Du bist gestorben!",
     zombiesKilled: "Getötete Zombies",
     roundReached: "Welle erreicht",
+  
+    shop: 'Verbesserungen',
+    joinLobby: 'Lobby beitreten',
+    createLobby: 'Lobby erstellen',
+    start: 'Starten',
+    back: 'Zurück',
+    availableLobbies: 'Verfügbare Lobbys',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Nur der Ersteller kann starten.',
+    noLobbyAvailable: 'Kein Lobby verfügbar.',
+    emptySlot: 'leer',
+    spectate: 'Zuschauen',
+    buildWall: 'Mauer',
+    buildDoor: 'Tür',
+    buildMiniTurret: 'Mini‑T',
+    buildTurret: 'Geschütz',
+    money: 'Geld',
+    turretDescMini: 'Verbessert den Schaden von Mini‑Geschützen.',
+    turretDescNormal: 'Verbessert den Schaden normaler Geschütze.',
+    turretDescBig: 'Verbessert den Schaden großer Geschütze.',
+    damage: 'Schaden',
+    turretType: { t: 'Mini‑Geschütz', T: 'Geschütz', G: 'Großes Geschütz' },
+    turretUpgradeSuccess: 'Upgrade {type} Stufe {level} erfolgreich. Geld: ${money}',
+    notEnoughMoney: 'Nicht genug Geld.',
+    actionImpossible: 'Aktion nicht möglich.',
+    upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+7% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Goldgewinn', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
   },
   jp: {
     zombination: "Zombination.io",
-    join: "参加",
+    join: 'ソロ',
     waiting: "待機中...",
     enterPseudo: "ニックネームを入力",
     playersInGame: "ゲームのプレイヤー",
@@ -131,10 +287,36 @@ const TRANSLATIONS = {
     youDied: "あなたは死亡しました！",
     zombiesKilled: "倒したゾンビ",
     roundReached: "ウェーブ達成",
+  
+    shop: 'アップグレード',
+    joinLobby: 'ロビーに参加',
+    createLobby: 'ロビーを作成',
+    start: '開始',
+    back: '戻る',
+    availableLobbies: '利用可能なロビー',
+    lobby: 'ロビー',
+    onlyCreatorStart: '作成者のみが開始できます。',
+    noLobbyAvailable: '利用可能なロビーはありません。',
+    emptySlot: '空き',
+    spectate: '観戦',
+    buildWall: '壁',
+    buildDoor: 'ドア',
+    buildMiniTurret: 'ミニT',
+    buildTurret: 'タレット',
+    money: 'お金',
+    turretDescMini: 'ミニタレットのダメージを強化します。',
+    turretDescNormal: '通常タレットのダメージを強化します。',
+    turretDescBig: '大型タレットのダメージを強化します。',
+    damage: 'ダメージ',
+    turretType: { t: 'ミニタレット', T: 'タレット', G: '大型タレット' },
+    turretUpgradeSuccess: '{type} Lv{level} の強化に成功。お金: ${money}',
+    notEnoughMoney: 'お金が足りません。',
+    actionImpossible: '操作できません。',
+    upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+7% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% ゴールド獲得', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
   },
   fr: {
     zombination: "Zombination.io",
-    join: "Rejoindre",
+    join: 'Solo',
     waiting: "En attente...",
     enterPseudo: "Entrez votre pseudo",
     playersInGame: "Joueurs dans la partie",
@@ -150,10 +332,36 @@ const TRANSLATIONS = {
     youDied: "Vous êtes mort !",
     zombiesKilled: "Zombies tués",
     roundReached: "Vague atteinte",
+  
+    shop: 'Améliorations',
+    joinLobby: 'Rejoindre un lobby',
+    createLobby: 'Créer un lobby',
+    start: 'Démarrer',
+    back: 'Retour',
+    availableLobbies: 'Lobbys disponibles',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Seul le créateur peut démarrer.',
+    noLobbyAvailable: 'Aucun lobby disponible.',
+    emptySlot: 'vide',
+    spectate: 'Observer',
+    buildWall: 'Mur',
+    buildDoor: 'Porte',
+    buildMiniTurret: 'Mini-T',
+    buildTurret: 'Tourelle',
+    money: 'Argent',
+    turretDescMini: 'Améliore les dégâts des mini‑tourelles.',
+    turretDescNormal: 'Améliore les dégâts des tourelles normales.',
+    turretDescBig: 'Améliore les dégâts des grosses tourelles.',
+    damage: 'Dégâts',
+    turretType: { t: 'mini‑tourelle', T: 'tourelle', G: 'grosse tourelle' },
+    turretUpgradeSuccess: 'Amélioration {type} niv {level} réussie. Argent: ${money}',
+    notEnoughMoney: 'Pas assez d\'argent.',
+    actionImpossible: 'Action impossible.',
+    upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+7% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% Or gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
   },
   pl: {
     zombination: "Zombination.io",
-    join: "Dołącz",
+    join: 'Solo',
     waiting: "Oczekiwanie...",
     enterPseudo: "Wpisz pseudonim",
     playersInGame: "Gracze w grze",
@@ -169,10 +377,36 @@ const TRANSLATIONS = {
     youDied: "Zginąłeś!",
     zombiesKilled: "Zabite zombie",
     roundReached: "Fala osiągnięta",
+  
+    shop: 'Ulepszenia',
+    joinLobby: 'Dołącz do lobby',
+    createLobby: 'Utwórz lobby',
+    start: 'Start',
+    back: 'Wstecz',
+    availableLobbies: 'Dostępne lobby',
+    lobby: 'Lobby',
+    onlyCreatorStart: 'Tylko twórca może rozpocząć.',
+    noLobbyAvailable: 'Brak dostępnych lobby.',
+    emptySlot: 'puste',
+    spectate: 'Obserwuj',
+    buildWall: 'Mur',
+    buildDoor: 'Drzwi',
+    buildMiniTurret: 'Mini‑T',
+    buildTurret: 'Wieżyczka',
+    money: 'Pieniądze',
+    turretDescMini: 'Zwiększa obrażenia mini‑wieżyczek.',
+    turretDescNormal: 'Zwiększa obrażenia zwykłych wieżyczek.',
+    turretDescBig: 'Zwiększa obrażenia dużych wieżyczek.',
+    damage: 'Obrażenia',
+    turretType: { t: 'mini‑wieżyczka', T: 'wieżyczka', G: 'duża wieżyczka' },
+    turretUpgradeSuccess: 'Ulepszono {type} do poziomu {level}. Pieniądze: ${money}',
+    notEnoughMoney: 'Za mało pieniędzy.',
+    actionImpossible: 'Akcja niemożliwa.',
+    upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+7% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Złoto', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
   },
   kr: {
     zombination: "Zombination.io",
-    join: "참가",
+    join: '솔로',
     waiting: "대기 중...",
     enterPseudo: "닉네임 입력",
     playersInGame: "게임의 플레이어",
@@ -188,5 +422,136 @@ const TRANSLATIONS = {
     youDied: "사망하였습니다!",
     zombiesKilled: "처치한 좀비",
     roundReached: "웨이브 도달",
+  
+    shop: '업그레이드',
+    joinLobby: '로비 참가',
+    createLobby: '로비 생성',
+    start: '시작',
+    back: '뒤로',
+    availableLobbies: '이용 가능한 로비',
+    lobby: '로비',
+    onlyCreatorStart: '방장만 시작할 수 있습니다.',
+    noLobbyAvailable: '사용 가능한 로비가 없습니다.',
+    emptySlot: '비어있음',
+    spectate: '관전',
+    buildWall: '벽',
+    buildDoor: '문',
+    buildMiniTurret: '미니T',
+    buildTurret: '터렛',
+    money: '돈',
+    turretDescMini: '미니 터렛의 대미지를 향상합니다.',
+    turretDescNormal: '일반 터렛의 대미지를 향상합니다.',
+    turretDescBig: '대형 터렛의 대미지를 향상합니다.',
+    damage: '대미지',
+    turretType: { t: '미니 터렛', T: '터렛', G: '대형 터렛' },
+    turretUpgradeSuccess: '{type} 레벨 {level} 업그레이드 성공. 돈: ${money}',
+    notEnoughMoney: '돈이 부족합니다.',
+    actionImpossible: '작업을 수행할 수 없습니다.',
+    upgrades: { maxHp: { label: '+10% 최대 HP', desc: '최대 HP 증가.', statLabel: '최대 HP' }, speed: { label: '+7% 이동 속도', desc: '더 빨리 이동.', statLabel: '이동 속도' }, regen: { label: '+0.05 HP/초', desc: '시간 경과에 따라 회복.', statLabel: '재생' }, damage: { label: '+10% 대미지', desc: '공격력 증가.', statLabel: '대미지' }, goldGain: { label: '+10% 골드 획득', desc: '처치당 더 많은 골드.', statLabel: '골드 획득' } },
   }
 };
+
+// === i18n extensions: turret upgrades, tooltips, auto-fire ===
+(function(){
+  function merge(base, ext){
+    if (!base) return ext;
+    for (var k in ext){
+      if (!ext.hasOwnProperty(k)) continue;
+      if (typeof ext[k]==='object' && ext[k] && !Array.isArray(ext[k])){
+        base[k] = Object.assign({}, base[k]||{}, ext[k]);
+      } else {
+        base[k] = ext[k];
+      }
+    }
+    return base;
+  }
+
+  TRANSLATIONS.en = merge(TRANSLATIONS.en, {
+    hpShort:'HP', fireRate:'Fire rate',
+    autoFireOn:'Auto fire ON', autoFireOff:'Auto fire OFF',
+    turretUpg:{ G:'Big turret +Damage', T:'Turret +Damage', t:'Mini turret +Damage' }
+  });
+  TRANSLATIONS.fr = merge(TRANSLATIONS.fr, {
+    hpShort:'PV', fireRate:'Cadence',
+    autoFireOn:'Tir auto ON', autoFireOff:'Tir auto OFF',
+    turretUpg:{ G:'Grosse tourelle +Dégâts', T:'Tourelle +Dégâts', t:'Mini-tourelle +Dégâts' }
+  });
+  TRANSLATIONS.es = merge(TRANSLATIONS.es||{}, {
+    hpShort:'HP', fireRate:'Cadencia',
+    autoFireOn:'Auto-disparo ON', autoFireOff:'Auto-disparo OFF',
+    turretUpg:{ G:'Torreta grande +Daño', T:'Torreta +Daño', t:'Mini torreta +Daño' }
+  });
+  TRANSLATIONS.pt = merge(TRANSLATIONS.pt||{}, {
+    hpShort:'HP', fireRate:'Cadência',
+    autoFireOn:'Tiro automático ON', autoFireOff:'Tiro automático OFF',
+    turretUpg:{ G:'Torreta grande +Dano', T:'Torreta +Dano', t:'Mini torreta +Dano' }
+  });
+  TRANSLATIONS.de = merge(TRANSLATIONS.de||{}, {
+    hpShort:'LP', fireRate:'Feuerrate',
+    autoFireOn:'Auto-Feuer AN', autoFireOff:'Auto-Feuer AUS',
+    turretUpg:{ G:'Große Geschütz +Schaden', T:'Geschütz +Schaden', t:'Mini-Geschütz +Schaden' }
+  });
+  TRANSLATIONS.ru = merge(TRANSLATIONS.ru||{}, {
+    hpShort:'HP', fireRate:'Скорострельность',
+    autoFireOn:'Автоогонь ВКЛ', autoFireOff:'Автоогонь ВЫКЛ',
+    turretUpg:{ G:'Большая турель +Урон', T:'Турель +Урон', t:'Мини-турель +Урон' }
+  });
+  TRANSLATIONS.cn = merge(TRANSLATIONS.cn||{}, {
+    hpShort:'生命值', fireRate:'射速',
+    autoFireOn:'自动射击 开', autoFireOff:'自动射击 关',
+    turretUpg:{ G:'大型炮塔 +伤害', T:'炮塔 +伤害', t:'迷你炮塔 +伤害' }
+  });
+  TRANSLATIONS.jp = merge(TRANSLATIONS.jp||{}, {
+    hpShort:'HP', fireRate:'連射速度',
+    autoFireOn:'オート射撃 ON', autoFireOff:'オート射撃 OFF',
+    turretUpg:{ G:'大型タレット ダメージ+', T:'タレット ダメージ+', t:'ミニタレット ダメージ+' }
+  });
+  TRANSLATIONS.pl = merge(TRANSLATIONS.pl||{}, {
+    hpShort:'HP', fireRate:'Szybkostrzelność',
+    autoFireOn:'Auto-ogień WŁ', autoFireOff:'Auto-ogień WYŁ',
+    turretUpg:{ G:'Duża wieżyczka +obrażenia', T:'Wieżyczka +obrażenia', t:'Mini wieżyczka +obrażenia' }
+  });
+  TRANSLATIONS.kr = merge(TRANSLATIONS.kr||{}, {
+    hpShort:'체력', fireRate:'발사 속도',
+    autoFireOn:'자동 사격 ON', autoFireOff:'자동 사격 OFF',
+    turretUpg:{ G:'대형 포탑 피해+', T:'포탑 피해+', t:'미니 포탑 피해+' }
+  });
+})();
+
+// === i18n unit additions (perSec, pxPerSec, hpShort tweaks) ===
+(function(){
+  function merge(base, ext){ if (!base) return ext; for (var k in ext){ if (ext.hasOwnProperty(k)) { if (typeof ext[k]==='object' && ext[k] && !Array.isArray(ext[k])) base[k] = Object.assign({}, base[k]||{}, ext[k]); else base[k]=ext[k]; } } return base; }
+TRANSLATIONS.en = merge(TRANSLATIONS.en||{}, {
+  hpShort:'HP', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.fr = merge(TRANSLATIONS.fr||{}, {
+  hpShort:'PV', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.es = merge(TRANSLATIONS.es||{}, {
+  hpShort:'PS', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.pt = merge(TRANSLATIONS.pt||{}, {
+  hpShort:'PV', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.de = merge(TRANSLATIONS.de||{}, {
+  hpShort:'LP', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.ru = merge(TRANSLATIONS.ru||{}, {
+  hpShort:'HP', perSec:'/с', pxPerSec:'px/с', 
+});
+TRANSLATIONS.cn = merge(TRANSLATIONS.cn||{}, {
+  hpShort:'生命', perSec:'/秒', pxPerSec:'px/秒', 
+});
+TRANSLATIONS.jp = merge(TRANSLATIONS.jp||{}, {
+  hpShort:'HP', perSec:'/秒', pxPerSec:'px/秒', 
+});
+TRANSLATIONS.pl = merge(TRANSLATIONS.pl||{}, {
+  hpShort:'HP', perSec:'/s', pxPerSec:'px/s', 
+});
+TRANSLATIONS.kr = merge(TRANSLATIONS.kr||{}, {
+  hpShort:'HP', perSec:'/초', pxPerSec:'px/초', 
+});
+
+// Ensure availability on window for legacy code paths
+try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; } } catch(_) {}
+})();

@@ -46,7 +46,7 @@ const MAX_ZOMBIES_PER_WAVE = 500;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
-  base: { maxHp: 100, speed: 40, regen: 0, damage: 5, goldGain: 10 },
+  base: { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 },
   regenPerLevel: 1,                 // 1 PV/sec/niveau
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
   priceStepAfterTier: 75            // après niv 5 → +50/niv
@@ -79,12 +79,7 @@ function createNewGame() {
   let game = {
     structures: null,
     id: nextGameId++,
-    lobby: {
-      players: {},
-      timeLeft: LOBBY_TIME / 1000,
-      started: false,
-      timer: null,
-    },
+    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null },
     players: {},
     bots: {},
     zombies: {},
@@ -172,10 +167,27 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
 
 
 
+function cleanupEmptyManualLobbies() {
+  // Remove manual lobbies with no players and not started
+  activeGames = activeGames.filter(g => {
+    const count = g && g.lobby && g.lobby.players ? Object.keys(g.lobby.players).length : 0;
+    return !(g.lobby && g.lobby.manual && !g.lobby.started && count === 0);
+  });
+}
+
 function getAvailableLobby() {
   let game = activeGames.find(g => !g.lobby.started);
   if (!game) game = createNewGame();
   return game;
+}
+
+
+
+function getAvailableAutoLobby() {
+  // Returns a NON-manual, NOT-started lobby; creates a fresh one if needed.
+  let g = activeGames.find(g => g && g.lobby && !g.lobby.manual && !g.lobby.started && Object.keys(g.lobby.players||{}).length < MAX_PLAYERS);
+  if (!g) g = createNewGame();
+  return g;
 }
 
 const socketToGame = {};
@@ -835,11 +847,14 @@ let accumulator = 0;
 
 function broadcastLobby(game) {
   io.to('lobby' + game.id).emit('lobbyUpdate', {
+    id: game.id,
     players: game.lobby.players,
     count: Object.keys(game.lobby.players).length,
     max: MAX_PLAYERS,
     timeLeft: game.lobby.timeLeft,
     started: game.lobby.started,
+    manual: !!(game.lobby && game.lobby.manual),
+    hostId: (game.lobby && game.lobby.hostId) || null,
   });
 }
 
@@ -978,6 +993,27 @@ function launchGame(game, readyPlayersArr = null) {
   }
 
   // (re)construire l’enceinte centrale
+  
+  // --- Ensure only ready sockets stay in the room before starting ---
+  try {
+    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    const keepSet = new Set(socketsArr.filter(id => io.sockets.sockets.has(id)));
+    const members = room ? Array.from(room) : [];
+    for (const sid of members) {
+      if (keepSet.has(sid)) continue;
+      const sock = io.sockets.sockets.get(sid);
+      if (!sock) continue;
+      try { if (game.lobby && game.lobby.players) delete game.lobby.players[sid]; } catch(_){}
+      try { sock.leave('lobby' + game.id); } catch(_) {}
+      let target = activeGames.find(g => g && g.lobby && !g.lobby.manual && !g.lobby.started && g.id !== game.id && Object.keys(g.lobby.players||{}).length < MAX_PLAYERS);
+      if (!target) target = createNewGame();
+      socketToGame[sid] = target.id;
+      sock.join('lobby' + target.id);
+      broadcastLobby(target);
+    }
+    broadcastLobby(game);
+  } catch(e) { console.error('[launchGame] evac non-ready error', e); }
+
   buildCentralEnclosure(game, 1);
 
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
@@ -1005,6 +1041,40 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
+
+  // Ultra-aggressive: host cleanup BEFORE disconnect completes
+  socket.on('disconnecting', () => {
+    try {
+      const mappedId = socketToGame[socket.id];
+      let game = activeGames.find(g => g && g.id === mappedId) || null;
+      if (!game) {
+        game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
+      }
+      if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
+        // Notify all clients in the lobby and force them out
+        try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
+        const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+        const ids = room ? Array.from(room) : [];
+        for (const cid of ids) {
+          try {
+            if (cid !== socket.id) {
+              const s = io.sockets.sockets.get(cid);
+              if (s) { try { s.leave('lobby' + game.id); } catch(_){} }
+              if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
+              if (game.players && game.players[cid]) delete game.players[cid];
+              if (game._lastNetSend) delete game._lastNetSend[cid];
+              try { delete socketToGame[cid]; } catch (_) {}
+            }
+          } catch (_){}
+        }
+        try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
+        try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_){}
+      }
+    } catch (e) {
+      console.error('[disconnecting host cleanup] error', e);
+    }
+  });
+
   console.log('[CONNECT]', socket.id, socket.handshake.headers['user-agent']);
 
   // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
@@ -1015,12 +1085,118 @@ io.on('connection', socket => {
   socket.on('clientPing', () => {});
 
   socket.emit('lobbyUpdate', {
+    id: game.id,
     players: game.lobby.players,
     count: Object.keys(game.lobby.players).length,
     max: MAX_PLAYERS,
     timeLeft: game.lobby.timeLeft,
     started: game.lobby.started,
   });
+
+  // ====== Manual lobby system (create/join/start) ======
+  socket.on('createLobby', (pseudo, cb) => {
+    // Sanitize pseudo and create a fresh manual lobby with this socket as host
+    pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+    if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    const oldGameId = socketToGame[socket.id];
+    const oldGame = activeGames.find(g => g.id === oldGameId);
+
+    const newGame = createNewGame();
+    newGame.lobby.manual = true;
+    newGame.lobby.hostId = socket.id;
+    newGame.lobby.players[socket.id] = { pseudo, ready: true };
+
+    // Move socket room + mapping
+    if (oldGame) { try { socket.leave('lobby' + oldGame.id); } catch(_){} }
+    socketToGame[socket.id] = newGame.id;
+    socket.join('lobby' + newGame.id);
+
+    broadcastLobby(newGame);
+    if (cb) cb({ ok:true, gameId:newGame.id });
+  });
+
+  socket.on('requestLobbies', () => {
+    cleanupEmptyManualLobbies();
+    const list = activeGames
+      .filter(g => g.lobby && g.lobby.manual && !g.lobby.started && Object.keys(g.lobby.players||{}).length > 0)
+      .map(g => ({
+        id: g.id,
+        hostId: g.lobby.hostId || null,
+        players: Object.values(g.lobby.players || {}).map(p => p.pseudo).slice(0, MAX_PLAYERS),
+        count: Object.keys(g.lobby.players || {}).length,
+        max: MAX_PLAYERS
+      }));
+    io.to(socket.id).emit('lobbiesList', list);
+  });
+
+  socket.on('joinLobbyById', (data, cb) => {
+    const targetId = data && data.gameId;
+    let pseudo = (data && data.pseudo) || '';
+    pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+    if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    const target = activeGames.find(g => g.id === targetId);
+    if (!target || !target.lobby.manual || target.lobby.started) { if (cb) cb({ ok:false, reason:'not_joinable' }); return; }
+    const count = Object.keys(target.lobby.players||{}).length;
+    if (count >= MAX_PLAYERS) { if (cb) cb({ ok:false, reason:'full' }); return; }
+
+    const currentId = socketToGame[socket.id];
+    const current = activeGames.find(g => g.id === currentId);
+    if (current) {
+      // Remove from previous lobby if present
+      delete current.lobby.players[socket.id];
+      try { socket.leave('lobby' + current.id); } catch(_) {}
+      broadcastLobby(current);
+    }
+
+    socketToGame[socket.id] = target.id;
+    socket.join('lobby' + target.id);
+    target.lobby.players[socket.id] = { pseudo, ready: true };
+    broadcastLobby(target);
+    if (cb) cb({ ok:true, gameId: target.id });
+  });
+
+  
+socket.on('startManualLobby', (cb) => {
+    const gid = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gid);
+    if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
+    if (game.lobby.hostId !== socket.id) { if (cb) cb({ ok:false, reason:'not_host' }); return; }
+    if (game.lobby.started) { if (cb) cb({ ok:false, reason:'already_started' }); return; }
+    const readyPlayers = Object.entries(game.lobby.players || {});
+    if (readyPlayers.length === 0) { if (cb) cb({ ok:false, reason:'no_players' }); return; }
+    game.lobby.started = true;
+    if (game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; }
+    launchGame(game, readyPlayers);
+    if (cb) cb({ ok:true });
+});
+
+
+socket.on('hostBackManual', (cb) => {
+    const gid = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gid);
+    if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) { if (cb) cb({ ok:false }); return; }
+    if (game.lobby.hostId !== socket.id) { if (cb) cb({ ok:false, reason:'not_host' }); return; }
+
+    // Notify room that lobby is closed and force everyone out
+    try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch(_){}
+
+    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    const cids = room ? Array.from(room) : [];
+    for (const cid of cids) {
+      try {
+        const sock = io.sockets.sockets.get(cid);
+        if (sock) { try { sock.leave('lobby' + game.id); } catch(_){} }
+        if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
+        if (game.players && game.players[cid]) delete game.players[cid];
+        if (game._lastNetSend) delete game._lastNetSend[cid];
+        try { delete socketToGame[cid]; } catch (_){}
+      } catch(_){}
+    }
+    try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
+    // Remove game entirely
+    activeGames = activeGames.filter(g => g !== game);
+    if (cb) cb({ ok:true });
+});
 
 // --- Turret upgrades (t/T/G) ---
 socket.on('upgradeTurret', ({ type }) => {
@@ -1055,13 +1231,14 @@ socket.on('upgradeTurret', ({ type }) => {
 
 
   socket.on('giveMillion', () => {
-    const player = game.players[socket.id];
-    if (player && player.pseudo === 'Myg') {
-      player.money = 1000000;
-      socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
-
-// Turret upgrade handler
-    }
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game) return;
+  const player = game.players[socket.id];
+  if (player && player.pseudo === 'Myg') {
+    player.money = 1000000;
+    socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
+  }
 });
 
 
@@ -1079,35 +1256,114 @@ socket.on('skipRound', () => {
 });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-    pseudo = (pseudo || '').trim().substring(0, 15);
-    pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
-    if (!pseudo) pseudo = 'Joueur';
-    game.lobby.players[socket.id] = { pseudo, ready: true };
-    broadcastLobby(game);
-    startLobbyTimer(game);
-  });
+  const gameId = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gameId);
+  if (!game) return;
+  pseudo = (pseudo || '').trim().substring(0, 15);
+  pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
+  if (!pseudo) pseudo = 'Joueur';
+  game.lobby.players[socket.id] = { pseudo, ready: true };
+  broadcastLobby(game);
+  if (!game.lobby.manual) {
+  try {
+    game.lobby.started = true;
+    if (game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; }
+    // Launch immediately as SOLO: only the current player is ready
+    const readyPlayers = [[socket.id, game.lobby.players[socket.id]]];
+    launchGame(game, readyPlayers);
+  } catch (e) {
+    console.error('[setPseudoAndReady] solo start error', e);
+  }
+  return;
+}
+});
+
+  
 
   socket.on('leaveLobby', () => {
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game) return;
+    // Remove from current lobby's players
     delete game.lobby.players[socket.id];
     broadcastLobby(game);
+
+    // Leave the old room
+    try { socket.leave('lobby' + game.id); } catch(_) {}
+
+    // Move the socket back to an auto lobby (non-manual), so UI stays consistent
+    let target = activeGames.find(g => g && g.lobby && !g.lobby.manual && !g.lobby.started && Object.keys(g.lobby.players||{}).length < MAX_PLAYERS);
+    if (!target) target = getAvailableLobby();
+    socketToGame[socket.id] = target.id;
+    socket.join('lobby' + target.id);
+    // Do not auto-mark ready; just broadcast target state
+    broadcastLobby(target);
+
+    // Cleanup manual lobbies that might have become empty
+    cleanupEmptyManualLobbies();
   });
+
 
   socket.on('disconnect', () => {
-    console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
-    delete game.lobby.players[socket.id];
-    delete game.players[socket.id];
-	if (game._lastNetSend) delete game._lastNetSend[socket.id];
-	delete socketToGame[socket.id];
-    io.to('lobby' + game.id).emit('playerDisconnected', socket.id);
-    broadcastLobby(game);
-    io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-  });
+  console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
 
+  // Try to resolve the game from mapping
+  const mappedId = socketToGame[socket.id];
+  let game = activeGames.find(g => g && g.id === mappedId) || null;
+
+  // Fallback: direct lookup by hostId (covers cases where mapping was lost)
+  if (!game) {
+    game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
+  }
+
+  // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> close & delete the lobby
+  if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
+    try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_) {}
+
+    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+    const cids = room ? Array.from(room) : [];
+
+    for (const cid of cids) {
+      const sock = io.sockets.sockets.get(cid);
+      if (!sock) continue;
+
+      try {
+        if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
+        if (game.players && game.players[cid]) delete game.players[cid];
+        if (game._lastNetSend) delete game._lastNetSend[cid];
+      } catch (_) {}
+
+      try { sock.leave('lobby' + game.id); } catch (_) {}
+      try { delete socketToGame[cid]; } catch (_) {}
+    }
+
+    try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_) {}
+    try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_) {}
+    return; // done
+  }
+
+  // Default path: remove only this player from its current game/lobby if any
+  if (mappedId) {
+    const g = activeGames.find(x => x && x.id === mappedId);
+    if (g) {
+      delete g.lobby.players[socket.id];
+      delete g.players[socket.id];
+      if (g._lastNetSend) delete g._lastNetSend[socket.id];
+      io.to('lobby' + g.id).emit('playerDisconnected', socket.id);
+      broadcastLobby(g);
+      io.to('lobby' + g.id).emit('playersHealthUpdate', getPlayersHealthState(g));
+    }
+    delete socketToGame[socket.id];
+  }
+});
   socket.on('moveDir', (dir) => {
-    const player = game.players[socket.id];
-    if (!game.lobby.started || !player || !player.alive) return;
-    player.moveDir = dir; // dir.x et dir.y entre -1 et 1
-  });
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game || !game.lobby.started) return;
+  const player = game.players[socket.id];
+  if (!player || !player.alive) return;
+  player.moveDir = dir;
+});
 
   socket.on('upgradeBuy', ({ upgId }) => {
     const gameId = socketToGame[socket.id];
@@ -1240,32 +1496,27 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
 
 
 socket.on('shoot', (data) => {
-  if (!game.lobby.started) return;
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game || !game.lobby.started) return;
   const player = game.players[socket.id];
   if (!player || !player.alive) return;
   const now = Date.now();
-  if (now - player.lastShot < SHOOT_INTERVAL) return;
+  if (now - (player.lastShot||0) < SHOOT_INTERVAL) return;
   player.lastShot = now;
-
   const dx = data.targetX - player.x;
   const dy = data.targetY - player.y;
   const dist = Math.sqrt(dx*dx + dy*dy);
   if (dist < 1) return;
-
   const bulletId = `${socket.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-  game.bullets[bulletId] = {
-    id: bulletId,
-    owner: socket.id,
-    x: player.x,
-    y: player.y,
-    dx: dx / dist,
-    dy: dy / dist,
-    createdAt: now
-  };
-  game._bulletCount++; // O(1)
+  game.bullets[bulletId] = { id: bulletId, owner: socket.id, x: player.x, y: player.y, dx: dx / dist, dy: dy / dist, createdAt: now };
+  game._bulletCount = (game._bulletCount||0) + 1;
 });
 
 socket.on('requestZombies', () => {
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game) return;
   const p = game.players[socket.id];
   if (!p) return;
   const cx_req = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
@@ -1274,13 +1525,15 @@ socket.on('requestZombies', () => {
   io.to(socket.id).emit('zombiesUpdate', zSnap);
 });
 
-
-  socket.on('playerDied', () => {
-    if (game.players[socket.id]) {
-      game.players[socket.id].alive = false;
-      io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
-    }
-  });
+socket.on('playerDied', () => {
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game) return;
+  if (game.players[socket.id]) {
+    game.players[socket.id].alive = false;
+    io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+  }
+});
   // Enter spectator mode (keeps socket alive and continues receiving updates)
   socket.on('enterSpectator', () => {
     const gameId = socketToGame[socket.id];
@@ -1326,20 +1579,31 @@ socket.on('requestZombies', () => {
 
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
 socket.on('killAllZombies', () => {
+  const gid = socketToGame[socket.id];
+  const game = activeGames.find(g => g.id === gid);
+  if (!game) return;
   const player = game.players[socket.id];
   if (!player || player.pseudo !== 'Myg') return;
   game.zombies = {};
-  game._zombieCount = 0; // O(1)
+  game._zombieCount = 0;
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
+
+// Fallback manual-lobby host cleanup on disconnect (robustness)
+socket.on('disconnect', () => {
+  try {
+    const ownedManuals = (activeGames || []).filter(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id);
+    for (const game of ownedManuals) {
+      try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_){}
+    }
+  } catch (e) {
+    console.error('[disconnect fallback] error', e);
+  }
 });
-
-
-
-
+});
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 40, regen: 0, damage: 5, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 

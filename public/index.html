@@ -28,6 +28,7 @@
     #lobbyBox input[type=text] { font-size: 20px; padding: 7px 12px; border-radius: 7px; border: 1px solid #444; outline: none; margin-bottom: 10px; width: 175px; }
     #lobbyJoin { padding: 7px 32px; border-radius: 8px; border:none; font-size: 20px; background:#49c749; color: #fff; cursor: pointer; margin-top: 7px; }
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
+    #btnJoinLobbyList[disabled], #btnCreateLobby[disabled] { opacity: 0.6; cursor: not-allowed; }
     #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
@@ -176,7 +177,8 @@
 	  55% { box-shadow: 0 0 11px #67fa62, 0 0 22px #fff9;}
 	  100% { box-shadow: 0 0 0px #67fa62, 0 0 0px #fff; }
 	}
-  </style>
+  
+</style>
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
@@ -199,16 +201,41 @@
 <div id="lobbyBox">
 <div id="lobbyTitle" style="font-size: 28px; margin-bottom: 18px;"><b>Zombination.io</b></div>
 <div id="lobbyPlayers"></div>
+        <!-- Manual lobby panel (hidden by default) -->
+        <div id="manualLobbyPanel" style="display:none; margin-top:12px; text-align:center;">
+          <div id="manualLobbyTitle" style="font-weight:600; margin-bottom:6px;">Lobby</div>
+          <div id="manualLobbyPlayers" style="font-size:14px; margin-bottom:8px;"></div>
+          <div style="display:flex; gap:8px; justify-content:center;">
+            <button id="btnStartManual" style="padding: 10px 20px; background: #3fa33f; color: white; border: none; border-radius: 6px; cursor: pointer;">Start</button>
+            <button id="btnBackFromManual" style="padding: 10px 20px; background: #666; color: white; border: none; border-radius: 6px; cursor: pointer;">Back</button>
+          </div>
+          <div id="manualLobbyNote" style="margin-top:6px; color:#ccc; font-size:12px;">Only the creator can start.</div>
+        </div>
+
+        <!-- Join lobby list panel (hidden by default) -->
+        <div id="joinLobbyPanel" style="display:none; margin-top:12px;">
+          <div style="text-align:center; font-weight:600; margin-bottom:6px;"><span id="joinLobbyTitle">Available lobbies</span></div>
+          <div id="lobbiesList" style="display:flex; flex-direction:column; gap:6px;"></div>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+            
+            <button id="btnBackFromList" style="padding: 8px 14px; background: #666; color: white; border:none; border-radius:6px; cursor:pointer;">Back</button>
+          </div>
+        </div>
+        
 <div id="lobbyTimer"></div>
 <div id="lobbyStatus"></div>
 <input id="pseudoInput" maxlength="15" placeholder="" type="text"/>
 <br/>
+<div id="lobbyBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px;">
 <button id="lobbyJoin"></button>
+<button id="btnJoinLobbyList" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Join lobby</button>
+<button id="btnCreateLobby" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Create lobby</button>
+</div>
 <div id="langSelectRow"></div>
 </div>
 </div>
-<button id="shopBtn" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;" title="Boutique">
-<img alt="Shop" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
+<button id="shopBtn" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;" title="Upgrades">
+<img alt="Upgrades" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
 	  SHOP
 	</button>
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
@@ -268,15 +295,16 @@
 <div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
 <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-<img alt="Shop" src="/icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
-<span>SHOP</span>
+<img alt="Upgrades" src="/icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
+<span id="shopTitleText">UPGRADES</span>
 </div>
 <div id="shopUpgrades">
 <!-- Ici viendront les lignes d’améliorations à l’étape suivante -->
 <div style="color:#fff6; font-size:17px; margin-top:18px;">Boutique à venir : <i>Affichage des améliorations ici à l’étape 3</i></div>
 </div>
 </div>
-<div id="versionBox">Version 1.0.0 par Myg</div>
+<div id="versionBox"></div>
+<script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
 <script src="/socket.io/socket.io.js">
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
@@ -289,12 +317,67 @@ window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
 const socket = io({ transports: ['websocket'] });
+console.log("📡 Tentative de connexion au serveur Socket.IO...");
+socket.on("connect", () => {
+  console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
+  try { socket.emit("clientHello", { v: (window.GAME_VERSION||"1.0.0"), tz: (Intl.DateTimeFormat().resolvedOptions().timeZone||"?") }); } catch(e){}
+});
+socket.on("disconnect", (reason) => {
+  console.warn("❌ Déconnecté du serveur. Raison:", reason);
+});
+socket.on("connect_error", (err) => {
+  console.error("⚠️ Erreur de connexion à Socket.IO:", err);
+});
+// Global guards to prevent any crash from bubbling up and blanking the page
+window.addEventListener('error', function(e){ try { console.error('Global error:', e && e.message, e); } catch(_){} });
+window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
+
+
+// LOBBY STATE LOGS
+socket.on("lobbyUpdate", (data) => {
+  console.log("📥 [SOCKET] Reçu lobbyUpdate:", data);
+});
+socket.emit("requestLobbyState");
+console.log("📤 [SOCKET] Emit requestLobbyState");
+
+// JOIN BUTTON
+if (lobbyJoin) {
+  lobbyJoin.addEventListener("click", () => {
+    const pseudo = pseudoInput.value;
+    console.log("👤 Bouton JOIN cliqué. Pseudo saisi:", pseudo);
+    if (!pseudo) return;
+  });
+}
+
+// TIMER & UI DEBUG
+setInterval(() => {
+  if (typeof lobbyData !== "undefined") {
+    console.log("⏳ Lobby Timer:", lobbyData.timeLeft, " | Players:", lobbyData.count);
+  }
+}, 5000);
+
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <script src="/translations.js">
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
+<script>
+// Safe translation accessor and singleton helper.
+// Avoids "Identifier 'trLoc' has already been declared" if scripts reload.
+(function(){
+  if (!window.trLoc) {
+    window.trLoc = function(key, fallback){
+      try {
+        var lang = (typeof window.currentLang === 'string' && window.currentLang) || (navigator.language||'en').slice(0,2);
+        var pack = (window.TRANSLATIONS && window.TRANSLATIONS[lang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
+        return (pack && pack[key]) || (fallback || key);
+      } catch(e){ return fallback || key; }
+    };
+  }
+})();
+</script>
+
 <script>
   if (typeof TRANSLATIONS === "undefined") { window.TRANSLATIONS = { fr: {}, en: {} }; }
 
@@ -440,11 +523,24 @@ if (buildTilesCont){
     btn.addEventListener('mouseenter', ()=>{
       const type = btn.getAttribute('data-type');
       const tip0 = btn.getAttribute('data-tip') || '';
-      if (['t','T','G'].includes(type)){
+      if (['t','T','G','B','D'].includes(type)){
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+      const names = (tr.turretType || {});
+      const hpLabel = tr.hpShort || 'HP';
+      const dmgLabel = tr.damage || 'Damage';
+      const rateLabel = tr.fireRate || 'Fire rate';
+      const baseHP = { T:500, t:200, G:2500, B:500, D:500 };
+      let name = (type==='B') ? (tr.buildWall || 'Wall') : (type==='D') ? (tr.buildDoor || 'Door') : (names[type] || 'Turret'); name = upperFirstLocalized(name);
+      let tip;
+      if (type==='B' || type==='D') {
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
+      } else {
+        const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
         const dmg = computeTurretDamageDisplay(type);
-        const tip = tip0.replace(/Dégâts:\s*\d+/, 'Dégâts: '+dmg);
-        const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).perSec||'/s') + ')';
       }
+      const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
+    }
     }, {passive:true});
   });
 }
@@ -473,6 +569,17 @@ setInterval(()=>{
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <!-- perf overlay patch: sort by consumption desc and 1s refresh -->
+<script>
+window.addEventListener('beforeunload', function(){
+  try{
+    if (window.socket && window.socket.connected && window.lobbyData && window.lobbyData.manual && !window.lobbyData.started && window.lobbyData.hostId === socket.id){
+      socket.emit('hostBackManual', function(){});
+    }
+  }catch(_){}
+});
+</script>
+
+
 <script>
 (function(){
   if (!window || !window.__DEV_PERF) return;
@@ -636,7 +743,7 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
     ];
     function getDefaultLang() { return "en"; }
     let currentLang = getDefaultLang();
-    let lobbyData = { started: false, count: 0, max: 6, timeLeft: 30, players: {} };
+    window.currentLang = currentLang; let lobbyData = { started: false, count: 0, max: 6, timeLeft: 30, players: {} };
     let lobbyJoined = false, lobbyStarted = false;
     function initLobbyTexts() {
       updateLobbyTexts();
@@ -651,17 +758,110 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
       lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
     }
     function updateUITexts() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      document.getElementById('lobbyTitle').innerHTML = `<b>${tr.zombination}</b>`;
-      pseudoInput.placeholder = tr.enterPseudo;
-      lobbyJoin.textContent = lobbyJoined ? tr.waiting : tr.join;
-      const deathTitle = document.getElementById('deathTitle');
-      if (deathTitle) deathTitle.textContent = tr.youDied;
-      const btnReplay = document.getElementById('btnReplay');
-      if (btnReplay) btnReplay.textContent = tr.replay;
-      if (!lobbyStarted) { updateLobbyTexts(); }
+  function applyJoinLabel(){
+    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    const el = document.getElementById('lobbyJoin');
+    if (!el) return;
+    el.textContent = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join');
+  }
+
+  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+
+  // Title and basics
+  const lobbyTitleEl = document.getElementById('lobbyTitle');
+  if (lobbyTitleEl) lobbyTitleEl.innerHTML = `<b>${tr.zombination}</b>`;
+  if (pseudoInput) pseudoInput.placeholder = tr.enterPseudo || '';
+  if (lobbyJoin) lobbyJoin.textContent = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join'); applyJoinLabel();
+
+  // Death screen
+  const deathTitle = document.getElementById('deathTitle');
+  if (deathTitle) deathTitle.textContent = tr.youDied || 'You died!';
+  const btnReplay = document.getElementById('btnReplay');
+  if (btnReplay) btnReplay.textContent = tr.replay || 'Replay';
+  if (typeof updateLobbyTexts === 'function' && !lobbyStarted) { updateLobbyTexts(); }
+
+  // Main menu & lobby buttons / headers
+  const btnJoinLobbyList = document.getElementById('btnJoinLobbyList');
+  if (btnJoinLobbyList) btnJoinLobbyList.textContent = tr.joinLobby || 'Join lobby';
+  const btnCreateLobby = document.getElementById('btnCreateLobby');
+  if (btnCreateLobby) btnCreateLobby.textContent = tr.createLobby || 'Create lobby';
+  const btnStartManual = document.getElementById('btnStartManual');
+  if (btnStartManual) btnStartManual.textContent = tr.start || 'Start';
+  const btnBackFromManual = document.getElementById('btnBackFromManual');
+  if (btnBackFromManual) btnBackFromManual.textContent = tr.back || 'Back';
+  const btnBackFromList = document.getElementById('btnBackFromList');
+  if (btnBackFromList) btnBackFromList.textContent = tr.back || 'Back';
+  const manualLobbyTitle = document.getElementById('manualLobbyTitle');
+  if (manualLobbyTitle) {
+    // Keep number if already set "Lobby #X"
+    const current = manualLobbyTitle.textContent || '';
+    const num = (current.match(/\d+/) || [null])[0];
+    manualLobbyTitle.textContent = (tr.lobby || 'Lobby') + (num ? (' #' + num) : '');
+  }
+  const manualLobbyNote = document.getElementById('manualLobbyNote');
+  if (manualLobbyNote) manualLobbyNote.textContent = tr.onlyCreatorStart || 'Only the creator can start.';
+  const joinLobbyTitle = document.getElementById('joinLobbyTitle');
+  if (joinLobbyTitle) joinLobbyTitle.textContent = tr.availableLobbies || 'Available lobbies';
+
+  // Shop button + modal header
+  const shopBtn = document.getElementById('shopBtn');
+  if (shopBtn) {
+    shopBtn.title = tr.shop || 'Shop';
+    // Recompose inner content with cart icon + label
+    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
+  }
+  const shopTitleText = document.getElementById('shopTitleText');
+  if (shopTitleText) shopTitleText.textContent = tr.shop || 'Shop';
+
+  try { if (typeof updateAutoFireBtnUI === 'function') updateAutoFireBtnUI(); } catch(e){}
+
+  // Mobile build buttons
+  try {
+    document.querySelectorAll('.mobile-build .mb-btn').forEach(btn => {
+      const type = btn.getAttribute('data-type');
+      if (!type) return;
+      if (type === 'B') { btn.textContent = tr.buildWall || btn.textContent; btn.setAttribute('aria-label', (tr.buildWall || btn.textContent) + ' (B)'); }
+      else if (type === 'D') { btn.textContent = tr.buildDoor || btn.textContent; btn.setAttribute('aria-label', (tr.buildDoor || btn.textContent) + ' (D)'); }
+      else if (type === 't') { btn.textContent = tr.buildMiniTurret || btn.textContent; btn.setAttribute('aria-label', (tr.buildMiniTurret || btn.textContent) + ' (t)'); }
+      else if (type === 'T') { btn.textContent = tr.buildTurret || btn.textContent; btn.setAttribute('aria-label', (tr.buildTurret || btn.textContent) + ' (T)'); }
+    });
+  } catch(e){}
+    
+  try { if (typeof renderManualPlayers === 'function') renderManualPlayers(); } catch(e){}
+  try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
+
+// Ultra-robust: ensure empty placeholders in manual lobby reflect current language instantly
+window.translateEmptySlotsInManualLobby = function(){
+  try {
+    var tr = (window.TRANSLATIONS && (window.TRANSLATIONS[window.currentLang] || window.TRANSLATIONS['en'])) || {};
+    var label = tr.emptySlot || 'empty';
+    var container = document.getElementById('manualLobbyPlayers');
+    if (!container) return;
+    // Build a set of all known "empty" labels from the translation packs (cached)
+    if (!window.__knownEmptyLabels) {
+      var known = new Set(['empty']);
+      try {
+        var T = window.TRANSLATIONS || {};
+        Object.keys(T).forEach(function(k){
+          var v = T[k] && T[k].emptySlot;
+          if (v) known.add(String(v).trim());
+        });
+      } catch(_){}
+      window.__knownEmptyLabels = known;
     }
-    const langSelectRow = document.getElementById('langSelectRow');
+    var knownSet = window.__knownEmptyLabels;
+    // Replace any cell that currently shows an old empty label
+    var cells = container.querySelectorAll('td, div, span, button');
+    cells.forEach(function(el){
+      var txt = (el.textContent || '').trim();
+      if (!txt || knownSet.has(txt)) {
+        el.textContent = label;
+      }
+    });
+  } catch(_){}
+};;
+}
+const langSelectRow = document.getElementById('langSelectRow');
     function renderLangFlags() {
       langSelectRow.innerHTML = '';
       LANGS.forEach(lang => {
@@ -673,7 +873,7 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
         img.onclick = () => {
           if (currentLang !== lang.code) {
             currentLang = lang.code;
-            renderLangFlags(); updateUITexts(); drawHUD();
+            window.currentLang = currentLang; renderLangFlags(); updateUITexts(); try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){} try { if (typeof renderManualPlayers === 'function') renderManualPlayers(); } catch(e) {}; drawHUD();
           }
         };
         langSelectRow.appendChild(img);
@@ -684,16 +884,16 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
 	  this.value = this.value.replace(/[^a-zA-Z0-9]/g, '');
 	});
 
-    const lobbyJoin = document.getElementById('lobbyJoin');
-    const lobbyPlayers = document.getElementById('lobbyPlayers');
-    const lobbyTimer = document.getElementById('lobbyTimer');
-    const lobbyStatus = document.getElementById('lobbyStatus');
-    const deathTitle = document.getElementById('deathTitle');
-    const deathStats = document.getElementById('deathStats');
-    const btnReplay = document.getElementById('btnReplay');
-    const btnSpectate = document.getElementById('btnSpectate');
-	const deathScreen = document.getElementById('deathScreen');
-    renderLangFlags(); initLobbyTexts();
+    
+    // Ensure global access to inputs/buttons for all handlers
+    try {
+      if (typeof window !== 'undefined') {
+        if (typeof pseudoInput !== 'undefined' && pseudoInput) window.pseudoInput = pseudoInput;
+        var lobbyJoin = document.getElementById('lobbyJoin');
+        if (lobbyJoin) window.lobbyJoin = lobbyJoin;
+      }
+    } catch(_){}
+renderLangFlags(); initLobbyTexts(); updateUITexts(); try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
 
     // --- JEU ---
     
@@ -705,6 +905,36 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
 
 
 window.socket = socket;
+window.__reloading = window.__reloading || false;
+function hardReload(){
+  if (window.__reloading) return;
+  window.__reloading = true;
+  try { if (socket && socket.connected) socket.disconnect(); } catch(e){}
+  try { location.reload(); } catch(e){}
+  setTimeout(function(){ try { location.replace(location.href); } catch(e){} }, 60);
+}
+
+window.__reloading = false;
+
+// When a manual lobby is closed by its host, simulate Back for everyone
+socket.on('lobbyClosed', function(){ try{ showMain(); window.lobbyJoined=false; if (pseudoInput){ pseudoInput.disabled=false; if(window.myPseudo) pseudoInput.value=window.myPseudo; } try{ updateButtonsDisabled(); }catch(_){}}catch(_){} });
+socket.on('forceReload', function(){
+  if (window.__reloading) return;
+  window.__reloading = true;
+  try { if (socket && socket.connected) socket.disconnect();
+socket.on('playerDisconnected', function(sid){
+  try {
+    var ld = window.lobbyData || {};
+    if (ld && ld.manual && !ld.started && ld.hostId && ld.hostId === sid) {
+      try{ showMain(); window.lobbyJoined=false; if (pseudoInput){ pseudoInput.disabled=false; if(window.myPseudo) pseudoInput.value=window.myPseudo; } try{ updateButtonsDisabled(); }catch(_){}}catch(_){}
+    }
+  } catch(e){}
+});
+ } catch(e){}
+  try { location.reload(); } catch(e){}
+  setTimeout(function(){ try { location.replace(location.href); } catch(e){} }, 60);
+});
+
 
 // === Mouvement: envoi côté serveur avec limitation de fréquence ===
 let __lastMoveEmit = 0;
@@ -726,18 +956,27 @@ function emitMoveThrottled(move){
 
 // Listen result from turret upgrade and refresh UI/HUD
 socket.on('upgradeTurretResult', function(res){
-  
-
   const msg = document.getElementById('turretUpgradesMsg');
   if (res && res.ok) {
     if (typeof myTurretUp === 'object' && res.type) { myTurretUp[res.type] = res.level || 0; }
     if (typeof res.newMoney === 'number') { myMoney = res.newMoney; }
-    if (msg) { msg.textContent = `Upgrade ${res.type} niveau ${res.level} réussi. Argent: $${res.newMoney}`; msg.style.color = '#9f9'; }
+    if (msg) {
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
+      const types = (tr.turretType || {});
+      const typeLabel = types[res.type] || res.type;
+      const tpl = tr.turretUpgradeSuccess || 'Upgrade {type} lvl {level} succeeded. Money: ${money}';
+      msg.textContent = tpl.replace('{type}', String(typeLabel)).replace('{level}', String(res.level||0)).replace('{money}', String(res.newMoney||0));
+      msg.style.color = '#9f9';
+    }
     if (typeof window !== 'undefined' && typeof window.refreshShop === 'function') window.refreshShop();
     if (typeof renderShopUpgrades === 'function') renderShopUpgrades();
     if (typeof drawHUD === 'function') drawHUD();
   } else {
-    if (msg) { msg.textContent = (res && res.reason === 'not_enough_money') ? "Pas assez d'argent." : "Action impossible."; msg.style.color = '#f99'; }
+    if (msg) {
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
+      msg.textContent = (res && res.reason === 'not_enough_money') ? (tr.notEnoughMoney || "Not enough money.") : (tr.actionImpossible || "Action impossible.");
+      msg.style.color = '#f99';
+    }
   }
 });
 let currentRound = 1;
@@ -785,7 +1024,7 @@ socket.on('stateUpdate', (payload) => {
 
   if (payload.zombies)        zombies = payload.zombies;
   if (payload.bullets)        bullets = payload.bullets;
-  if (payload.playersHealth)  playersHealth = payload.playersHealth;
+  if (payload.playersHealth)  playersHealth = Object.assign({}, playersHealth, payload.playersHealth);
   if (typeof payload.round === 'number') currentRound = payload.round;
 
   // Apply destroyed structures
@@ -814,22 +1053,19 @@ socket.on('stateUpdate', (payload) => {
 
         const hpFromGrid = structHPGrid?.[y]?.[x];
         const previousHP = structures?.[y]?.[x]?.hp;
+        function __baseHP(type){ switch(type){ case 'T': return 500; case 't': return 200; case 'G': return 2500; case 'B': case 'D': return 500; default: return 200; } }
+
 
         if (typeof cell === 'object') {
           const type = cell.type;
-          let hp = (typeof cell.hp === 'number') ? cell.hp
-            : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
-            : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
-              : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200))))));
+          let hp = (typeof cell.hp === 'number') ? cell.hp : ((typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP : __baseHP(type)));
           if (hp <= 0) return null;
           return { type, hp, placedBy: cell.placedBy };
         }
 
         if (typeof cell === 'string') {
           const type = cell;
-          let hp = (typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid
-            : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP
-              : (type === 'T' ? 500 : (type === 't' ? 200 : (type === 'G' ? 2500 : ((type === 'B' || type === 'D') ? 500 : 200)))));
+          let hp = (typeof hpFromGrid === 'number' && hpFromGrid > 0) ? hpFromGrid : ((typeof previousHP === 'number' && previousHP > 0) ? previousHP : __baseHP(type));
           if (hp <= 0) return null;
           return { type, hp };
         }
@@ -935,7 +1171,7 @@ const UPGRADES = [
     desc: "Tire plus fort.",
     icon: "/icons/bullet.svg",
     getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-    baseValue: 5,
+    baseValue: 10,
     statLabel: "Dégâts",
     format: v => v
   },
@@ -2429,10 +2665,10 @@ function drawHUD() {
   const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
 
   hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
-  hudMoney.textContent = `Money : $${myMoney}`;
+  hudMoney.textContent = `${tr.money || 'Money'} : $${myMoney}`;
 
   // ⚠️ Libellé imposé : "Zombies left" (pas de fallback "Active zombies")
-  const labelZ = 'Zombies left';
+  const labelZ = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].zombiesLeft) || 'Zombies left';
 
   // Compteur : priorise zombiesRemaining, sinon on compte les zombies actifs
   const countZ = (Number.isFinite(zombiesRemaining) && zombiesRemaining >= 0)
@@ -2555,6 +2791,9 @@ function gameLoop(timestamp = 0) {
         timeLeft: Number(data.timeLeft)||0,
         players: data.players || {}
       };
+      try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
+      try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
+      try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
@@ -2563,7 +2802,7 @@ function gameLoop(timestamp = 0) {
       }
       lobbyScreen.style.display = 'flex';
       updateLobbyTexts();
-      lobbyJoin.disabled = lobbyJoined;
+      lobbyJoin.disabled = lobbyJoined || !pseudoInput.value.trim();
       pseudoInput.disabled = lobbyJoined;
       if (lobbyJoined) lobbyJoin.textContent = tr.waiting;
       else lobbyJoin.textContent = tr.join;
@@ -2577,11 +2816,14 @@ function gameLoop(timestamp = 0) {
         return;
       }
       socket.emit('setPseudoAndReady', pseudoInput.value.trim());
+      try{ localStorage.setItem('zombi_pseudo', pseudoInput.value.trim()); }catch(_){}
       myPseudo = pseudoInput.value.trim();
       lobbyJoined = true;
+      window.lobbyJoined = true;
       lobbyJoin.disabled = true;
       pseudoInput.disabled = true;
       lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
+      try { updateButtonsDisabled(); } catch(_) {}
     };
 
     pseudoInput.onkeydown = (e) => {
@@ -2744,10 +2986,18 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 
 
     socket.on('waveMessage', (msg) => {
-      waveMessage.textContent = msg;
-      waveMessage.style.opacity = '1';
-      setTimeout(() => { waveMessage.style.opacity = '0'; }, 2500);
-    });
+  try {
+    const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
+    const m = String(msg || '').match(/\d+/);
+    const n = m ? parseInt(m[0], 10) : NaN;
+    const label = tr.round || 'Wave';
+    waveMessage.textContent = Number.isFinite(n) ? (label + ' ' + n) : label;
+  } catch(e) {
+    waveMessage.textContent = 'Wave';
+  }
+  waveMessage.style.opacity = '1';
+  setTimeout(() => { waveMessage.style.opacity = '0'; }, 2500);
+});
 
 	socket.on('upgradeBought', ({ upgId, newLevel, newMoney }) => {
 	  if (!upgId) return;
@@ -2791,13 +3041,13 @@ function updateAutoFireBtnUI() {
     autoBtn.style.background = '#d1292f';
     autoBtn.style.borderColor = '#7b0e13';
     autoBtn.style.color = '#fff';
-    autoLbl.textContent = 'Auto fire ON';
+    autoLbl.textContent = ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).autoFireOn || 'Auto fire ON');
     autoBtn.querySelector('span').style.background = '#ff6066';
   } else {
     autoBtn.style.background = '#5a2226';
     autoBtn.style.borderColor = '#4a1111';
     autoBtn.style.color = '#f1d6d6';
-    autoLbl.textContent = 'Auto fire OFF';
+    autoLbl.textContent = ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).autoFireOff || 'Auto fire OFF');
     autoBtn.querySelector('span').style.background = '#742f36';
   }
 }
@@ -2809,15 +3059,46 @@ if (autoBtn) {
   updateAutoFireBtnUI();
 }
 
+
+function upperFirstLocalized(s){
+  if (!s) return s;
+  try{
+    var i = s.search(/[A-Za-zÀ-ÖØ-öø-ÿĀ-žА-Яа-яЁё]/u);
+    if (i < 0) return s;
+    return s.slice(0, i) + s.charAt(i).toUpperCase() + s.slice(i + 1);
+  } catch(e){
+    try { return s.charAt(0).toUpperCase() + s.slice(1); } catch(_) { return s; }
+  }
+}
 const buildBar = document.getElementById('buildBar');
 const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
 const buildTooltip = document.getElementById('buildTooltip');
 let STRUCTURE_PRICES = { T: 1000, t: 250, G: 5000, B: 100, D: 200 };
 
-// Hover → tooltip
+// Hover → tooltip (localized, hard method)
 buildTiles.forEach(btn => {
-  const tip = btn.getAttribute('data-tip') || '';
+  function computeTip(type) {
+    const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+    const names = (tr.turretType || {});
+    const hpLabel = tr.hpShort || 'HP';
+    const dmgLabel = tr.damage || 'Damage';
+    const rateLabel = tr.fireRate || 'Fire rate';
+    const baseHP = { T:500, t:200, G:2500, B:500, D:500 };
+    let name =  (type==='B') ? (tr.buildWall || 'Wall')
+                : (type==='D') ? (tr.buildDoor || 'Door')
+                : (names[type] || 'Turret');
+    name = upperFirstLocalized(name);
+    if (type==='B' || type==='D') {
+      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
+    } else {
+      const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
+      const dmg = (typeof computeTurretDamageDisplay==='function') ? computeTurretDamageDisplay(type) : 0;
+      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).perSec||'/s') + ')';
+    }
+  }
   btn.addEventListener('mouseenter', () => {
+    const type = btn.getAttribute('data-type');
+    const tip = computeTip(type);
     buildTooltip.textContent = tip;
     buildTooltip.style.display = 'block';
   }, { passive: true });
@@ -2825,9 +3106,6 @@ buildTiles.forEach(btn => {
     buildTooltip.style.display = 'none';
   }, { passive: true });
 });
-
-
-
 // Click → entrer/sortir du mode placement (toggle)
 let buildClickCooldown = false;
 buildTiles.forEach(btn => {
@@ -3128,6 +3406,15 @@ function getUpgradePrice(nextLevel) {
   return Math.round(priceAt7 * Math.pow(1.2, k));
 }
 
+
+function getUpgText(upg, field){
+  try {
+    const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
+    const pack = (tr.upgrades && tr.upgrades[upg.id]) || null;
+    if (pack && pack[field]) return pack[field];
+    return upg && upg[field] ? upg[field] : '';
+  } catch(e){ return (upg && upg[field]) || ''; }
+}
 function renderShopUpgrades() {
   if (!window.myTurretUp || typeof myTurretUp !== 'object') { window.myTurretUp = {}; }
   const el = document.getElementById('shopUpgrades');
@@ -3178,9 +3465,9 @@ function renderShopUpgrades() {
           <div style="width:18px; height:18px; background:${td.color}; border:2px solid ${td.border}; border-radius:3px;"></div>
         </div>
         <div style="flex:1;">
-          <div style="font-size:18px;"><b>${td.name}</b></div>
-          <div style="color:#9ab; font-size:13px;">Améliore les dégâts des tourelles ${td.type==='t'?'mini':td.type==='T'?'normales':'big'}.</div>
-          <div style="margin-top:6px; color:#9f9; font-size:14px;">Dégâts : <b>${dmgNow}</b> → <b>${dmgNext}</b></div>
+          <div style="font-size:18px;"><b>${((TRANSLATIONS[currentLang]||TRANSLATIONS["en"]).turretUpg && (TRANSLATIONS[currentLang]||TRANSLATIONS["en"]).turretUpg[td.type]) || td.name}</b></div>
+          <div style="color:#9ab; font-size:13px;">${(TRANSLATIONS[currentLang]||TRANSLATIONS['en'])[td.type==='t'?'turretDescMini':(td.type==='T'?'turretDescNormal':'turretDescBig')]}<\/div>
+          <div style="margin-top:6px; color:#9f9; font-size:14px;">${(TRANSLATIONS[currentLang]||TRANSLATIONS['en']).damage || 'Damage'} : <b>${dmgNow}</b> → <b>${dmgNext}</b></div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
           <div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
@@ -3209,16 +3496,50 @@ function renderShopUpgrades() {
     const value = upg.getValue(upg.baseValue, lvl);
     const nextValue = upg.getValue(upg.baseValue, lvl + 1);
     const disabled = myMoney < price;
+
+    let __label = getUpgText(upg,'label');
+    try {
+      if (upg.id === 'speed') {
+        try {
+          const rest = (getUpgText(upg,'label') || '').replace(/^\s*\+?\d+\s*%?\s*/,'').trim();
+          __label = '+10% ' + (rest || getUpgText(upg,'statLabel') || 'Speed');
+        } catch(e2) { __label = '+10% ' + (getUpgText(upg,'label') || 'Speed'); }
+      } else if (upg.id === 'regen') {
+        const __lvl = myUpgrades[upg.id] || 0;
+        const __cur = upg.getValue(upg.baseValue, __lvl);
+        const __nxt = upg.getValue(upg.baseValue, __lvl + 1);
+        let __delta = __nxt - __cur;
+        let __str;
+        if (Math.abs(__delta) < 10) { __str = __delta.toFixed(2); }
+        else if (Math.abs(__delta) < 100) { __str = __delta.toFixed(1); }
+        else { __str = Math.round(__delta).toString(); }
+        __str = __str.replace(/\.0+$/,'').replace(/(\.\d*[1-9])0+$/,'$1');
+        const __trUnits = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {}; const __unit = (__trUnits.hpShort || 'HP') + (__trUnits.perSec || '/s');
+        __label = '+' + __str + ' ' + __unit;
+      }
+    } catch(e) { /* keep default label */ }
     
 
-    el.innerHTML += `
+    const __trUnits2 = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+    const __hpU = __trUnits2.hpShort || 'HP';
+    const __perSec = __trUnits2.perSec || '/s';
+    const __pxPerSec = (__trUnits2.pxPerSec || ('px' + __perSec));
+    function __fmt(upg, v){
+      if (upg.id === 'maxHp') return v + ' ' + __hpU;
+      if (upg.id === 'regen') return v + ' ' + __hpU + __perSec;
+      if (upg.id === 'speed') return v + ' ' + __pxPerSec;
+      return (upg.format ? upg.format(v) : v);
+    }
+    const fmtCur = __fmt(upg, value);
+    const fmtNext = __fmt(upg, nextValue);
+el.innerHTML += `
       <div style="display:flex; align-items:center; gap:14px; margin-bottom:19px; background:#222a; border-radius:10px; padding:12px 14px 10px 7px;">
         <div style="flex:1;">
-          <div style="font-size:18px;"><b>${upg.label}</b></div>
-          <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${upg.desc}</div>
+          <div style="font-size:18px;"><b>${__label}</b></div>
+          <div style="font-size:14px; color:#fffa; margin-bottom:3px;">${getUpgText(upg,'desc')}</div>
           <div style="font-size:15px; color:#bcffa8;">
-            ${upg.statLabel} : <b>${upg.format(value)}</b>
-            <span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${upg.format(nextValue)}</span>
+            ${getUpgText(upg,'statLabel')} : <b>${fmtCur}</b>
+            <span style="color:#8f8; font-size:14px; margin-left:7px;">→ ${fmtNext}</span>
           </div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:center; gap:8px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
@@ -3326,5 +3647,440 @@ function renderShopUpgrades() {
   
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
-</script></body>
-</html>
+
+// ===== New lobby buttons & manual lobby logic =====
+(function(){
+  const btnJoinList = document.getElementById('btnJoinLobbyList');
+  const btnCreate = document.getElementById('btnCreateLobby');
+  const manualPanel = document.getElementById('manualLobbyPanel');
+  const manualPlayers = document.getElementById('manualLobbyPlayers');
+  const btnBackManual = document.getElementById('btnBackFromManual');
+  const listPanel = document.getElementById('joinLobbyPanel');
+  const lobbiesList = document.getElementById('lobbiesList');
+  const btnBackList = document.getElementById('btnBackFromList');
+  
+  // Control Start button visibility based on hostId
+  // Control Start button visibility based on hostId
+  // Control Start button visibility based on hostId
+  socket.on('lobbyUpdate', function(data){
+    try {
+      const isHost = !!(data && data.hostId && socket && socket.id && data.hostId === socket.id);
+      const btn = document.getElementById('btnStartManual');
+      if (btn) btn.style.display = isHost ? 'inline-block' : 'none';
+    } catch(e){}
+    try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
+    try { if (manualPanel && manualPanel.style.display !== 'none') renderManualPlayers(); } catch(e){}
+  
+  try {
+    window.lobbyData = data;
+    if (data && data.manual && !data.started && data.hostId) {
+      var players = (data.players||{});
+      if (!players[data.hostId]) { try{ showMain(); window.lobbyJoined = false; if (pseudoInput){ pseudoInput.disabled=false; if(window.myPseudo) pseudoInput.value=window.myPseudo; } try{ updateButtonsDisabled(); }catch(_){}}catch(_){ } }
+    }
+  } catch(e){}});
+const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
+
+  let listInterval = null;
+  function showMain() {
+    try { clearInterval(listInterval); listInterval = null; } catch(_){}
+    try { updateButtonsDisabled(); } catch(_){}
+    try { manualPanel.style.display='none'; listPanel.style.display='none'; } catch(_){}
+    manualPanel.style.display = 'none';
+    listPanel.style.display = 'none';
+    try{ if (pseudoInput) { pseudoInput.style.display = ''; if (window.myPseudo && !pseudoInput.value) pseudoInput.value = window.myPseudo; } }catch(_){}
+  }
+  function showManual(){
+    manualPanel.style.display = 'block';
+    listPanel.style.display = 'none';
+    try{ if (pseudoInput) pseudoInput.style.display = 'none'; }catch(_){}
+  }
+  function showList(){
+    manualPanel.style.display = 'none';
+    listPanel.style.display = 'block';
+    try{ if (pseudoInput) pseudoInput.style.display = 'none'; }catch(_){}
+  }
+
+  function updateButtonsDisabled() {
+    const hasPseudo = !!(pseudoInput && pseudoInput.value.trim());
+    const shouldDisable = !hasPseudo || !!window.lobbyJoined;
+    if (btnJoinList) btnJoinList.disabled = shouldDisable;
+    if (btnCreate) btnCreate.disabled = shouldDisable;
+    if (lobbyJoin) lobbyJoin.disabled = shouldDisable;
+  }
+  if (pseudoInput) {
+    pseudoInput.addEventListener('input', updateButtonsDisabled, { passive: true });
+    setTimeout(updateButtonsDisabled, 0);
+  }
+  if (window) window.updateButtonsDisabled = updateButtonsDisabled;
+  // Load persisted pseudo from localStorage
+  try {
+    var savedP = localStorage.getItem('zombi_pseudo');
+    if (savedP && pseudoInput && !pseudoInput.value) {
+      pseudoInput.value = savedP;
+      myPseudo = savedP; window.myPseudo = savedP;
+      try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
+    }
+  } catch(_){}
+
+
+  
+if (btnCreate) {
+    btnCreate.addEventListener('click', function(){
+      try {
+        if (!window.pseudoInput) window.pseudoInput = document.getElementById('pseudoInput');
+        const hasPseudo = !!(window.pseudoInput && window.pseudoInput.value && window.pseudoInput.value.trim());
+        if (!hasPseudo || btnCreate.disabled) {
+          try { if (window.pseudoInput && !window.pseudoInput.value) window.pseudoInput.focus(); } catch(_) {}
+          return;
+        }
+        const p = window.pseudoInput.value.trim();
+        myPseudo = p; window.myPseudo = p;
+        // Optimistically switch to manual lobby UI to avoid any flicker or crash
+        try {
+          window.lobbyJoined = true;
+          showManual();
+          try { renderManualPlayers(); } catch(_) {}
+          try { updateButtonsDisabled(); } catch(_) {}
+        } catch(_){}
+        if (!window.socket || typeof socket.emit !== 'function') { console.error('Socket not ready on createLobby'); return; }
+        btnCreate.disabled = true;
+        socket.emit('createLobby', p, function(res){
+          try {
+            if (!res || !res.ok) { btnCreate.disabled = false; window.lobbyJoined = false; showMain(); return; }
+            // Server will follow up with lobbyUpdate
+          } catch(err) {
+            console.error('createLobby callback error', err);
+          } finally {
+            try { btnCreate.disabled = true; } catch(_) {}
+          }
+        });
+      } catch(err) {
+        console.error('Create lobby click error', err);
+      }
+    }, { passive: true });
+  }
+
+
+  if (btnJoinList) {
+    btnJoinList.addEventListener('click', function(){
+      if (!pseudoInput.value.trim() || btnJoinList.disabled) return;
+      showList();
+      requestLobbies();
+      clearInterval(listInterval);
+      listInterval = setInterval(requestLobbies, 2000);
+    }, { passive: true });
+  }
+
+  if (btnBackList) {
+    btnBackList.addEventListener('click', function(){
+      showMain();
+      try{ if (pseudoInput){ pseudoInput.disabled = false; if (window.myPseudo) pseudoInput.value = window.myPseudo; } }catch(_){}
+      clearInterval(listInterval);
+      listInterval = null;
+    }, { passive: true });
+  }
+
+  if (btnBackManual) {
+    btnBackManual.addEventListener('click', function(){
+      try {
+        const isHost = !!(window.lobbyData && window.lobbyData.hostId && socket && socket.id && window.lobbyData.hostId === socket.id);
+        if (isHost) {
+          socket.emit('hostBackManual', function(res){});
+        } else {
+          socket.emit('leaveLobby');
+        }
+      } catch(e){}
+      showMain();
+      window.lobbyJoined = false;
+      try{ if (pseudoInput){ pseudoInput.disabled = false; if (window.myPseudo) pseudoInput.value = window.myPseudo; } }catch(_){}
+      try { updateButtonsDisabled(); } catch(_) {}
+    }, { passive: true });
+  }
+if (btnStartManual) {
+    btnStartManual.addEventListener('click', function(){
+      socket.emit('startManualLobby', function(res){
+        // if not host, ignore; server will no-op
+      });
+    }, { passive: true });
+  }
+
+  function requestLobbies() {
+    socket.emit('requestLobbies');
+  }
+  
+
+socket.on('lobbiesList', function(list){
+    if (!Array.isArray(list)) list = [];
+    lobbiesList.innerHTML = '';
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.textContent = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].noLobbyAvailable) || 'No lobby available.';
+      empty.style.color = '#ccc';
+      empty.style.textAlign = 'center';
+      lobbiesList.appendChild(empty);
+      return;
+    }
+    list.forEach(lob => {
+      const item = document.createElement('div');
+      item.style.background = 'rgba(0,0,0,0.3)';
+      item.style.border = '1px solid rgba(255,255,255,0.1)';
+      item.style.borderRadius = '8px';
+      item.style.padding = '8px';
+      item.style.display = 'flex';
+      item.style.alignItems = 'center';
+      item.style.justifyContent = 'space-between';
+      const names = (lob.players || []).join(', ');
+      item.innerHTML = '<div><b>Lobby #' + lob.id + '</b> • (' + lob.count + '/' + (lob.max||6) + ') — ' + names + '</div>';
+      const btn = document.createElement('button');
+      btn.textContent = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].join) || 'Join';
+      btn.style.padding = '6px 12px';
+      btn.style.background = '#3fa33f';
+      btn.style.color = '#fff';
+      btn.style.border = 'none';
+      btn.style.borderRadius = '6px';
+      btn.style.cursor = 'pointer';
+      btn.onclick = function(){
+        const p = pseudoInput.value.trim();
+        socket.emit('joinLobbyById', { gameId: lob.id, pseudo: p }, function(res){
+          if (res && res.ok) {
+            myPseudo = p; window.myPseudo = p;
+            window.lobbyJoined = true;
+            showManual();
+            renderManualPlayers();
+            try { updateButtonsDisabled(); } catch(_) {}
+          }
+        });
+      };
+      item.appendChild(btn);
+      lobbiesList.appendChild(item);
+    });
+  });
+
+
+
+function renderManualPlayers() {
+  try {
+    const playersObj = (typeof lobbyData === 'object' && lobbyData && lobbyData.players) ? lobbyData.players : {};
+    const arr = Object.values(playersObj).map(p => (p && p.pseudo) ? p.pseudo : '').filter(Boolean);
+    const emptyLabel = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].emptySlot) || 'empty';
+    const slots = Array.from({length: 6}, (_, i) => arr[i] || emptyLabel);
+    let html = '';
+    html += '<table style="margin:8px auto;border-collapse:separate;border-spacing:6px;">';
+    for (let r = 0; r < 2; r++) {
+      html += '<tr>';
+      for (let c = 0; c < 3; c++) {
+        const i = r * 3 + c;
+        const val = slots[i];
+        const isEmpty = (val === emptyLabel);
+        var bg = isEmpty ? 'rgba(255,255,255,0.06)' : 'rgba(72,199,73,0.18)';
+        var border = '1px solid rgba(255,255,255,0.12)';
+        var color = isEmpty ? '#bbb' : '#fff';
+        html += '<td style="min-width:90px;padding:10px 14px;background:'+bg+';border:'+border+';border-radius:10px;text-align:center;font-weight:600;color:'+color+';">' + (isEmpty ? emptyLabel : val) + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    if (typeof manualPlayers !== 'undefined' && manualPlayers) manualPlayers.innerHTML = html;
+    else {
+      const container = document.getElementById('manualLobbyPlayers');
+      if (container) container.innerHTML = html;
+    }
+  } catch(e) {}
+
+  try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
+}
+
+  function safe(fn){ try{ fn(); }catch(e){} }
+
+  // Hide legacy timer/status elements globally
+  safe(function(){
+    var t = document.getElementById('lobbyTimer'); if (t){ t.style.display='none'; t.textContent=''; }
+    var s = document.getElementById('lobbyStatus'); if (s){ s.style.display='none'; s.textContent=''; }
+  });
+
+  // Replace updateLobbyTexts to remove timer/waiting and only show players in manual lobbies
+  window.updateLobbyTexts = function(){
+    var tr = (window.TRANSLATIONS && window.TRANSLATIONS[window.currentLang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
+    safe(function(){
+      var manualPanel = document.getElementById('manualLobbyPanel');
+      var lobbyPlayers = document.getElementById('lobbyPlayers');
+      var showPlayers = manualPanel && manualPanel.style.display !== 'none';
+      if (lobbyPlayers) lobbyPlayers.textContent = showPlayers ? (tr.playersInGame + ' : ' + (window.lobbyData?.count||0) + '/' + (window.lobbyData?.max||0)) : '';
+    });
+    safe(function(){
+      var t = document.getElementById('lobbyTimer'); if (t){ t.style.display='none'; t.textContent=''; }
+      var s = document.getElementById('lobbyStatus'); if (s){ s.style.display='none'; s.textContent=''; }
+    });
+  };
+
+  // Wrap updateUITexts to force the "Join" label (no waiting state on main)
+  if (typeof window.updateUITexts === 'function'){
+    var _updateUITexts = window.updateUITexts;
+    window.updateUITexts = function(){
+      try { _updateUITexts.apply(this, arguments); } catch(_){}
+      var tr = (window.TRANSLATIONS && window.TRANSLATIONS[window.currentLang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
+      var lobbyJoin = document.getElementById('lobbyJoin');
+      if (lobbyJoin) lobbyJoin.textContent = tr.join || 'Join';
+
+// Keep the Join button localized even if other code changes its text
+(function(){
+  const el = document.getElementById('lobbyJoin');
+  if (!el) return;
+  const ensure = () => {
+    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    const expected = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join');
+    if (el.textContent !== expected) el.textContent = expected;
+  };
+  const mo = new MutationObserver(ensure);
+  mo.observe(el, {characterData:true, childList:true, subtree:true});
+  ensure();
+})();
+    };
+  }
+
+  // Ensure Replay returns to lobby (reload)
+  safe(function(){
+    var btnReplay = document.getElementById('btnReplay');
+    if (btnReplay) btnReplay.onclick = function(){ try { location.reload(); } catch(_){} };
+  });
+
+  // Override main Join click to start solo immediately (server handles launch)
+  safe(function(){
+    var lobbyJoin = document.getElementById('lobbyJoin');
+    var pseudoInput = document.getElementById('pseudoInput');
+    if (lobbyJoin){
+      lobbyJoin.onclick = function(){
+        if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
+          if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
+          return;
+        }
+        myPseudo = pseudoInput.value.trim(); window.myPseudo = myPseudo; try{ localStorage.setItem('zombi_pseudo', myPseudo); }catch(_){}
+        if (window.socket){ socket.emit('setPseudoAndReady', window.myPseudo); }
+        window.lobbyJoined = true;
+        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.disabled = true; } catch(_){}
+        try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
+      };
+    }
+  });
+
+  // Clear players line on main load until manual panel is visible
+  safe(function(){ var p = document.getElementById('lobbyPlayers'); if (p) p.textContent=''; });
+
+})();
+</script>
+
+
+<script>
+(function(){
+  function setVersionBox(){
+    try{
+      var langRaw = (typeof window.currentLang === 'string' && window.currentLang)
+                 || (typeof currentLang === 'string' && currentLang)
+                 || ((navigator.language||'en').slice(0,2));
+      // normalize aliases coming from browser locales
+      var alias = { ja:'jp', zh:'cn', ko:'kr' };
+      var lang = alias[langRaw] || langRaw;
+      var tr = (window.TRANSLATIONS && (TRANSLATIONS[lang]||TRANSLATIONS['en'])) || {};
+      var el = document.getElementById('versionBox');
+      if (!el) return;
+      var ver = (typeof window.GAME_VERSION==='string' ? window.GAME_VERSION : '1.0.0');
+      var fallbackTpl = {
+        en:'Version {v} by Myg',
+        fr:'Version {v} par Myg',
+        es:'Versión {v} por Myg',
+        pt:'Versão {v} por Myg',
+        de:'Version {v} von Myg',
+        ru:'Версия {v} от Myg',
+        cn:'版本 {v} 由 Myg',
+        jp:'バージョン {v}（Myg）',
+        pl:'Wersja {v} od Myg',
+        kr:'버전 {v} - Myg'
+      }[lang] || 'Version {v} by Myg';
+      var tpl = tr.versionBy || fallbackTpl;
+      el.textContent = tpl.replace('{v}', ver);
+    }catch(_){}
+}
+  // First display
+  setVersionBox();
+  // Retry hook once DOM and all scripts are loaded (ensures updateUITexts exists)
+  function tryHook(){
+    if (typeof window.updateUITexts === 'function') {
+      var _u = window.updateUITexts;
+      window.updateUITexts = function(){
+        try { _u.apply(this, arguments); } catch(_){}
+        setVersionBox();
+      };
+    } else {
+      // if not yet defined, try again on next tick
+      setTimeout(tryHook, 50);
+    }
+  }
+  tryHook();
+  // Also refresh on visibility change just in case
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) setVersionBox(); }, {passive:true});
+  window.addEventListener('resize', setVersionBox, {passive:true});
+  window.setVersionBox = setVersionBox;
+})();
+</script>
+
+
+<script>
+// --- Join lobby count badge (polling every 2s) ---
+(function(){
+  var openLobbyCount = 0;
+
+  function updateJoinLobbyBtnText(){
+    try {
+      var btn = document.getElementById('btnJoinLobbyList');
+      if (!btn) return;
+      var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+      var base = tr.joinLobby || 'Join lobby';
+      btn.textContent = base + ' (' + (openLobbyCount|0) + ')';
+    } catch(e){}
+  }
+
+  // Hook into updateUITexts so localization is preserved and the count suffix stays
+  (function hookUpdateUITexts(){
+    try {
+      if (typeof window.updateUITexts === 'function') {
+        var _u = window.updateUITexts;
+        window.updateUITexts = function(){
+          try { _u.apply(this, arguments); } catch(_){}
+          updateJoinLobbyBtnText();
+        };
+      } else {
+        // if not yet defined, try again a bit later
+        setTimeout(hookUpdateUITexts, 50);
+      }
+    } catch(e){}
+  })();
+
+  // Update the cached count whenever the server sends the lobbies list
+  try {
+    if (window.socket) {
+      socket.on('lobbiesList', function(list){
+        try { openLobbyCount = Array.isArray(list) ? list.length : 0; } catch(e){ openLobbyCount = 0; }
+        updateJoinLobbyBtnText();
+      });
+    }
+  } catch(e){}
+
+  // Poll count every 2 seconds, but skip if the list panel is already visible (it's already polling)
+  var __lobbyCountInterval = setInterval(function(){
+    try {
+      if (!window.socket || !socket.connected) return;
+      var panel = document.getElementById('joinLobbyPanel');
+      if (panel && panel.style.display === 'block') return; // join list already polling
+      socket.emit('requestLobbies'); // reuse existing endpoint
+    } catch(e){}
+  }, 2000);
+
+  // Clean up on unload
+  window.addEventListener('beforeunload', function(){ try{ clearInterval(__lobbyCountInterval); }catch(_){}});
+
+  // Initial paint
+  updateJoinLobbyBtnText();
+})();
+</script>
+
+</body></html>
