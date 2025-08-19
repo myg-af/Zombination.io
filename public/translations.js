@@ -2,6 +2,7 @@ const TRANSLATIONS = {
   en: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Join',
     waiting: "Waiting...",
     enterPseudo: "Enter your nickname",
     playersInGame: "Players in game",
@@ -47,6 +48,7 @@ const TRANSLATIONS = {
   cn: {
     zombination: "Zombination.io",
     join: '单人',
+    joinAction: '加入',
     waiting: "等待中...",
     enterPseudo: "输入昵称",
     playersInGame: "游戏玩家",
@@ -92,6 +94,7 @@ const TRANSLATIONS = {
   ru: {
     zombination: "Zombination.io",
     join: 'Соло',
+    joinAction: 'Присоединиться',
     waiting: "Ожидание...",
     enterPseudo: "Введите ник",
     playersInGame: "Игроков в игре",
@@ -137,6 +140,7 @@ const TRANSLATIONS = {
   es: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Unirse',
     waiting: "Esperando...",
     enterPseudo: "Introduce tu apodo",
     playersInGame: "Jugadores en la partida",
@@ -182,6 +186,7 @@ const TRANSLATIONS = {
   pt: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Entrar',
     waiting: "Aguardando...",
     enterPseudo: "Digite seu apelido",
     playersInGame: "Jogadores na partida",
@@ -227,6 +232,7 @@ const TRANSLATIONS = {
   de: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Beitreten',
     waiting: "Warten...",
     enterPseudo: "Spitznamen eingeben",
     playersInGame: "Spieler im Spiel",
@@ -272,6 +278,7 @@ const TRANSLATIONS = {
   jp: {
     zombination: "Zombination.io",
     join: 'ソロ',
+    joinAction: '参加',
     waiting: "待機中...",
     enterPseudo: "ニックネームを入力",
     playersInGame: "ゲームのプレイヤー",
@@ -317,6 +324,7 @@ const TRANSLATIONS = {
   fr: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Rejoindre',
     waiting: "En attente...",
     enterPseudo: "Entrez votre pseudo",
     playersInGame: "Joueurs dans la partie",
@@ -362,6 +370,7 @@ const TRANSLATIONS = {
   pl: {
     zombination: "Zombination.io",
     join: 'Solo',
+    joinAction: 'Dołącz',
     waiting: "Oczekiwanie...",
     enterPseudo: "Wpisz pseudonim",
     playersInGame: "Gracze w grze",
@@ -407,6 +416,7 @@ const TRANSLATIONS = {
   kr: {
     zombination: "Zombination.io",
     join: '솔로',
+    joinAction: '참가',
     waiting: "대기 중...",
     enterPseudo: "닉네임 입력",
     playersInGame: "게임의 플레이어",
@@ -452,7 +462,7 @@ const TRANSLATIONS = {
 };
 
 // === i18n extensions: turret upgrades, tooltips, auto-fire ===
-(function(){
+;(function(){
   function merge(base, ext){
     if (!base) return ext;
     for (var k in ext){
@@ -519,7 +529,7 @@ const TRANSLATIONS = {
 })();
 
 // === i18n unit additions (perSec, pxPerSec, hpShort tweaks) ===
-(function(){
+;(function(){
   function merge(base, ext){ if (!base) return ext; for (var k in ext){ if (ext.hasOwnProperty(k)) { if (typeof ext[k]==='object' && ext[k] && !Array.isArray(ext[k])) base[k] = Object.assign({}, base[k]||{}, ext[k]); else base[k]=ext[k]; } } return base; }
 TRANSLATIONS.en = merge(TRANSLATIONS.en||{}, {
   hpShort:'HP', perSec:'/s', pxPerSec:'px/s', 

@@ -126,9 +126,6 @@
   padding-right:6px;
 }
 
-
-
-
 		
 @media (hover: none) and (pointer: coarse) {
   /* Contraintes + anim spécifiques mobile */
@@ -154,15 +151,10 @@
   #shopBtn { z-index: 10005 !important; }
 }
 
-
-
 @keyframes shopPopInMobile {
   0%   { opacity: 0; transform: translateY(80px) scale(0.5); }
   100% { opacity: 1; transform: scale(0.5); }
 }
-
-
-
 
 	@keyframes shopPopIn {
 	  0% { opacity: 0; transform: translateY(80px) scale(0.97);}
@@ -178,6 +170,22 @@
 	  100% { box-shadow: 0 0 0px #67fa62, 0 0 0px #fff; }
 	}
   
+/* Hide clutter while in main menu */
+body.menu-hide-ui #fpsCounter,
+  body.menu-hide-ui #shopBtn,
+  body.menu-hide-ui #buildBar,
+  body.menu-hide-ui #hudStats,
+  body.menu-hide-ui .mobile-build { display: none !important; }
+
+
+
+  /* Patch: Keep only the "Zombination.io" panel visible in the main menu
+     and place the lobby background above all other UI elements without deleting them. */
+  #lobbyScreen {
+    z-index: 20050 !important; /* above shop, build bar, mobile UI, joysticks */
+    pointer-events: auto !important; /* block clicks to underlying UI */
+    background: #181c; /* keep existing lobby feel while covering elements beneath */
+  }
 </style>
 </head>
 <body>
@@ -215,7 +223,7 @@
         <!-- Join lobby list panel (hidden by default) -->
         <div id="joinLobbyPanel" style="display:none; margin-top:12px;">
           <div style="text-align:center; font-weight:600; margin-bottom:6px;"><span id="joinLobbyTitle">Available lobbies</span></div>
-          <div id="lobbiesList" style="display:flex; flex-direction:column; gap:6px;"></div>
+          <div id="lobbiesList" style="display:flex; flex-direction:column; gap:6px;overflow-y: auto;-webkit-overflow-scrolling: touch;max-height: calc(60vh - 120px);padding-right: 6px;"></div>
           <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
             
             <button id="btnBackFromList" style="padding: 8px 14px; background: #666; color: white; border:none; border-radius:6px; cursor:pointer;">Back</button>
@@ -258,21 +266,21 @@
 <!-- Conteneur horizontal des 4 tuiles -->
 <div id="buildTiles" style="display:flex; gap:10px; flex-wrap:wrap;">
 <!-- Grande tourelle -->
-<button class="build-tile" data-tip="Tourelle (HP: 500, Dégâts: 20, Cadence: 1/s)" data-type="T" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<button class="build-tile" data-tip="Tourelle (HP: 500, Dégâts: 10, Cadence: 1/s)" data-type="T" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
 <div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
 <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
 </div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000</div>
+<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000 • 1/s • 10 dmg</div>
 </button>
 <!-- Big-tourelle -->
-<button class="build-tile" data-tip="Big-tourelle (HP: 2500, Dégâts: 50, Cadence: 2/s)" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<button class="build-tile" data-tip="Big-tourelle (HP: 2500, Dégâts: 25, Cadence: 2/s)" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
 <div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007; position:relative;">
 <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
 </div>
 <div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$5000</div>
 </button>
 <!-- Mini-tourelle -->
-<button class="build-tile" data-tip="Mini-tourelle (HP: 200, Dégâts: 10, Cadence: 1 tir / 2s)" data-type="t" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+<button class="build-tile" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1 tir / 2s)" data-type="t" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
 <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
 <div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
 </div>
@@ -332,7 +340,6 @@ socket.on("connect_error", (err) => {
 window.addEventListener('error', function(e){ try { console.error('Global error:', e && e.message, e); } catch(_){} });
 window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
 
-
 // LOBBY STATE LOGS
 socket.on("lobbyUpdate", (data) => {
   console.log("📥 [SOCKET] Reçu lobbyUpdate:", data);
@@ -355,7 +362,6 @@ setInterval(() => {
     console.log("⏳ Lobby Timer:", lobbyData.timeLeft, " | Players:", lobbyData.count);
   }
 }, 5000);
-
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
@@ -497,8 +503,8 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
 <script>
 /* TURRET_UPGRADE_CLIENT */
 let myTurretUp = { t:0, T:0, G:0 };
-function turretUpgradeBaseAdd(type){ return type==='t'?10: (type==='T'?20:50); }
-function turretBaseDamage(type){ return type==='t'?10: (type==='T'?20:50); }
+function turretUpgradeBaseAdd(type){ return type==='t'?5: (type==='T'?10:25); }
+function turretBaseDamage(type){ return type==='t'?5: (type==='T'?10:25); }
 function turretBonusFromLevels(type, lvl){
   const a = turretUpgradeBaseAdd(type);
   if (lvl<=0) return 0;
@@ -517,6 +523,11 @@ socket.on('turretCooldown', (p)=>{
   turretCooldownUntil[p.type] = p.until || 0;
 });
 // Tooltip damage update
+// --- Wall/Door place cooldown (shared) ---
+let blockCooldownUntil = 0;
+socket.on('blockCooldown', (p)=>{
+  try { blockCooldownUntil = (p && p.until) ? p.until : 0; } catch(_) { blockCooldownUntil = 0; }
+});
 const buildTilesCont = document.getElementById('buildTiles');
 if (buildTilesCont){
   buildTilesCont.querySelectorAll('.build-tile').forEach(btn=>{
@@ -557,9 +568,14 @@ setInterval(()=>{
       cd.style.marginTop = '2px';
       btn.appendChild(cd);
     }
+    
     if (['t','T','G'].includes(type)){
       const rem = Math.max(0, turretCooldownUntil[type] - Date.now());
-      cd.textContent = rem>0 ? (Math.ceil(rem/1000)+'s') : '';
+      cd.textContent = rem > 0 ? (Math.ceil(rem/1000)+'s') : '';
+    }
+    else if (type === 'B' || type === 'D') {
+      const rem = Math.max(0, blockCooldownUntil - Date.now());
+      cd.textContent = rem > 0 ? (Math.ceil(rem/1000)+'s') : '';
     } else {
       cd.textContent = '';
     }
@@ -578,7 +594,6 @@ window.addEventListener('beforeunload', function(){
   }catch(_){}
 });
 </script>
-
 
 <script>
 (function(){
@@ -707,8 +722,6 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
 </script>
 <script>
   
-
-
 
   
   // === Early globals for sprites & orientation ===
@@ -898,12 +911,6 @@ renderLangFlags(); initLobbyTexts(); updateUITexts(); try { if (typeof translate
     // --- JEU ---
     
 
-
-
-
-
-
-
 window.socket = socket;
 window.__reloading = window.__reloading || false;
 function hardReload(){
@@ -935,7 +942,6 @@ socket.on('playerDisconnected', function(sid){
   setTimeout(function(){ try { location.replace(location.href); } catch(e){} }, 60);
 });
 
-
 // === Mouvement: envoi côté serveur avec limitation de fréquence ===
 let __lastMoveEmit = 0;
 /**
@@ -952,7 +958,6 @@ function emitMoveThrottled(move){
     // évite de casser la boucle de jeu si quelque chose cloche
   }
 }
-
 
 // Listen result from turret upgrade and refresh UI/HUD
 socket.on('upgradeTurretResult', function(res){
@@ -1009,7 +1014,6 @@ function refreshZombiesFrame() {
   }
 }
 
-
 const TURRET_ANGLE_TTL_MS = 350;    // (était 180) — moins d'oscillation des canons
 const TURRET_RECALC_MIN_MS = 120;   // throttle: pas plus d'un recalcul/120 ms par tourelle
 const turretAngleNextAt = new Map(); // key: "turret_c_r" -> timestamp autorisé pour prochain calcul
@@ -1054,7 +1058,6 @@ socket.on('stateUpdate', (payload) => {
         const hpFromGrid = structHPGrid?.[y]?.[x];
         const previousHP = structures?.[y]?.[x]?.hp;
         function __baseHP(type){ switch(type){ case 'T': return 500; case 't': return 200; case 'G': return 2500; case 'B': case 'D': return 500; default: return 200; } }
-
 
         if (typeof cell === 'object') {
           const type = cell.type;
@@ -1115,8 +1118,6 @@ socket.on('stateUpdate', (payload) => {
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-
-
 
 // Shots direction cache (owner -> recent aim)
 // recentShootDir is provided globally earlier
@@ -1191,7 +1192,6 @@ const UPGRADES = [
   }
 ];
 
-
 	// Niveau des upgrades du joueur local (simulé pour l’instant)
 	let myUpgrades = {
 	  maxHp: 0,
@@ -1202,7 +1202,6 @@ const UPGRADES = [
 	};
 
 const waveMessage = document.getElementById('waveMessage');
-
 
 function resetWaveCounters(total = 0) {
   waveTotalZombies   = Number(total) || 0;
@@ -1231,7 +1230,6 @@ function resetWaveCounters(total = 0) {
     const isMobileDevice = isMobile();
 	const HAS_POINTER = ('PointerEvent' in window);
 
-
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
 	function updateRenderScale() {
@@ -1243,7 +1241,6 @@ function resetWaveCounters(total = 0) {
 	  // x2 en paysage => 0.5 ; x3 en portrait => ~0.333
 	  renderScale = isLandscape ? 0.5 : 1/3;
 	}
-
 
 	updateRenderScale();
     const TILE_SIZE = 40;
@@ -1307,9 +1304,6 @@ function losBlockedForZombieClient(x0, y0, x1, y1) {
   return false;
 }
 
-
-
-
 function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   const now = performance.now();
 
@@ -1356,7 +1350,6 @@ function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
   return ang;
 }
 
-
     let cameraX = 0, cameraY = 0;
     const keys = {};
     let mouseDown = false, mousePos = { x: 0, y: 0 };
@@ -1382,7 +1375,6 @@ window.addEventListener('mousedown', e => {
   if (sm && sm.style.display === 'block') return;
   mouseDown = e.button === 0;
 });
-
 
     window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
@@ -1428,8 +1420,6 @@ function createMapBuffer() {
   }
 }
 
-
-
     // JOYSTICK PATCH MOBILE
     let moveJoy = null, aimJoy = null;
 	let moveJoyVal = {x:0, y:0}, aimJoyVal = {x:0, y:0}; // valeurs normalisées [-1..1]
@@ -1472,8 +1462,6 @@ function createJoystick(container, baseX, baseY, id) {
 
   return { joyDiv, base, stick, size };
 }
-
-
 
 function addJoystickHandlers(joy, which) {
   const size = joy.size;
@@ -1549,7 +1537,6 @@ function addJoystickHandlers(joy, which) {
 
   reset();
 }
-
 
 	function addJoystickTouchHandlers(joy, which) {
 	  const size = joy.size;
@@ -1635,9 +1622,6 @@ function addJoystickHandlers(joy, which) {
 	  reset();
 	}
 
-
-
-
 function setupJoysticks() {
   if (!isMobileDevice) return;
 
@@ -1666,7 +1650,6 @@ function setupJoysticks() {
   // Repositionne l’UI shop
   positionShopUI();
 }
-
 
 // ===== remplace entièrement cette fonction =====
 function positionShopUI() {
@@ -1730,10 +1713,6 @@ function positionShopUI() {
   }
 }
 
-
-
-
-
 function drawMap() {
   if (!map || !map.length) return;
   // Génère le buffer si nécessaire (ou si tailles non prêtes)
@@ -1759,7 +1738,6 @@ function drawMap() {
     sW, sH
   );
 }
-
 
 function drawStructures() {
   if (!structures) return;
@@ -1847,8 +1825,6 @@ let previousHP = (prevRowArr && typeof prevRowArr[col] === 'number') ? prevRowAr
 }
   }
 }
-
-
 
 	
 function drawPlayers() {
@@ -1975,8 +1951,6 @@ function drawZombies() {
   }
 }
 
-
-
 function drawBullets() {
   const nowPerf = (typeof performance!=='undefined' && performance.now)?performance.now():Date.now();
   const viewW = canvas.width / renderScale;
@@ -2011,9 +1985,6 @@ function drawBullets() {
     }
   }
 }
-
-
-
 
 function drawTurretLasers() {
   if (!turretLasers.length) return;
@@ -2054,9 +2025,6 @@ function drawTurretLasers() {
 
   ctx.restore();
 }
-
-
-
 
 	function drawMoneyFloatingTexts() {
 	  const now = Date.now();
@@ -2178,7 +2146,6 @@ function testEvenOddSupport() {
   }
 }
 
-
 function drawLightMask() {
   if (isSpectator) return;
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
@@ -2227,7 +2194,6 @@ function drawLightMask() {
   // on remet l’espace monde
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 }
-
 
 function update(deltaTime) {
   
@@ -2339,7 +2305,6 @@ if (isSpectator) {
     }
   }
 
-
   if (shooting && !shootBlocked) {
     shootBlocked = true;
     socket.emit('shoot', {
@@ -2349,9 +2314,6 @@ if (isSpectator) {
     setTimeout(() => { shootBlocked = false; }, 300);
   }
 }
-
-
-
 
 if (isMobileDevice) {
   canvas.addEventListener('pointerdown', (e) => {
@@ -2376,7 +2338,6 @@ if (isMobileDevice) {
   }, { passive: true });
 }
 
-
 // ---- Aide : écran -> monde -> tuile ----
 function screenToWorldTile(clientX, clientY) {
   const wx = cameraX + clientX / renderScale;
@@ -2386,7 +2347,6 @@ function screenToWorldTile(clientX, clientY) {
     ty: Math.floor(wy / TILE_SIZE)
   };
 }
-
 
 // Test d'intersection cercle-rectangle (client)
 function circleIntersectsTileClient(cx, cy, cr, tx, ty) {
@@ -2409,7 +2369,6 @@ canvas.addEventListener('pointermove', (e) => {
   buildHover.tx = tx; buildHover.ty = ty;
 }, { passive: true });
 
-
 // Survol mobile pour l’aperçu de placement
 canvas.addEventListener('touchmove', (e) => {
   if (!buildMode) return;
@@ -2419,8 +2378,6 @@ canvas.addEventListener('touchmove', (e) => {
   buildHover.tx = tx; 
   buildHover.ty = ty;
 }, { passive: true });
-
-
 
 // ---- Placement sur mobile (touch) ----
 canvas.addEventListener('touchstart', (e) => {
@@ -2433,8 +2390,6 @@ canvas.addEventListener('touchstart', (e) => {
   mouseDown = false;
 }, { passive: false });
 
-
-
 canvas.addEventListener('pointerdown', (e) => {
   if (!buildMode) return;
   e.preventDefault();
@@ -2442,8 +2397,6 @@ canvas.addEventListener('pointerdown', (e) => {
   tryPlaceStructureAtCursor(e.clientX, e.clientY);
   mouseDown = false;
 });
-
-
 
 function drawBuildPreview() {
   if (!buildMode || buildHover.tx < 0 || buildHover.ty < 0) return;
@@ -2552,9 +2505,6 @@ function drawBuildPreview() {
   ctx.restore();
 }
 
-
-
-
 function tryPlaceStructureAtCursor(clientX, clientY) {
   const { tx, ty } = screenToWorldTile(clientX, clientY);
 
@@ -2635,9 +2585,6 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
   }
 }
 
-
-
-
 	function updateCamera() {
       const viewW = canvas.width / renderScale;
       const viewH = canvas.height / renderScale;
@@ -2657,8 +2604,6 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 	  cameraX = Math.max(0, Math.min(cameraX, MAP_COLS * TILE_SIZE - viewW));
 	  cameraY = Math.max(0, Math.min(cameraY, MAP_ROWS * TILE_SIZE - viewH));
 	}
-
-
 
 function drawHUD() {
   const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
@@ -2686,7 +2631,6 @@ function drawHUD() {
     : `${tr.health}: ${Math.round(me ? me.health : 0)}`;
 }
 
-
     function showDeathScreen(kills = myKills, round = currentRound) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       const deathStats = document.getElementById('deathStats');
@@ -2712,7 +2656,6 @@ function drawHUD() {
       }
       deathScreen.style.display = 'flex';
     }
-
 
 const spectateReplayBtn = document.getElementById('spectateReplayBtn');
 if (btnSpectate) {
@@ -2748,7 +2691,6 @@ if (btnSpectate) {
   };
 }
 
-
 let lastTime = 0;
 function gameLoop(timestamp = 0) {
   FRAME_ID++; // <- important : identifie le frame courant pour nos caches
@@ -2780,8 +2722,6 @@ function gameLoop(timestamp = 0) {
   requestAnimationFrame(gameLoop);
 }
 
-
-
     socket.on('connect', () => { myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
       lobbyData = {
@@ -2802,10 +2742,9 @@ function gameLoop(timestamp = 0) {
       }
       lobbyScreen.style.display = 'flex';
       updateLobbyTexts();
-      lobbyJoin.disabled = lobbyJoined || !pseudoInput.value.trim();
+      lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.disabled = lobbyJoined;
-      if (lobbyJoined) lobbyJoin.textContent = tr.waiting;
-      else lobbyJoin.textContent = tr.join;
+      lobbyJoin.textContent = tr.join;
     });
 
     lobbyJoin.onclick = () => {
@@ -2848,13 +2787,9 @@ function gameLoop(timestamp = 0) {
 	updateBuildTilesState(); // rafraîchir les étiquettes + disabled
     });
 
-
-
 socket.on('waveStarted', ({ totalZombies }) => {
   resetWaveCounters(totalZombies);
 });
-
-
 
 // --- MISE À JOUR DES STRUCTURES PAR LE SERVEUR ---
 // Reçoit une grille 2D (chaque case = null ou { type, hp } ou juste "type")
@@ -2912,7 +2847,6 @@ let hp = (typeof cell.hp === 'number') ? cell.hp
   }
 });
 
-
    
    
    socket.on('laserBeam', ({ x0, y0, x1, y1, color }) => {
@@ -2949,8 +2883,6 @@ socket.on('zombieDied', () => {
 });
 	
 
-
-
     socket.on('youDied', (data) => {
       isDead = true;
       playerHealth = 0;
@@ -2972,7 +2904,6 @@ socket.on('zombieDied', () => {
 	  updateBuildTilesState();    // <--- ajoute
 	});
 
-
 socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
   if (u) myUpgrades = u;
   if (typeof m === 'number') myMoney = m;
@@ -2980,10 +2911,6 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
   drawHUD();
   updateBuildTilesState();
 });
-
-
-
-
 
     socket.on('waveMessage', (msg) => {
   try {
@@ -3027,7 +2954,6 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
 	const shopModal = document.getElementById('shopModal');
 	const shopClose = document.getElementById('shopClose');
 
-
 // ====== UI Achat Structures \(au-dessus du SHOP\) ======
 
 // === Auto-fire state & UI ===
@@ -3058,7 +2984,6 @@ if (autoBtn) {
   });
   updateAutoFireBtnUI();
 }
-
 
 function upperFirstLocalized(s){
   if (!s) return s;
@@ -3130,9 +3055,6 @@ buildTiles.forEach(btn => {
   });
 });
 
-
-
-
 updateBuildTilesState();
 
 // Ajuster la position quand on bouge le shop (mobile)
@@ -3143,7 +3065,6 @@ function positionBuildBar() {
 }
 window.addEventListener('resize', positionBuildBar);
 window.addEventListener('orientationchange', positionBuildBar);
-
 
 // Normalise les coordonnées reçues : supporte {tx,ty} ou {x,y} en pixels
 function normalizeTileCoords(obj) {
@@ -3260,13 +3181,15 @@ socket.on('structureHP', (payload) => {
 
 socket.on('structureDestroyed', (payload) => {
   const { tx, ty } = normalizeTileCoords(payload);
-  if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+  
+// Wall/Door cooldown update from server
+
+
+if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
 
   const ok = clearStructureAt(tx, ty);
   if (!ok) console.warn('[structureDestroyed] cellule introuvable', { payload, tx, ty });
 });
-
-
 
 // Réception du résultat d’achat d’une structure
 socket.on('buildResult', (payload) => {
@@ -3335,9 +3258,6 @@ if (structHPGrid) {
   buildHover = { tx: -1, ty: -1 };
 });
 
-
-
-
 	function closeShopIfOutside(evt) {
 	  if (shopModal.style.display !== 'block') return;
 	  const target = evt.target;
@@ -3346,8 +3266,6 @@ if (structHPGrid) {
 	  shopModal.style.display = 'none';
 	}
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
-
-
 
 function updateBuildTilesState() {
   document.querySelectorAll('#buildTiles .build-tile').forEach(btn => {
@@ -3393,9 +3311,6 @@ function updateBuildTilesState() {
   });
 }
 
-
-
-
 const PRICE_TIERS = [10, 25, 50, 75, 100];
 const PRICE_STEP_AFTER_TIER = 75;
 function getUpgradePrice(nextLevel) {
@@ -3405,7 +3320,6 @@ function getUpgradePrice(nextLevel) {
   const k = nextLevel - 7;
   return Math.round(priceAt7 * Math.pow(1.2, k));
 }
-
 
 function getUpgText(upg, field){
   try {
@@ -3434,7 +3348,6 @@ function renderShopUpgrades() {
       });
       el._turretDelegation = true;}
   } catch(e) { console.error('[UI] turret delegation error', e); }
-
 
   // --- Upgrades Tourelles (3 slots, même design) ---
   const turretDefs = [
@@ -3487,7 +3400,6 @@ function renderShopUpgrades() {
   } catch(e) { console.error('[UI] late-bind turret error', e); }
 
 } catch(e) { console.error('[UI] renderShopUpgrades turret section error', e); }
-
 
   // --- Upgrades joueur (les 5 existants) ---
   UPGRADES.forEach(upg => {
@@ -3559,15 +3471,12 @@ el.innerHTML += `
   });
 }
 
-
-
 	shopBtn.onclick = () => {
 	  renderShopUpgrades();
 	  shopModal.style.display = 'block';
 	  // Recalage à l’ouverture (tailles DOM connues)
 	  positionShopUI();
 	};
-
 
 	shopClose.onclick = () => {
 	  shopModal.style.display = 'none';
@@ -3722,7 +3631,6 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
     }
   } catch(_){}
 
-
   
 if (btnCreate) {
     btnCreate.addEventListener('click', function(){
@@ -3759,7 +3667,6 @@ if (btnCreate) {
       }
     }, { passive: true });
   }
-
 
   if (btnJoinList) {
     btnJoinList.addEventListener('click', function(){
@@ -3832,7 +3739,7 @@ socket.on('lobbiesList', function(list){
       const names = (lob.players || []).join(', ');
       item.innerHTML = '<div><b>Lobby #' + lob.id + '</b> • (' + lob.count + '/' + (lob.max||6) + ') — ' + names + '</div>';
       const btn = document.createElement('button');
-      btn.textContent = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].join) || 'Join';
+      btn.textContent = (TRANSLATIONS[currentLang] && (TRANSLATIONS[currentLang].joinAction || TRANSLATIONS[currentLang].join)) || 'Join';
       btn.style.padding = '6px 12px';
       btn.style.background = '#3fa33f';
       btn.style.color = '#fff';
@@ -3855,8 +3762,6 @@ socket.on('lobbiesList', function(list){
       lobbiesList.appendChild(item);
     });
   });
-
-
 
 function renderManualPlayers() {
   try {
@@ -3928,7 +3833,7 @@ function renderManualPlayers() {
   if (!el) return;
   const ensure = () => {
     const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-    const expected = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join');
+    const expected = (tr.join || 'Join');
     if (el.textContent !== expected) el.textContent = expected;
   };
   const mo = new MutationObserver(ensure);
@@ -3968,7 +3873,6 @@ function renderManualPlayers() {
 
 })();
 </script>
-
 
 <script>
 (function(){
@@ -4022,7 +3926,6 @@ function renderManualPlayers() {
   window.setVersionBox = setVersionBox;
 })();
 </script>
-
 
 <script>
 // --- Join lobby count badge (polling every 2s) ---
@@ -4080,6 +3983,22 @@ function renderManualPlayers() {
 
   // Initial paint
   updateJoinLobbyBtnText();
+})();
+</script>
+
+<script>
+(function(){
+  function setMenuUIHidden(on){ try { document.body.classList.toggle('menu-hide-ui', !!on); } catch(e){} }
+  // Initially hide until game starts
+  setMenuUIHidden(true);
+  try {
+    socket.on('lobbyUpdate', function(data){
+      try { setMenuUIHidden(!(data && data.started)); } catch(_){}
+    });
+    socket.on('gameStarted', function(){ setMenuUIHidden(false); });
+  } catch(e){}
+  // In case UI functions are used elsewhere
+  window.setMenuUIHidden = setMenuUIHidden;
 })();
 </script>
 
