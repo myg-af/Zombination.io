@@ -375,6 +375,7 @@ body.menu-hide-ui #fpsCounter,
 <style>
 @media (max-width: 768px) {
   /* Ensure the main lobby window fits and centers on small screens */
+  html, body { overflow-x: hidden; }
   #lobbyBox {
     min-width: 0 !important;
     /* Fallback: keep 12px gutters on each side even on browsers without env() */
@@ -384,14 +385,15 @@ body.menu-hide-ui #fpsCounter,
     margin-left: auto !important;
     margin-right: auto !important;
     box-sizing: border-box !important;
+    max-width: min(520px, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 24px)) !important;
   }
   /* Add small horizontal padding on the overlay to avoid touching edges */
   #lobbyScreen {
+    box-sizing: border-box;
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
   }
-}
-</style>
+}</style>
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
