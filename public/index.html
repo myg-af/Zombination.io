@@ -350,7 +350,7 @@ body.menu-hide-ui #fpsCounter,
     overscroll-behavior: contain;
   }
   /* Input & buttons sizing tweaks for small screens */
-  #pseudoInput { width: 100% !important; max-width: none !important; }
+  #pseudoInput { width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; display: block; }
   #lobbyBtnRow button { font-size: 16px !important; padding: 8px 18px !important; }
   #lobbyTitle { font-size: clamp(20px, 5.8vw, 26px) !important; }
   /* Nested lists should also size to remaining space to avoid being cut */
