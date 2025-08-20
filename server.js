@@ -25,6 +25,30 @@ const io = socketIo(server, {
   transports: ['websocket'],
 });
 
+// --- Chat globals ---
+let worldChatHistory = [];
+
+
+
+// === Helper: normalize client IP (supports proxies) ===
+function getClientIP(socket) {
+  try {
+    const hdr = (socket && socket.handshake && socket.handshake.headers) || {};
+    let ip = '';
+    if (hdr['x-forwarded-for']) {
+      // XFF can have a list: take the first one
+      ip = String(hdr['x-forwarded-for']).split(',')[0].trim();
+    }
+    if (!ip) {
+      ip = (socket && socket.handshake && (socket.handshake.address || socket.handshake.addresses)) || '';
+      ip = (typeof ip === 'string') ? ip : (Array.isArray(ip) ? (ip[0] || '') : '');
+    }
+    if (typeof ip === 'string' && ip.startsWith('::ffff:')) ip = ip.slice(7);
+    return String(ip || '').trim();
+  } catch(e) {
+    return '';
+  }
+}
 
 const {
   MAP_ROWS,
@@ -78,15 +102,49 @@ function getUpgradePrice(nextLevel) {
 let activeGames = [];
 let nextGameId = 1;
 
+// === Helper: check global nickname uniqueness (case-insensitive) ===
+function isPseudoTaken(name, exceptSocketId) {
+  try {
+    const target = String(name || '').trim().toLowerCase();
+    if (!target) return false;
+    for (const g of activeGames) {
+      if (!g) continue;
+      // Lobby players
+      try {
+        const lp = (g.lobby && g.lobby.players) ? g.lobby.players : {};
+        for (const sid in lp) {
+          if (exceptSocketId && sid === exceptSocketId) continue;
+          const p = lp[sid];
+          if (p && typeof p.pseudo === 'string' && p.pseudo.toLowerCase() === target) return true;
+        }
+      } catch(_){}
+      // In-game players (exclude bots)
+      try {
+        const pl = g.players || {};
+        for (const sid in pl) {
+          if (exceptSocketId && sid === exceptSocketId) continue;
+          const p = pl[sid];
+          if (p && !p.isBot && typeof p.pseudo === 'string' && p.pseudo.toLowerCase() === target) return true;
+        }
+      } catch(_){}
+    }
+  } catch(_){}
+  return false;
+}
+
 function createNewGame() {
   let game = {
     structures: null,
     id: nextGameId++,
-    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null },
+    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null , kickedUntilByIp: {}},
+    // map: ip -> timestamp until which the ip is blocked from rejoining this lobby
+    // only relevant for manual lobbies
+    kickedUntilByIp: {},
     players: {},
     bots: {},
     zombies: {},
     bullets: {},
+    chatHistory: [],
     currentRound: 1,
     totalZombiesToSpawn: MAX_ZOMBIES_PER_WAVE,
     zombiesSpawnedThisWave: 0,
@@ -939,7 +997,28 @@ function stopSpawning(game) {
 }
 
 function launchGame(game, readyPlayersArr = null) {
-  Object.keys(game.players).forEach(id => delete game.players[id]);
+  
+  // === ROBUST START FIX ===
+  // Some clients may reconnect right before the game starts, changing their socket.id.
+  // To avoid spawning "ghost" players that don't match current connections, we reconstruct
+  // the readyPlayers list from the CURRENT room membership intersected with lobby.ready.
+  try {
+    const roomNow = io.sockets.adapter.rooms.get('lobby' + game.id);
+    const cidsNow = roomNow ? Array.from(roomNow) : [];
+    const reconstructed = [];
+    for (const cid of cidsNow) {
+      const entry = game.lobby && game.lobby.players ? game.lobby.players[cid] : null;
+      if (entry && entry.ready) reconstructed.push([cid, entry]);
+    }
+    if (reconstructed.length > 0) {
+      readyPlayersArr = reconstructed;
+    }
+  } catch (e) {
+    console.error('[launchGame] ready reconstruction failed', e);
+  }
+  // === ROBUST START FIX END ===
+
+Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
 
@@ -1004,6 +1083,43 @@ function launchGame(game, readyPlayersArr = null) {
   buildCentralEnclosure(game, 1);
 
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
+
+  // === SANITY: ensure all sockets in socketsArr have a player object ===
+  try {
+    for (const sid of socketsArr) {
+      if (!game.players[sid]) {
+        const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+        const x = cC * TILE_SIZE + TILE_SIZE/2;
+        const y = cR * TILE_SIZE + TILE_SIZE/2;
+        const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
+        game.players[sid] = {
+          x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+          damage:10, speed:40, goldGain:10, regen:0,
+          lastShot:0, pseudo, kills:0, money:0, spectator:false
+        };
+      }
+    }
+  } catch(e) { console.error('[launchGame] post-spawn sanity failed', e); }
+// 🔒 ROBUST: Sanity—ensure every ready socket has a player object
+try {
+  for (const sid of socketsArr) {
+    if (!game.players[sid]) {
+      // Fallback spawn near center (safe)
+      const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+      const x = cC * TILE_SIZE + TILE_SIZE/2;
+      const y = cR * TILE_SIZE + TILE_SIZE/2;
+      game.players[sid] = {
+        x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+        damage:10, speed:40, goldGain:10, regen:0,
+        lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
+        kills:0, money:0, spectator:false
+      };
+    }
+  }
+} catch(e) {
+  console.error('[launchGame] post-spawn sanity failed', e);
+}
+
 
   io.to('lobby' + game.id).emit('gameStarted', {
     map: game.map,
@@ -1078,17 +1194,157 @@ io.on('connection', socket => {
     started: game.lobby.started,
   });
 
+  // ====== ULTRA-AGGRESSIVE CHAT HANDLERS ======
+  try { socket.join('world'); } catch(_) {}
+
+  // Client asks history for a channel
+  socket.on('chat:join', (payload) => {
+    try {
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+      if (channel === 'world') {
+        const history = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-50) : [];
+        io.to(socket.id).emit('chat:history', { channel, history });
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (!game) return;
+        const history = Array.isArray(game.chatHistory) ? game.chatHistory.slice(-50) : [];
+        io.to(socket.id).emit('chat:history', { channel, history });
+      }
+    } catch(e){}
+  });
+
+  // Fallback pull (explicit request)
+  socket.on('chat:pull', (payload, cb) => {
+    try {
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+      let arr = [];
+      if (channel === 'world') {
+        arr = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-50) : [];
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (game && Array.isArray(game.chatHistory)) arr = game.chatHistory.slice(-50);
+      }
+      if (cb) cb({ ok:true, channel, history: arr });
+      else io.to(socket.id).emit('chat:history', { channel, history: arr });
+    } catch(e){ if (cb) cb({ ok:false }); }
+  });
+
+  // Send a message
+  socket.on('chat:send', (payload) => {
+    try {
+      const now = Date.now();
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+
+      // basic sanitize
+      let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
+      if (!text) return;
+      if (text.length > 50) text = text.slice(0,50);
+
+      // cooldown
+      socket.__lastChatAt = socket.__lastChatAt || 0;
+      if (now - socket.__lastChatAt < 2000) {
+        try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - socket.__lastChatAt) }); } catch(_){}
+        return;
+      }
+      socket.__lastChatAt = now;
+
+      // resolve pseudo
+      let pseudo = 'player';
+      try {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (game) {
+          pseudo = (game.players && game.players[socket.id] && game.players[socket.id].pseudo)
+                || (game.lobby && game.lobby.players && game.lobby.players[socket.id] && game.lobby.players[socket.id].pseudo)
+                || 'player';
+        }
+      } catch(_){}
+      if ((!pseudo || pseudo === 'player') && payload && payload.name) {
+        try {
+          let n = String(payload.name).trim().slice(0,15);
+          n = n.replace(/[^a-zA-Z0-9]/g, '');
+          if (n) pseudo = n;
+        } catch(_){}
+      }
+
+      
+            // nickname uniqueness check (global)
+      try { if (isPseudoTaken(pseudo, socket.id)) { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); return; } } catch(_){ }
+      // After passing uniqueness, **reserve** the nickname immediately so others get 'pseudo_taken'
+      try {
+        // Sanitize to match join/rename rules (alphanumeric only, 15 chars max)
+        let __san = String(pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+        if (__san) {
+          // Do not reserve generic fallbacks
+          const __lower = __san.toLowerCase();
+          if (__lower !== 'player' && __lower !== 'joueur') {
+            const __gid = socketToGame[socket.id];
+            const __game = activeGames.find(g => g && g.id === __gid);
+            if (__game) {
+              // Ensure lobby roster entry exists for reservation (ready stays false)
+              try {
+                __game.lobby = __game.lobby || { players: {} };
+                __game.lobby.players = __game.lobby.players || {};
+                if (!__game.lobby.players[socket.id]) __game.lobby.players[socket.id] = { pseudo: __san, ready: false };
+                else __game.lobby.players[socket.id].pseudo = __san;
+              } catch(_) {}
+              // If already in active players, mirror the name there
+              try { if (__game.players && __game.players[socket.id]) __game.players[socket.id].pseudo = __san; } catch(_) {}
+              // Broadcast lobby so clients update local caches / myPseudo
+              try { broadcastLobby(__game); } catch(_) {}
+            }
+            // Stick to the sanitized version for the message payload too
+            pseudo = __san;
+          }
+        }
+      } catch(_){}      
+      const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+
+      if (channel === 'world') {
+        worldChatHistory.push(msg);
+        if (worldChatHistory.length > 500) worldChatHistory.shift();
+        // Global broadcast: everyone receives world chat regardless of room state
+        io.emit('chat:msg', msg);
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (!game) return;
+        game.chatHistory = game.chatHistory || [];
+        game.chatHistory.push(msg);
+        if (game.chatHistory.length > 200) game.chatHistory.shift();
+        // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
+        io.emit('chat:msg', msg);
+      }
+    } catch(e){}
+  });
+  // ====== END CHAT HANDLERS ======
+
+
+
   // ====== Manual lobby system (create/join/start) ======
   socket.on('createLobby', (pseudo, cb) => {
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
     pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
+
+// Enforce limit: one manual lobby per public IP at the same time (as founder)
+const __hostIp = getClientIP(socket);
+const __alreadyHosting = activeGames.some(g =>
+  g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostIp && g.lobby.hostIp === __hostIp
+);
+if (__alreadyHosting) { if (cb) cb({ ok:false, reason:'ip_limit' }); return; }
+
     const oldGameId = socketToGame[socket.id];
     const oldGame = activeGames.find(g => g.id === oldGameId);
 
     const newGame = createNewGame();
     newGame.lobby.manual = true;
     newGame.lobby.hostId = socket.id;
+    newGame.lobby.hostIp = __hostIp;
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
 
     // Move socket room + mapping
@@ -1119,10 +1375,21 @@ io.on('connection', socket => {
     let pseudo = (data && data.pseudo) || '';
     pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
     const target = activeGames.find(g => g.id === targetId);
     if (!target || !target.lobby.manual || target.lobby.started) { if (cb) cb({ ok:false, reason:'not_joinable' }); return; }
     const count = Object.keys(target.lobby.players||{}).length;
     if (count >= MAX_PLAYERS) { if (cb) cb({ ok:false, reason:'full' }); return; }
+    // Refuse join if this IP was recently kicked from this lobby
+    try {
+      const ip = getClientIP(socket);
+      const until = target && target.lobby && target.lobby.kickedUntilByIp ? target.lobby.kickedUntilByIp[ip] : 0;
+      if (until && until > Date.now()) {
+        if (cb) cb({ ok:false, reason:'kicked', wait: Math.ceil((until - Date.now())/1000) });
+        return;
+      }
+    } catch(_) {}
 
     const currentId = socketToGame[socket.id];
     const current = activeGames.find(g => g.id === currentId);
@@ -1141,7 +1408,48 @@ io.on('connection', socket => {
   });
 
   
-socket.on('startManualLobby', (cb) => {
+
+
+// Host-only: kick a player from the manual lobby and block their IP for 30s
+
+// Host-only: kick a player from the manual lobby and block their IP for 30s
+socket.on('kickPlayer', (data, cb) => {
+  try {
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) { if (cb) cb && cb({ ok:false, reason:'not_in_manual' }); return; }
+    if (game.lobby.hostId !== socket.id) { if (cb) cb && cb({ ok:false, reason:'not_host' }); return; }
+    const targetId = data && data.targetId;
+    if (!targetId || targetId === socket.id) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+    if (!game.lobby.players[targetId]) { if (cb) cb && cb({ ok:false, reason:'not_in_lobby' }); return; }
+
+    // compute IP of target socket
+    const targetSock = io.sockets.sockets.get(targetId);
+    const ip = targetSock ? getClientIP(targetSock) : null;
+    const until = Date.now() + 30000; // 30s
+    if (!game.lobby.kickedUntilByIp) game.lobby.kickedUntilByIp = {};
+    if (ip) game.lobby.kickedUntilByIp[ip] = until;
+
+    // Remove from this lobby
+    try { delete game.lobby.players[targetId]; } catch(_){}
+    try { if (targetSock) targetSock.leave('lobby' + game.id); } catch(_){}
+
+    // Clear mapping so the client is effectively "in menu"
+    try { delete socketToGame[targetId]; } catch(_){}
+
+    // Notify the kicked client; client will show main menu
+    try { if (targetSock) io.to(targetId).emit('kicked', { gameId: game.id, until }); } catch(_){}
+
+    // Update the original lobby for everyone else
+    broadcastLobby(game);
+    if (cb) cb({ ok:true, until });
+
+  } catch (e) {
+    try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
+  }
+});
+
+  socket.on('startManualLobby', (cb) => {
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
@@ -1242,6 +1550,8 @@ socket.on('skipRound', () => {
   pseudo = (pseudo || '').trim().substring(0, 15);
   pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
   if (!pseudo) pseudo = 'Joueur';
+  if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'pseudo_taken' }); } catch(_) {} return; }
+
   game.lobby.players[socket.id] = { pseudo, ready: true };
   broadcastLobby(game);
   if (!game.lobby.manual) {
@@ -1256,6 +1566,39 @@ socket.on('skipRound', () => {
   }
   return;
 }
+});
+
+socket.on('renamePseudo', (data, cb) => {
+  try {
+    // Accept either a string or an object: { pseudo: '...' }
+    let p = (typeof data === 'string') ? data : (data && data.pseudo) || '';
+    p = String(p || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+    if (!p) { 
+      try { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); } catch(_){}
+      try { io.to(socket.id).emit('renameResult', { ok:false, reason:'invalid_pseudo' }); } catch(_){}
+      return;
+    }
+
+    if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_taken' }); } catch(_){} try { io.to(socket.id).emit('renameResult', { ok:false, reason:'pseudo_taken' }); } catch(_){} return; }
+    const gid = socketToGame[socket.id];
+    const game = activeGames.find(g => g && g.id === gid);
+
+    if (game) {
+      // Update pseudo in both lobby roster and active players if present
+      try { if (game.lobby && game.lobby.players && game.lobby.players[socket.id]) game.lobby.players[socket.id].pseudo = p; } catch(_){}
+      try { if (game.players && game.players[socket.id]) game.players[socket.id].pseudo = p; } catch(_){}
+      // Notify lobby UIs
+      try { broadcastLobby(game); } catch(_){}
+      // Also refresh health/name overlays for clients already in-game
+      try { io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game)); } catch(_){}
+    }
+
+    try { if (cb) cb({ ok:true, pseudo: p }); } catch(_){}
+    try { io.to(socket.id).emit('renameResult', { ok:true, pseudo: p }); } catch(_){}
+  } catch(e) {
+    try { if (cb) cb({ ok:false, reason:'server_error' }); } catch(_){}
+    try { io.to(socket.id).emit('renameResult', { ok:false, reason:'server_error' }); } catch(_){}
+  }
 });
 
   

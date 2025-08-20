@@ -187,6 +187,131 @@ body.menu-hide-ui #fpsCounter,
     background: #181c; /* keep existing lobby feel while covering elements beneath */
   }
 </style>
+
+<style>
+/* === CHAT WIDGET (World + Lobby) === */
+#chatPanel {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: min(420px, 94vw);
+  max-height: 46vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(18,18,18,0.86);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  box-shadow: 0 6px 26px #000c;
+  z-index: 999999;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  color: #fff;
+}
+#chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.06);
+  user-select: none;
+}
+#chatTitle { font-weight: 700; letter-spacing: .3px; }
+#chatToggle {
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+#chatToggle:hover { background: rgba(255,255,255,0.08); }
+#chatTabs { display: flex; gap: 6px; padding: 6px 10px 0 10px; }
+.chatTab { position: relative; font-size: 12px; padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.06); cursor: pointer; }
+.chatTab.active { background: rgba(46,160,67,0.35); }
+.chatTab.notify::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e33;
+  border: 2px solid rgba(18,18,18,0.86);
+  box-shadow: 0 0 8px rgba(227,51,51,.8);
+}
+#chatMessages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: #fff;
+}
+.chatLine { margin: 3px 0; word-break: break-word; color:#fff; }
+.chatName { color: #9fd; font-weight: 600; margin-right: 6px; }
+#chatInputRow {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 10px 10px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+#chatInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid #444;
+  background: #111;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  outline: none;
+  font-size: 14px;
+}
+#chatSend {
+  border: none;
+  background: #2a5;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#chatSend:disabled { opacity: .6; cursor: not-allowed; }
+#chatCollapsedBtn {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(18,18,18,0.86);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #fff;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 999999;
+  box-shadow: 0 6px 26px #000c;
+}
+#chatCollapsedBtn.notify::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #e33;
+  border: 2px solid rgba(18,18,18,0.86);
+  box-shadow: 0 0 8px rgba(227,51,51,.8);
+}
+@media (max-width: 768px) {
+  #chatPanel { max-height: 38vh; width: min(92vw, 420px); }
+}
+</style>
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
@@ -325,7 +450,7 @@ window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
 const socket = io({ transports: ['websocket'] });
-console.log("📡 Tentative de connexion au serveur Socket.IO...");
+console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
   try { socket.emit("clientHello", { v: (window.GAME_VERSION||"1.0.0"), tz: (Intl.DateTimeFormat().resolvedOptions().timeZone||"?") }); } catch(e){}
@@ -775,7 +900,7 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
     const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
     const el = document.getElementById('lobbyJoin');
     if (!el) return;
-    el.textContent = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join');
+    el.textContent = lobbyJoined ? (tr.waiting || 'Waiting') : (tr.join || 'Join');
   }
 
   const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
@@ -784,7 +909,7 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
   const lobbyTitleEl = document.getElementById('lobbyTitle');
   if (lobbyTitleEl) lobbyTitleEl.innerHTML = `<b>${tr.zombination}</b>`;
   if (pseudoInput) pseudoInput.placeholder = tr.enterPseudo || '';
-  if (lobbyJoin) lobbyJoin.textContent = lobbyJoined ? (tr.waiting || 'Waiting...') : (tr.join || 'Join'); applyJoinLabel();
+  if (lobbyJoin) lobbyJoin.textContent = lobbyJoined ? (tr.waiting || 'Waiting') : (tr.join || 'Join'); applyJoinLabel();
 
   // Death screen
   const deathTitle = document.getElementById('deathTitle');
@@ -2754,10 +2879,7 @@ function gameLoop(timestamp = 0) {
         setTimeout(() => pseudoInput.style.background = "", 600);
         return;
       }
-      socket.emit('setPseudoAndReady', pseudoInput.value.trim());
-      try{ localStorage.setItem('zombi_pseudo', pseudoInput.value.trim()); }catch(_){}
-      myPseudo = pseudoInput.value.trim();
-      lobbyJoined = true;
+      socket.emit('setPseudoAndReady', pseudoInput.value.trim());lobbyJoined = true;
       window.lobbyJoined = true;
       lobbyJoin.disabled = true;
       pseudoInput.disabled = true;
@@ -2769,13 +2891,23 @@ function gameLoop(timestamp = 0) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => {
+    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
       MAP_COLS = map[0].length;
       playersHealth = data.players;
-      currentRound = data.round;
+      
+      // Guard: if my player exists, center camera immediately; else keep default until first update
+      try {
+        if (playersHealth && myId && playersHealth[myId]) {
+          const viewW = canvas.width / renderScale;
+          const viewH = canvas.height / renderScale;
+          cameraX = Math.max(0, Math.min(playersHealth[myId].x - viewW/2, MAP_COLS*TILE_SIZE - viewW));
+          cameraY = Math.max(0, Math.min(playersHealth[myId].y - viewH/2, MAP_ROWS*TILE_SIZE - viewH));
+        }
+      } catch(e) {}
+    currentRound = data.round;
       lobbyScreen.style.display = 'none';
       isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
@@ -3619,6 +3751,65 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
   if (pseudoInput) {
     pseudoInput.addEventListener('input', updateButtonsDisabled, { passive: true });
     setTimeout(updateButtonsDisabled, 0);
+    // === Robust nickname sync & uniqueness enforcement (client-side wiring) ===
+    (function(){
+      var __renameTimer = null;
+      var __lastAcceptedPseudo = (window.myPseudo || '');
+      function applyAcceptedPseudo(p){
+        __lastAcceptedPseudo = p || '';
+        window.myPseudo = __lastAcceptedPseudo;
+        try { localStorage.setItem('zombi_pseudo', __lastAcceptedPseudo); } catch(_){}
+      }
+      try {
+        if (window.socket) {
+          window.socket.on('lobbyUpdate', function(data){
+            try {
+              var meId = (window.socket && socket.id) || null;
+              var me = data && data.lobby && data.lobby.players ? data.lobby.players[meId] : null;
+              if (me && typeof me.pseudo === 'string') {
+                applyAcceptedPseudo(me.pseudo);
+                if (window.pseudoInput && document.activeElement !== window.pseudoInput) { try { window.pseudoInput.value = me.pseudo; } catch(_){ } }
+              }
+            } catch(_){}
+          });
+        }
+      } catch(_){}
+      if (window.pseudoInput) {
+        window.pseudoInput.addEventListener('input', function(){
+          try {
+            var p = (window.pseudoInput.value || '').trim();
+            clearTimeout(__renameTimer);
+            __renameTimer = setTimeout(function(){
+              if (p && window.socket && socket.connected) {
+                try { socket.emit('renamePseudo', { pseudo: p }); } catch(_){}
+              }
+            }, 250);
+          } catch(_){}
+        }, { passive: true });
+      }
+      try {
+        if (window.socket) {
+          if (window.socket.off) window.socket.off('renameResult');
+          window.socket.on('renameResult', function(res){
+            try {
+              if (res && res.ok && res.pseudo) {
+                applyAcceptedPseudo(res.pseudo);
+                if (window.pseudoInput && document.activeElement !== window.pseudoInput) { try { window.pseudoInput.value = res.pseudo; } catch(_){ } }
+              } else if (res && res.reason === 'pseudo_taken') {
+                if (window.pseudoInput) {
+                  window.pseudoInput.value = __lastAcceptedPseudo || '';
+                  window.pseudoInput.style.background = '#3b0000';
+                  setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450);
+                }
+                window.myPseudo = __lastAcceptedPseudo || '';
+                try { localStorage.setItem('zombi_pseudo', window.myPseudo); } catch(_){}
+              }
+            } catch(_){}
+          });
+        }
+      } catch(_){}
+    })();
+
   }
   if (window) window.updateButtonsDisabled = updateButtonsDisabled;
   // Load persisted pseudo from localStorage
@@ -3654,11 +3845,17 @@ if (btnCreate) {
         btnCreate.disabled = true;
         socket.emit('createLobby', p, function(res){
           try {
-            if (!res || !res.ok) { btnCreate.disabled = false; window.lobbyJoined = false; showMain(); return; }
+            if (!res || !res.ok) {
+              if (res && res.reason === 'pseudo_taken') {
+                var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+                __alertPseudoTaken();
+              }
+              btnCreate.disabled = false; window.lobbyJoined = false; showMain(); return;
+            }
             // Server will follow up with lobbyUpdate
           } catch(err) {
             console.error('createLobby callback error', err);
-          } finally {
+} finally {
             try { btnCreate.disabled = true; } catch(_) {}
           }
         });
@@ -3746,8 +3943,25 @@ socket.on('lobbiesList', function(list){
       btn.style.border = 'none';
       btn.style.borderRadius = '6px';
       btn.style.cursor = 'pointer';
+      
       btn.onclick = function(){
-        const p = pseudoInput.value.trim();
+        var raw = (pseudoInput && pseudoInput.value) ? pseudoInput.value : '';
+        var p = (raw || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+        if (!p) {
+          try { pseudoInput && pseudoInput.focus(); pseudoInput && (pseudoInput.style.background='#fdd'); setTimeout(function(){ try{ pseudoInput.style.background=''; }catch(_){ } }, 600); } catch(_){}
+          return;
+        }
+        // Client-side pre-check against current lobby roster to prevent duplicates
+        try {
+          var list = Array.isArray(lob.players) ? lob.players : [];
+          var taken = list.some(function(n){ return String(n||'').toLowerCase() === p.toLowerCase(); });
+          if (taken) {
+            try { var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+            __alertPseudoTaken();
+          } catch(_){}
+          return;
+          }
+        } catch(_){}
         socket.emit('joinLobbyById', { gameId: lob.id, pseudo: p }, function(res){
           if (res && res.ok) {
             myPseudo = p; window.myPseudo = p;
@@ -3755,47 +3969,66 @@ socket.on('lobbiesList', function(list){
             showManual();
             renderManualPlayers();
             try { updateButtonsDisabled(); } catch(_) {}
+          } else if (res && res.reason === 'pseudo_taken') {
+            try { var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+            __alertPseudoTaken(); } catch(_){}
           }
         });
       };
+
       item.appendChild(btn);
       lobbiesList.appendChild(item);
     });
   });
 
+
 function renderManualPlayers() {
   try {
     const playersObj = (typeof lobbyData === 'object' && lobbyData && lobbyData.players) ? lobbyData.players : {};
-    const arr = Object.values(playersObj).map(p => (p && p.pseudo) ? p.pseudo : '').filter(Boolean);
+    const entries = Object.entries(playersObj); // [ [id, {pseudo, ready}],  ]
     const emptyLabel = (TRANSLATIONS[currentLang] && TRANSLATIONS[currentLang].emptySlot) || 'empty';
-    const slots = Array.from({length: 6}, (_, i) => arr[i] || emptyLabel);
+    const isHost = !!(window.lobbyData && window.lobbyData.hostId && window.socket && window.socket.id && window.lobbyData.hostId === socket.id);
+    const tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang] || TRANSLATIONS['en'])) || {};
+    const kickTxt = tr.kick || 'Kick';
+
+    // Build up to 6 slots
+    let cells = [];
+    for (let i = 0; i < 6; i++) {
+      if (i < entries.length) {
+        const sid = entries[i][0];
+        const p = entries[i][1] || {};
+        const name = (p && p.pseudo) ? p.pseudo : '';
+        const canKick = isHost && sid !== socket.id; // host cannot kick self
+        let inner = '<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">'
+                    + '<span>' + (name || '') + '</span>' + (((window.lobbyData && window.lobbyData.hostId === sid) || (!window.lobbyData?.hostId && entries && entries.length === 1 && window.socket && sid === window.socket.id)) ? '<span class="host-crown" title="Host" aria-label="Host" style="margin-left:6px">👑</span>' : '' )+ (canKick ? '<button class="kick-btn" data-target="' + sid + '" style="padding:4px 8px;font-size:12px;cursor:pointer;background:#b00020;color:#fff;border:none;border-radius:4px;">'+kickTxt+'</button>' : '')
+                    + '</div>';
+        cells.push({ inner, empty:false });
+      } else {
+        cells.push({ inner: emptyLabel, empty:true });
+      }
+    }
+
     let html = '';
     html += '<table style="margin:8px auto;border-collapse:separate;border-spacing:6px;">';
     for (let r = 0; r < 2; r++) {
       html += '<tr>';
       for (let c = 0; c < 3; c++) {
-        const i = r * 3 + c;
-        const val = slots[i];
-        const isEmpty = (val === emptyLabel);
-        var bg = isEmpty ? 'rgba(255,255,255,0.06)' : 'rgba(72,199,73,0.18)';
+        const idx = r * 3 + c;
+        const cell = cells[idx];
+        var bg = cell.empty ? 'rgba(255,255,255,0.06)' : 'rgba(72,199,73,0.18)';
         var border = '1px solid rgba(255,255,255,0.12)';
-        var color = isEmpty ? '#bbb' : '#fff';
-        html += '<td style="min-width:90px;padding:10px 14px;background:'+bg+';border:'+border+';border-radius:10px;text-align:center;font-weight:600;color:'+color+';">' + (isEmpty ? emptyLabel : val) + '</td>';
+        var color = cell.empty ? '#bbb' : '#fff';
+        html += '<td style="min-width:120px;padding:10px 14px;background:'+bg+';border:'+border+';border-radius:8px;text-align:left;color:'+color+';">' + cell.inner + '</td>';
       }
       html += '</tr>';
     }
     html += '</table>';
-    if (typeof manualPlayers !== 'undefined' && manualPlayers) manualPlayers.innerHTML = html;
-    else {
-      const container = document.getElementById('manualLobbyPlayers');
-      if (container) container.innerHTML = html;
-    }
+    const container = (typeof manualPlayers !== 'undefined' && manualPlayers) ? manualPlayers : document.getElementById('manualLobbyPlayers');
+    if (container) container.innerHTML = html;
   } catch(e) {}
 
-  try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
-}
-
-  function safe(fn){ try{ fn(); }catch(e){} }
+  try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(_){}
+}  function safe(fn){ try{ fn(); }catch(e){} }
 
   // Hide legacy timer/status elements globally
   safe(function(){
@@ -3859,8 +4092,7 @@ function renderManualPlayers() {
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
-        myPseudo = pseudoInput.value.trim(); window.myPseudo = myPseudo; try{ localStorage.setItem('zombi_pseudo', myPseudo); }catch(_){}
-        if (window.socket){ socket.emit('setPseudoAndReady', window.myPseudo); }
+        socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); 
         window.lobbyJoined = true;
         try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.disabled = true; } catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
@@ -3999,6 +4231,417 @@ function renderManualPlayers() {
   } catch(e){}
   // In case UI functions are used elsewhere
   window.setMenuUIHidden = setMenuUIHidden;
+})();
+</script>
+
+
+<script>
+(function(){
+  try {
+    var container = document.getElementById('manualLobbyPlayers');
+    if (container) {
+      container.addEventListener('click', function(ev){
+        var btn = ev.target && ev.target.closest && ev.target.closest('.kick-btn');
+        if (!btn) return;
+        if (!window.socket) return;
+        var targetId = btn.getAttribute('data-target');
+        if (!targetId) return;
+        // Only host will see the button; server will re-check permissions
+        try { socket.emit('kickPlayer', { targetId: targetId }); } catch(e){}
+      });
+    }
+  } catch(e){}
+
+  try {
+    if (window.socket) {
+      
+          
+          socket.on('kicked', function(info){
+            // Force back to main menu without relying on local-scope functions
+            try {
+              var panel = document.getElementById('manualLobbyPanel');
+              if (panel) panel.style.display = 'none';
+            } catch(_){}
+            try {
+              var listPanel = document.getElementById('joinLobbyPanel');
+              if (listPanel) listPanel.style.display = 'none';
+            } catch(_){}
+            try { window.lobbyJoined = false; } catch(_){}
+            try {
+              if (window.pseudoInput) {
+                pseudoInput.style.display = '';
+                pseudoInput.disabled = false;
+                if (!pseudoInput.value && window.myPseudo) pseudoInput.value = window.myPseudo;
+                try { pseudoInput.focus(); } catch(_){}
+              }
+            } catch(_){}
+            try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
+            try {
+              var tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang] || TRANSLATIONS['en'])) || {};
+              var wait = (info && info.until && info.until > Date.now()) ? Math.ceil((info.until - Date.now())/1000) : 30;
+              var msg = (tr && tr.kickedMsg) ? tr.kickedMsg.replace('{s}', String(wait)) : ('You were kicked. You can rejoin in ~' + wait + 's.');
+              alert(msg);
+            } catch(_){}
+          });
+}
+  } catch(e){}
+})();
+</script>
+
+<div id="chatPanel" role="region" aria-label="Chat">
+  <div id="chatHeader">
+    <div id="chatTitle">Chat</div>
+    <button id="chatToggle" title="Collapse">–</button>
+  </div>
+  <div id="chatTabs">
+    <button id="tabWorld" class="chatTab active">World chat</button>
+    <button id="tabLobby" class="chatTab">Lobby chat</button>
+  </div>
+  <div id="chatMessages" aria-live="polite"></div>
+  <div id="chatInputRow">
+    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" />
+    <button id="chatSend">Send</button>
+  </div>
+</div>
+<button id="chatCollapsedBtn" title="Chat">💬</button>
+
+<script>(function(){
+  const MAX_LEN = 50;
+  const COOLDOWN_MS = 2000;
+  let lastSent = 0;
+
+  let currentChannel = 'world'; // 'world' | 'lobby'
+  let pendingHistoryFor = null;
+  const chatBuf = { world: [], lobby: [] };
+  const chatSeen = { world: new Set(), lobby: new Set() };
+
+  let inGame = false;
+  let inManualLobby = false;
+  let __chatBoundTo = null;
+  let __chatPrevMode = null;
+
+  function qs(id){ return document.getElementById(id); }
+  const panel = qs('chatPanel');
+  const toggle = qs('chatToggle');
+  const title = qs('chatTitle');
+  const list = qs('chatMessages');
+  const input = qs('chatInput');
+  const sendBtn = qs('chatSend');
+  const collapsedBtn = qs('chatCollapsedBtn');
+  const tabWorld = qs('tabWorld');
+  const tabLobby = qs('tabLobby');
+  // Toggle / expand handlers
+  if (toggle) toggle.addEventListener('click', function(){ setCollapsed(true); }, {passive:true});
+  if (collapsedBtn) collapsedBtn.addEventListener('click', function(){ setCollapsed(false); }, {passive:true});
+
+
+  // -- Helper: position collapsed button above HUD (best-effort)
+  function positionCollapsedBtn(){
+    try{
+      if (!collapsedBtn) return;
+      if (!inGame) { collapsedBtn.style.bottom = '12px'; return; }
+      var hud = document.getElementById('hudStats') || document.getElementById('hudAlive') || document.getElementById('hudMoney');
+      if (hud && hud.getBoundingClientRect){
+        var r = hud.getBoundingClientRect();
+        var fromBottom = Math.max(12, Math.round(window.innerHeight - r.top + 12));
+        collapsedBtn.style.bottom = fromBottom + 'px';
+      } else {
+        collapsedBtn.style.bottom = '12px';
+      }
+    }catch(e){}
+  }
+
+  // i18n
+  function applyChatI18n(){
+    try{
+      const tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang] || TRANSLATIONS['en'])) || {};
+      title.textContent = tr.chat || 'Chat';
+      tabWorld.textContent = tr.worldChat || 'World chat';
+      tabLobby.textContent = tr.lobbyChat || 'Lobby chat';
+      sendBtn.textContent = tr.send || 'Send';
+      input.placeholder = tr.chatPlaceholder || 'Message (max 50)';
+      toggle.title = tr.collapse || 'Collapse';
+      collapsedBtn.title = tr.chat || 'Chat';
+    }catch(e){}
+  }
+  applyChatI18n();
+  if (typeof window.updateUITexts === 'function'){
+    const _u = window.updateUITexts;
+    window.updateUITexts = function(){ try{ _u.apply(this, arguments); }catch(_){}
+      applyChatI18n();
+    };
+  }
+
+  // Collapse/expand
+  function setCollapsed(on){
+    if (on){
+      if (panel) panel.style.display = 'none';
+      if (collapsedBtn) collapsedBtn.style.display = 'flex';
+      positionCollapsedBtn();
+      try { localStorage.setItem('chatCollapsed','1'); } catch(_){}
+    } else {
+      if (panel) panel.style.display = 'flex';
+      if (collapsedBtn) collapsedBtn.style.display = 'none';
+      if (collapsedBtn) collapsedBtn.classList.remove('notify');
+      positionCollapsedBtn();
+      try { localStorage.setItem('chatCollapsed','0'); } catch(_){}
+      try { input && input.focus(); } catch(_){}
+    }
+  }
+
+  // Render from buffer
+  function renderChannel(ch){
+    try{
+      chatSeen[ch] = new Set((chatBuf[ch]||[]).map(m => ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000))));
+      const arr = (chatBuf[ch]||[]);
+      list.innerHTML = '';
+      for (let i=0;i<arr.length;i++){
+        const msg = arr[i];
+        const name = msg && msg.pseudo ? String(msg.pseudo) : 'player';
+        const text = msg && msg.text ? String(msg.text) : '';
+        const div = document.createElement('div');
+        div.className = 'chatLine';
+        div.innerHTML = '<span class="chatName">' + name.replace(/</g,'&lt;') + ':</span>' + text.replace(/</g,'&lt;');
+        list.appendChild(div);
+      }
+      list.scrollTop = list.scrollHeight + 1000;
+    }catch(e){}
+  }
+
+  // Push message
+  function pushMsg(msg){
+    try{
+      if (!msg) return;
+      const ch = msg && msg.channel ? ((msg.channel === 'lobby') ? 'lobby' : 'world') : currentChannel;
+      const arr = chatBuf[ch] = chatBuf[ch] || [];
+      const key = ((msg.sid||'')+'|'+(msg.text||'')+'|'+Math.floor((msg.ts||0)/2000));
+      if (chatSeen[ch] && chatSeen[ch].has(key)) { return; }
+      try { chatSeen[ch].add(key); } catch(_){}
+      arr.push(msg); if (arr.length > 200) arr.shift();
+      if (ch === currentChannel){
+        const name = msg && msg.pseudo ? String(msg.pseudo) : 'player';
+        const text = msg && msg.text ? String(msg.text) : '';
+        const div = document.createElement('div');
+        div.className = 'chatLine';
+        div.innerHTML = '<span class="chatName">' + name.replace(/</g,'&lt;') + ':</span>' + text.replace(/</g,'&lt;');
+        list.appendChild(div);
+        list.scrollTop = list.scrollHeight + 1000;
+        while (list.childElementCount > 200) list.removeChild(list.firstElementChild);
+      }
+    }catch(e){}
+  }
+
+  // Select channel
+  function selectChannel(ch){
+    if (ch !== 'world' && ch !== 'lobby') ch = 'world';
+    if (collapsedBtn && ch === 'lobby') { try { collapsedBtn.classList.remove('notify'); } catch(_){} }
+    if (tabLobby && ch === 'lobby') { try { tabLobby.classList.remove('notify'); } catch(_){} }
+    if (tabWorld && ch === 'world') { try { tabWorld.classList.remove('notify'); } catch(_){} }
+    if (ch === currentChannel) return;
+    currentChannel = ch;
+    tabWorld.classList.toggle('active', ch === 'world');
+    tabLobby.classList.toggle('active', ch === 'lobby');
+    renderChannel(currentChannel);
+    pendingHistoryFor = ch;
+    try { if (window.socket) window.socket.emit('chat:join', { channel: ch }); } catch(_){ }
+    applyChatI18n();
+  }
+  if (tabWorld) tabWorld.addEventListener('click', function(){ selectChannel('world'); });
+  if (tabLobby) tabLobby.addEventListener('click', function(){ selectChannel('lobby'); });
+
+  // Send
+  function send(){
+    try {
+      if (!window.socket || !window.socket.connected) return;
+      const now = Date.now();
+      if (now - lastSent < COOLDOWN_MS) return;
+      let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
+      if (!t) return;
+      if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
+      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
+      lastSent = now;
+      input.value = '';
+    } catch(e){}
+  }
+  if (sendBtn) sendBtn.addEventListener('click', send);
+  if (input) input.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter'){ ev.preventDefault(); send(); }
+  });
+
+  // Socket bindings
+  function initSocketBindings(){
+    try {
+      if (!window.socket) return false;
+      if (!panel) return false;
+      if (__chatBoundTo === window.socket) return true;
+      __chatBoundTo = window.socket;
+
+      panel.style.display = 'flex';
+      window.socket.emit('chat:join', { channel: currentChannel });
+
+      if (window.socket.off){
+        window.socket.off('chat:history');
+        window.socket.off('chat:msg');
+        window.socket.off('chat:error');
+      }
+      window.socket.on('chat:history', function(payload){
+        try{
+          if (!payload) return;
+          var __chan = (payload && payload.channel) ? payload.channel : currentChannel;
+          chatBuf[__chan] = (payload.history||[]);
+          chatSeen[__chan] = new Set((chatBuf[__chan]||[]).map(m => ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000))));
+          if (__chan === currentChannel) renderChannel(currentChannel);
+          if (pendingHistoryFor === __chan) pendingHistoryFor = null;
+        }catch(_){}
+      });
+      window.socket.on('chat:msg', function(msg){
+        try {
+          var isCollapsed = panel && panel.style && panel.style.display === 'none';
+          if (isCollapsed && msg && msg.channel === 'lobby' && collapsedBtn) collapsedBtn.classList.add('notify');
+          // Notify world on collapsed when not in game (menu or lobby)
+          if (isCollapsed && msg && msg.channel === 'world' && !inGame && collapsedBtn) collapsedBtn.classList.add('notify');
+          if (!isCollapsed && msg && msg.channel === 'lobby' && currentChannel !== 'lobby' && tabLobby) tabLobby.classList.add('notify');
+          if (!isCollapsed && msg && msg.channel === 'world' && currentChannel !== 'world' && tabWorld) tabWorld.classList.add('notify');
+        } catch(_){ }
+        pushMsg(msg);
+      });
+      window.socket.on('chat:error', function(e){
+        if (!e || e.type !== 'cooldown') return;
+        try { sendBtn.disabled = true; setTimeout(function(){ sendBtn.disabled = false; }, Math.min(1200, e.waitMs || 1000)); } catch(_){}
+      });
+      window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
+      window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
+      window.socket.on('gameStarted', function(){ inGame = true; updateTabs(); positionCollapsedBtn(); });
+      return true;
+    } catch(e){ return false; }
+  }
+  positionCollapsedBtn();
+  if (window.socket) initSocketBindings();
+  var __chatTry = setInterval(function(){ if (initSocketBindings()){ clearInterval(__chatTry); } }, 300);
+
+  // Periodic history refresh (fallback)
+  setInterval(function(){
+    try {
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('chat:join', { channel: currentChannel });
+      }
+    } catch(_){}
+  }, 2000);
+
+  // Modes & tabs
+  function updateTabs(){
+    const modeMain = (!inManualLobby && !inGame);
+    const modeLobby = (inManualLobby && !inGame);
+    const modeGame = inGame;
+    const newMode = modeGame ? 'game' : (modeLobby ? 'lobby' : 'main');
+    if (__chatPrevMode === newMode) return;
+    __chatPrevMode = newMode;
+
+    if (newMode === 'main'){
+      tabWorld.style.display = '';
+      tabLobby.style.display = 'none';
+      if (currentChannel !== 'world') selectChannel('world');
+    } else if (newMode === 'lobby'){
+      tabWorld.style.display = '';
+      tabLobby.style.display = '';
+    } else {
+      tabWorld.style.display = 'none';
+      tabLobby.style.display = '';
+      if (currentChannel !== 'lobby') selectChannel('lobby');
+    }
+  }
+
+  function refreshLobbyMode(){
+    try {
+      var pnl = document.getElementById('manualLobbyPanel');
+      inManualLobby = !!(pnl && pnl.style && pnl.style.display !== 'none');
+      updateTabs();
+      positionCollapsedBtn();
+    } catch(_){}
+  }
+  // show by default, ignore previous collapsed state
+  try { localStorage.removeItem('chatCollapsed'); } catch(_){}
+  setCollapsed(false);
+  setInterval(refreshLobbyMode, 1500);
+  window.addEventListener('resize', positionCollapsedBtn);
+})();</script>
+<script>
+(function(){
+  try {
+    if (window.socket) {
+      socket.on('setPseudoAndReadyResult', function(res){
+        try {
+          if (!res || res.ok) return;
+          var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+          __alertPseudoTaken();
+        } catch(_){}
+      });
+      socket.on('renameResult', function(res){
+        try {
+          if (!res || res.ok) return;
+          if (res && res.reason === 'pseudo_taken') {
+            var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+            __alertPseudoTaken();
+          }
+        } catch(_){}
+      });
+    }
+  } catch(_){}
+})();
+</script>
+<script>
+function __alertPseudoTaken(){
+  try {
+    var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+    alert(tr.pseudoTaken || 'Nickname already in use.');
+  } catch(_) { alert('Nickname already in use.'); }
+}
+</script>
+
+<script>
+// Robust listener to ensure popup on pseudo_taken for chat send, even if other handlers exist.
+(function ensurePseudoTakenPopup(){
+  function bind(){
+    try{
+      if (!window.socket || !window.socket.on) return false;
+      window.socket.on('chat:error', function(e){
+        try{
+          if (e && e.type === 'pseudo_taken') {
+            var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+            alert(tr.pseudoTaken || 'Nickname already in use.');
+          }
+        }catch(_){}
+      });
+      return true;
+    }catch(_){ return false; }
+  }
+  if (!bind()){
+    var __ptint = setInterval(function(){ if (bind()) { clearInterval(__ptint); } }, 300);
+  }
+})();
+</script>
+
+
+<script>
+// Robust listener to ensure popup on pseudo_taken for Join lobby actions (server-side signal)
+(function ensureJoinPseudoTakenPopup(){
+  function bind(){
+    try{
+      if (!window.socket || !window.socket.on) return false;
+      window.socket.on('join:error', function(e){
+        try{
+          if (e && e.type === 'pseudo_taken') {
+            var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+            alert(tr.pseudoTaken || 'Nickname already in use.');
+          }
+        }catch(_){}
+      });
+      return true;
+    }catch(_){ return false; }
+  }
+  if (!bind()){
+    var __jpt = setInterval(function(){ if (bind()) { clearInterval(__jpt); } }, 300);
+  }
 })();
 </script>
 

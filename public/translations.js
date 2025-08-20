@@ -1,5 +1,11 @@
 const TRANSLATIONS = {
   en: {
+    pseudoTaken: 'Nickname already in use.',
+    send: 'Send',
+    chatPlaceholder: 'Message (max 50)',
+    chat: 'Chat',
+    lobbyChat: 'Lobby chat',
+    worldChat: 'World chat',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Join',
@@ -43,9 +49,21 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} lvl {level} succeeded. Money: ${money}',
     notEnoughMoney: 'Not enough money.',
     actionImpossible: 'Action impossible.',
-    upgrades: { maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Gold gain', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
+    upgrades: {
+    pseudoTaken: 'Apodo ya usado.',
+    send: 'Enviar',
+    chatPlaceholder: 'Mensaje (máx. 50)',
+    chat: 'Chat',
+    lobbyChat: 'Chat de lobby',
+    worldChat: 'Chat global', maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Gold gain', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
   },
   cn: {
+    pseudoTaken: '昵称已被使用。',
+    send: '发送',
+    chatPlaceholder: '消息（最多50）',
+    chat: '聊天',
+    lobbyChat: '大厅聊天',
+    worldChat: '世界聊天',
     zombination: "Zombination.io",
     join: '单人',
     joinAction: '加入',
@@ -92,6 +110,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+7% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金币获取', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
   },
   ru: {
+    pseudoTaken: 'Ник уже занят.',
+    send: 'Отправить',
+    chatPlaceholder: 'Сообщение (макс. 50)',
+    chat: 'Чат',
+    lobbyChat: 'Чат лобби',
+    worldChat: 'Мировой чат',
     zombination: "Zombination.io",
     join: 'Соло',
     joinAction: 'Присоединиться',
@@ -184,6 +208,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Oro ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
   },
   pt: {
+    pseudoTaken: 'Apelido já em uso.',
+    send: 'Enviar',
+    chatPlaceholder: 'Mensagem (máx. 50)',
+    chat: 'Chat',
+    lobbyChat: 'Chat do lobby',
+    worldChat: 'Chat global',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Entrar',
@@ -230,6 +260,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Ouro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
   },
   de: {
+    pseudoTaken: 'Spitzname bereits vergeben.',
+    send: 'Senden',
+    chatPlaceholder: 'Nachricht (max. 50)',
+    chat: 'Chat',
+    lobbyChat: 'Lobby-Chat',
+    worldChat: 'Weltchat',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Beitreten',
@@ -276,6 +312,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+7% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Goldgewinn', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
   },
   jp: {
+    pseudoTaken: 'そのニックネームは使用中です。',
+    send: '送信',
+    chatPlaceholder: 'メッセージ（最大50）',
+    chat: 'チャット',
+    lobbyChat: 'ロビーチャット',
+    worldChat: 'ワールドチャット',
     zombination: "Zombination.io",
     join: 'ソロ',
     joinAction: '参加',
@@ -322,6 +364,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+7% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% ゴールド獲得', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
   },
   fr: {
+    pseudoTaken: 'Pseudo déjà utilisé.',
+    send: 'Envoyer',
+    chatPlaceholder: 'Message (max 50)',
+    chat: 'Chat',
+    lobbyChat: 'Lobby chat',
+    worldChat: 'World chat',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Rejoindre',
@@ -368,6 +416,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+7% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% Or gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
   },
   pl: {
+    pseudoTaken: 'Pseudonim jest już zajęty.',
+    send: 'Wyślij',
+    chatPlaceholder: 'Wiadomość (max 50)',
+    chat: 'Czat',
+    lobbyChat: 'Czat lobby',
+    worldChat: 'Czat globalny',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Dołącz',
@@ -414,6 +468,12 @@ const TRANSLATIONS = {
     upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+7% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Złoto', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
   },
   kr: {
+    pseudoTaken: '닉네임이 이미 사용 중입니다.',
+    send: '보내기',
+    chatPlaceholder: '메시지(최대 50자)',
+    chat: '채팅',
+    lobbyChat: '로비 채팅',
+    worldChat: '월드 채팅',
     zombination: "Zombination.io",
     join: '솔로',
     joinAction: '참가',
@@ -564,4 +624,20 @@ TRANSLATIONS.kr = merge(TRANSLATIONS.kr||{}, {
 
 // Ensure availability on window for legacy code paths
 try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; } } catch(_) {}
+})();
+
+;(function(){
+  if (typeof window === 'undefined' || !window.TRANSLATIONS) return;
+  var T = window.TRANSLATIONS;
+  function add(lang, obj){ try{ T[lang] = Object.assign({}, T[lang]||{}, obj); }catch(_){ } }
+  add('en', { kick: 'Kick', kickedMsg: 'You were kicked. You can rejoin in ~{s}s.' });
+  add('fr', { kick: 'Exclure', kickedMsg: 'Vous avez été exclu. Vous pourrez revenir dans ~{s}s.' });
+  add('es', { kick: 'Expulsar', kickedMsg: 'Has sido expulsado. Podrás volver en ~{s}s.' });
+  add('pt', { kick: 'Expulsar', kickedMsg: 'Você foi expulso. Você poderá voltar em ~{s}s.' });
+  add('de', { kick: 'Rauswerfen', kickedMsg: 'Du wurdest rausgeworfen. Du kannst in ~{s}s wieder beitreten.' });
+  add('ru', { kick: 'Выгнать', kickedMsg: 'Вас выгнали. Вы сможете вернуться через ~{s} с.' });
+  add('cn', { kick: '踢出', kickedMsg: '你已被踢出。约 ~{s} 秒后可重新加入。' });
+  add('jp', { kick: 'キック', kickedMsg: 'キックされました。約 {s} 秒後に再参加できます。' });
+  add('pl', { kick: 'Wyrzuć', kickedMsg: 'Zostałeś wyrzucony. Możesz dołączyć ponownie za około {s}s.' });
+  add('kr', { kick: '추방', kickedMsg: '추방되었습니다. 약 {s}초 후에 다시 참여할 수 있습니다.' });
 })();
