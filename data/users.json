@@ -5,6 +5,12 @@
       "usernameLower": "test",
       "passHash": "pbkdf2$sha256$120000$ad9bb1e244bb5ce0cbfdcbf294d8b0c6$71360eb962f155159dac3ea4c84e495eab5bf74feca65d638e6dc4e0ef1426e2",
       "createdAt": 1755700960692
+    },
+    "myg": {
+      "username": "Myg",
+      "usernameLower": "myg",
+      "passHash": "pbkdf2$sha256$120000$6705030c25d7eda8e8f051b99f5cefcb$b81f7ca783c1467960d97813f66f480718fe4bdd947b6f025bd818cefc1ddf94",
+      "createdAt": 1755710250501
     }
   }
 }
