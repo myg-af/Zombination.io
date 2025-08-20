@@ -4593,7 +4593,7 @@ function renderManualPlayers() {
       });
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
-      window.socket.on('gameStarted', function(){ inGame = true; updateTabs(); positionCollapsedBtn(); });
+      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
       return true;
     } catch(e){ return false; }
   }
@@ -4647,6 +4647,78 @@ function renderManualPlayers() {
   setInterval(refreshLobbyMode, 1500);
   window.addEventListener('resize', positionCollapsedBtn);
 })();</script>
+<script>
+/* === SOLO MODE CHAT HIDING (client-only, robust & non-invasive) ===
+   Hides both the chat panel and the collapsed chat button whenever a game is started
+   with only one human player (solo). Re-enables chat automatically when back to lobby/menu.
+   Does not modify server behavior.
+*/
+(function(){
+  try {
+    var FORCED_HIDE = false;
+
+    function getEl(id){ return document.getElementById(id); }
+    function applyVisibility(){
+      try {
+        var panel = getEl('chatPanel');
+        var btn = getEl('chatCollapsedBtn');
+        if (!panel || !btn) return;
+        if (FORCED_HIDE) {
+          panel.style.display = 'none';
+          btn.style.display = 'none';
+          // clear any visual notifications to avoid stale UI when re-enabled
+          try { btn.classList.remove('notify'); } catch(_) {}
+          try { var tabW = getEl('tabWorld'); tabW && tabW.classList.remove('notify'); } catch(_) {}
+          try { var tabL = getEl('tabLobby'); tabL && tabL.classList.remove('notify'); } catch(_) {}
+        } else {
+          // do not force-show; keep existing collapse state managed by the chat script
+        }
+      } catch(_){}
+    }
+
+    function isSoloFromPayload(info){
+      try {
+        var players = (info && info.players) || {};
+        var humans = 0;
+        for (var id in players){
+          if (!players.hasOwnProperty(id)) continue;
+          var p = players[id];
+          if (p && p.isBot) continue;
+          humans++;
+        }
+        return humans <= 1;
+      } catch(_){ return false; }
+    }
+
+    if (window.socket && typeof window.socket.on === 'function') {
+      // When a game starts, hide chat if solo; otherwise ensure it's not forced-hidden
+      window.socket.on('gameStarted', function(info){
+        try {
+          FORCED_HIDE = !!isSoloFromPayload(info);
+          applyVisibility();
+        } catch(_){}
+      });
+
+      // When we return to the lobby (game not started), re-enable chat
+      window.socket.on('lobbyUpdate', function(data){
+        try {
+          if (!data || data.started === false) {
+            FORCED_HIDE = false;
+            applyVisibility();
+          }
+        } catch(_){}
+      });
+
+      // Also on reconnect, reset the forced flag (state will re-apply on next events)
+      window.socket.on('reconnect', function(){ try { FORCED_HIDE = false; applyVisibility(); } catch(_){}});
+    }
+
+    // Expose for debugging if needed
+    window.__forceHideChatSolo = function(on){ FORCED_HIDE = !!on; applyVisibility(); };
+  } catch(_){}
+})();
+</script>
+
 <script>
 (function(){
   try {

@@ -1144,57 +1144,68 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 io.on('connection', socket => {
 
   // Ultra-aggressive: host cleanup BEFORE disconnect completes
-  socket.on('disconnecting', () => {
-    try {
-      const mappedId = socketToGame[socket.id];
-      let game = activeGames.find(g => g && g.id === mappedId) || null;
-      if (!game) {
-        game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
-      }
-      if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
-        // Notify all clients in the lobby and force them out
-        try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
-        const room = io.sockets.adapter.rooms.get('lobby' + game.id);
-        const ids = room ? Array.from(room) : [];
-        for (const cid of ids) {
-          try {
-            if (cid !== socket.id) {
-              const s = io.sockets.sockets.get(cid);
-              if (s) { try { s.leave('lobby' + game.id); } catch(_){} }
-              if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
-              if (game.players && game.players[cid]) delete game.players[cid];
-              if (game._lastNetSend) delete game._lastNetSend[cid];
-              try { delete socketToGame[cid]; } catch (_) {}
-            }
-          } catch (_){}
-        }
-        try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
-        try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_){}
-      }
-    } catch (e) {
-      console.error('[disconnecting host cleanup] error', e);
-    }
-  });
+    // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
+  socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
   console.log('[CONNECT]', socket.id);
 
-  // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
-  const game = getAvailableLobby();
-  socketToGame[socket.id] = game.id;
-  socket.join('lobby' + game.id);
+  // Attempt to RECLAIM manual lobby for the host if they briefly disconnected.
+  // Match by public IP and lobby still not started.
+  let __reclaimed = false;
+  try {
+    const __ip = getClientIP(socket);
+    for (const g of activeGames) {
+      if (g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostIp === __ip) {
+        // If previous host socket is gone, transfer host role to this new socket
+        const prevHostSock = io.sockets.sockets.get(g.lobby.hostId);
+        if (!prevHostSock) {
+          const prevHostId = g.lobby.hostId;
+          // Transfer roster entry if any
+          let pseudo = 'Player';
+          try {
+            if (g.lobby.players && g.lobby.players[prevHostId] && g.lobby.players[prevHostId].pseudo) {
+              pseudo = g.lobby.players[prevHostId].pseudo;
+              delete g.lobby.players[prevHostId];
+            }
+          } catch(_){}
+          g.lobby.hostId = socket.id;
+          g.lobby.players[socket.id] = { pseudo, ready: true };
+          socketToGame[socket.id] = g.id;
+          socket.join('lobby' + g.id);
+          __reclaimed = true;
+          if (g.lobby._hostGraceTimer) { try { clearTimeout(g.lobby._hostGraceTimer); } catch(_){ } g.lobby._hostGraceTimer = null; }
+          broadcastLobby(g);
+          break;
+        }
+      }
+    }
+  } catch(e) { console.error('[reclaim host] error', e); }
 
-  socket.on('clientPing', () => {});
+  if (!__reclaimed) {
+    // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
+    const game = getAvailableLobby();
+    socketToGame[socket.id] = game.id;
+    socket.join('lobby' + game.id);
+  }
+socket.on('clientPing', () => {});
 
-  socket.emit('lobbyUpdate', {
-    id: game.id,
-    players: game.lobby.players,
-    count: Object.keys(game.lobby.players).length,
-    max: MAX_PLAYERS,
-    timeLeft: game.lobby.timeLeft,
-    started: game.lobby.started,
-  });
-
-  // ====== ULTRA-AGGRESSIVE CHAT HANDLERS ======
+  
+  // Emit initial lobby state for this socket's current lobby
+  try {
+    const __gid = socketToGame[socket.id];
+    const __g = activeGames.find(g => g && g.id === __gid);
+    if (__g) {
+      socket.emit('lobbyUpdate', {
+        id: __g.id,
+        players: __g.lobby.players,
+        count: Object.keys(__g.lobby.players).length,
+        max: MAX_PLAYERS,
+        timeLeft: __g.lobby.timeLeft,
+        started: __g.lobby.started,
+      });
+    }
+  } catch(e) { console.error('emit lobbyUpdate failed', e); }
+// ====== ULTRA-AGGRESSIVE CHAT HANDLERS ======
   try { socket.join('world'); } catch(_) {}
 
   // Client asks history for a channel
@@ -1627,59 +1638,62 @@ socket.on('renamePseudo', (data, cb) => {
   });
 
 
+  
   socket.on('disconnect', () => {
-  console.log('[DISCONNECT]', socket.id);
+    console.log('[DISCONNECT]', socket.id);
 
-  // Try to resolve the game from mapping
-  const mappedId = socketToGame[socket.id];
-  let game = activeGames.find(g => g && g.id === mappedId) || null;
+    // Try to resolve the game from mapping
+    const mappedId = socketToGame[socket.id];
+    let game = activeGames.find(g => g && g.id === mappedId) || null;
 
-  // Fallback: direct lookup by hostId (covers cases where mapping was lost)
-  if (!game) {
-    game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
-  }
+    // Fallback: direct lookup by hostId (covers cases where mapping was lost)
+    if (!game) {
+      game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
+    }
 
-  // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> close & delete the lobby
-  if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
-    try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_) {}
-
-    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
-    const cids = room ? Array.from(room) : [];
-
-    for (const cid of cids) {
-      const sock = io.sockets.sockets.get(cid);
-      if (!sock) continue;
-
+    // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> **do not close immediately**.
+    // Set a grace timer; if the host doesn't reconnect in time, then close the lobby.
+    if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
       try {
-        if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
-        if (game.players && game.players[cid]) delete game.players[cid];
-        if (game._lastNetSend) delete game._lastNetSend[cid];
-      } catch (_) {}
+        if (game.lobby._hostGraceTimer) { clearTimeout(game.lobby._hostGraceTimer); }
+        game.lobby._hostGraceTimer = setTimeout(() => {
+          try {
+            // If lobby still exists and still not started, and the host hasn't reclaimed it, close & evac players.
+            if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) return;
+            // If the current hostId is connected again, cancel.
+            const hostSock = io.sockets.sockets.get(game.lobby.hostId);
+            if (hostSock) return;
 
-      try { sock.leave('lobby' + game.id); } catch (_) {}
-      try { delete socketToGame[cid]; } catch (_) {}
+            // Notify and force everyone out of this manual lobby
+            try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
+
+            const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+            const ids = room ? Array.from(room) : [];
+            for (const cid of ids) {
+              try {
+                const s = io.sockets.sockets.get(cid);
+                if (s) { try { s.leave('lobby' + game.id); } catch(_){} }
+                if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
+                if (game.players && game.players[cid]) delete game.players[cid];
+                if (game._lastNetSend) delete game._lastNetSend[cid];
+                try { delete socketToGame[cid]; } catch (_){}
+              } catch(_){}
+            }
+            try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
+            // Remove game entirely
+            activeGames = activeGames.filter(g => g !== game);
+          } catch (e) {
+            console.error('[disconnect host grace cleanup] error', e);
+          }
+        }, 30000); // 30s grace
+      } catch (e) {
+        console.error('[disconnect host] scheduling grace failed', e);
+      }
+    } else {
+      // Non-host or non-manual lobbies: existing cleanup (if any) continues to apply elsewhere.
     }
-
-    try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_) {}
-    try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_) {}
-    return; // done
-  }
-
-  // Default path: remove only this player from its current game/lobby if any
-  if (mappedId) {
-    const g = activeGames.find(x => x && x.id === mappedId);
-    if (g) {
-      delete g.lobby.players[socket.id];
-      delete g.players[socket.id];
-      if (g._lastNetSend) delete g._lastNetSend[socket.id];
-      io.to('lobby' + g.id).emit('playerDisconnected', socket.id);
-      broadcastLobby(g);
-      io.to('lobby' + g.id).emit('playersHealthUpdate', getPlayersHealthState(g));
-    }
-    delete socketToGame[socket.id];
-  }
-});
-  socket.on('moveDir', (dir) => {
+  });
+socket.on('moveDir', (dir) => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
   if (!game || !game.lobby.started) return;
