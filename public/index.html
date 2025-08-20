@@ -312,6 +312,53 @@ body.menu-hide-ui #fpsCounter,
   #chatPanel { max-height: 38vh; width: min(92vw, 420px); }
 }
 </style>
+
+<!-- MOBILE LOBBY RESIZE PATCH (ULTRA ROBUST) -->
+<style id="mobile-lobby-resize-patch">
+/* Use dynamic viewport units and safe scrolling for the lobby on mobile only */
+@media (max-width: 768px) {
+  /* Full-screen overlay must match dynamic viewport height even with browser UI/keyboard */
+  #lobbyScreen {
+    height: calc(var(--vh, 1vh) * 100) !important;
+    width: 100vw;
+    padding: clamp(6px, 2dvh, 16px) 12px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important; /* internal scroll lives on the box */
+  }
+  /* Main panel: clamp width, allow internal scroll, respect safe area */
+  #lobbyBox {
+    width: min(96vw, 520px) !important;
+    max-width: 96vw !important;
+    max-height: calc(var(--vh, 1vh) * 100 - 24px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: clamp(16px, 3.6vw, 28px) clamp(14px, 3.2vw, 24px) !important;
+    border-radius: 16px !important;
+    box-sizing: border-box;
+    overscroll-behavior: contain;
+  }
+  /* Input & buttons sizing tweaks for small screens */
+  #pseudoInput { width: 100% !important; max-width: none !important; }
+  #lobbyBtnRow button { font-size: 16px !important; padding: 8px 18px !important; }
+  #lobbyTitle { font-size: clamp(20px, 5.8vw, 26px) !important; }
+  /* Nested lists should also size to remaining space to avoid being cut */
+  #lobbiesList {
+    max-height: calc(var(--vh, 1vh) * 100 - 260px) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  #manualLobbyPanel { max-height: calc(var(--vh, 1vh) * 100 - 220px); overflow: auto; }
+}
+
+/* Tiny phones portrait */
+@media (max-width: 380px) and (orientation: portrait) {
+  #lobbyBox { border-radius: 14px !important; }
+  #lobbyBtnRow { gap: 6px !important; }
+}
+</style>
+
 </head>
 <body>
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
@@ -4642,6 +4689,76 @@ function __alertPseudoTaken(){
   if (!bind()){
     var __jpt = setInterval(function(){ if (bind()) { clearInterval(__jpt); } }, 300);
   }
+})();
+</script>
+
+
+<!-- MOBILE LOBBY RESIZE PATCH JS -->
+<script id="mobile-lobby-resize-patch-js">
+(function(){
+  // Compute reliable 1% viewport height in px, update --vh on resize/keyboard/orientation
+  function setVH() {
+    try {
+      var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight || document.documentElement.clientHeight || 0;
+      if (h > 0) document.documentElement.style.setProperty('--vh', (h * 0.01) + 'px');
+    } catch(_) {}
+  }
+  setVH();
+  window.addEventListener('resize', setVH, {passive:true});
+  window.addEventListener('orientationchange', setVH, {passive:true});
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setVH);
+    window.visualViewport.addEventListener('scroll', setVH); // some UIs move on keyboard
+  }
+
+  // Fallback: if content still taller than viewport, scale the box down slightly.
+  function fitLobbyBoxMobile(){
+    try {
+      var box = document.getElementById('lobbyBox');
+      var screen = document.getElementById('lobbyScreen');
+      if (!box || !screen) return;
+      if (window.matchMedia('(min-width: 769px)').matches) {
+        box.style.transform = '';
+        box.style.transformOrigin = '';
+        return;
+      }
+      var vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      var maxH = Math.max(200, vh - 24);
+      box.style.maxHeight = maxH + 'px';
+      box.style.overflowY = 'auto';
+
+      // Only scale down when even with scroll the box would overflow viewport badly
+      // (rare on iOS with toolbars showing). Clamp between 0.82 and 1.
+      var contentHeight = box.scrollHeight;
+      var scale = Math.min(1, Math.max(0.82, maxH / (contentHeight + 8)));
+      if (scale < 1) {
+        box.style.transformOrigin = 'center';
+        box.style.transform = 'scale(' + scale.toFixed(3) + ')';
+      } else {
+        box.style.transform = '';
+        box.style.transformOrigin = '';
+      }
+    } catch(e){}
+  }
+  // Observe changes inside the lobby to refit when panels switch
+  var mo;
+  function ensureObserver(){
+    try{
+      if (mo) return;
+      var box = document.getElementById('lobbyBox');
+      if (!box) return;
+      mo = new MutationObserver(function(){ fitLobbyBoxMobile(); });
+      mo.observe(box, {childList:true, subtree:true, attributes:true});
+    }catch(_){}
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    setVH(); fitLobbyBoxMobile(); ensureObserver();
+  });
+  window.addEventListener('load', function(){
+    setVH(); fitLobbyBoxMobile(); ensureObserver();
+  });
+  window.addEventListener('resize', fitLobbyBoxMobile, {passive:true});
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitLobbyBoxMobile);
 })();
 </script>
 
