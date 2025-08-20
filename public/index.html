@@ -58,7 +58,17 @@
       box-shadow: 0 2px 16px #33fc6930;
     }
 
-    /* --- WAVE MESSAGE --- */
+    
+    /* --- MOBILE: LANG FLAGS on 2 rows (5 + 5) --- */
+    @media (max-width: 768px) {
+      #langSelectRow {
+        display: grid;
+        grid-template-columns: repeat(5, 38px);
+        justify-content: center;
+        gap: 12px;
+      }
+    }
+/* --- WAVE MESSAGE --- */
     #waveMessage {
       position: fixed;
       top: 50%;
