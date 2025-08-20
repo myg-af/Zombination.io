@@ -1,0 +1,10 @@
+{
+  "users": {
+    "test": {
+      "username": "test",
+      "usernameLower": "test",
+      "passHash": "pbkdf2$sha256$120000$ad9bb1e244bb5ce0cbfdcbf294d8b0c6$71360eb962f155159dac3ea4c84e495eab5bf74feca65d638e6dc4e0ef1426e2",
+      "createdAt": 1755700960692
+    }
+  }
+}

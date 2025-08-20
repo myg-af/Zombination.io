@@ -25,7 +25,9 @@
     /* --- LOBBY --- */
     #lobbyScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; position: fixed; left:0;top:0;width:100vw;height:100vh;z-index:10; background: #181c; }
     #lobbyBox { background: #19191e; border-radius: 20px; padding: 36px 42px; box-shadow: 0 6px 30px #000c; min-width: 350px; min-height: 190px; text-align: center; }
-    #lobbyBox input[type=text] { font-size: 20px; padding: 7px 12px; border-radius: 7px; border: 1px solid #444; outline: none; margin-bottom: 10px; width: 175px; }
+    #lobbyBox input[type=text] { font-size: 20px; padding: 7px 12px; border-radius: 7px; border: 1px solid #444; outline: none; margin-bottom: 10px; width: 175px; background:#fff; color:#000; text-align:center; }
+    #pseudoInput::placeholder { text-align: center; }
+
     #lobbyJoin { padding: 7px 32px; border-radius: 8px; border:none; font-size: 20px; background:#49c749; color: #fff; cursor: pointer; margin-top: 7px; }
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
     #btnJoinLobbyList[disabled], #btnCreateLobby[disabled] { opacity: 0.6; cursor: not-allowed; }
@@ -436,6 +438,20 @@ body.menu-hide-ui #fpsCounter,
             <button id="btnBackFromList" style="padding: 8px 14px; background: #666; color: white; border:none; border-radius:6px; cursor:pointer;">Back</button>
           </div>
         </div>
+
+        <!-- Ladder panel (hidden by default) -->
+        <div id="ladderPanel" style="display:none; margin-top:12px;">
+          <div style="text-align:center; font-weight:600; margin-bottom:6px;">
+            <span id="ladderTitle">Ladder</span>
+          </div>
+          <div id="ladderList" style="display:block; overflow-y:auto; -webkit-overflow-scrolling:touch; max-height: calc(60vh - 120px); padding-right:6px; border:1px solid rgba(255,255,255,0.1); border-radius:8px;">
+            <!-- Table injected by JS -->
+          </div>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+            <button id="btnBackFromLadder" style="padding: 8px 14px; background: #666; color: white; border:none; border-radius:6px; cursor:pointer;">Back</button>
+          </div>
+        </div>
+
         
 <div id="lobbyTimer"></div>
 <div id="lobbyStatus"></div>
@@ -446,6 +462,31 @@ body.menu-hide-ui #fpsCounter,
 <button id="btnJoinLobbyList" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Join lobby</button>
 <button id="btnCreateLobby" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Create lobby</button>
 </div>
+<!-- Ladder button (same size as main buttons, violet) -->
+<div id="ladderBtnRow" style="display:flex; justify-content:center; margin-top:8px;">
+  <button id="btnLadder" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#7a3df0; color:#fff; cursor:pointer; margin-top:7px;">Ladder</button>
+</div>
+<br/>
+<div id="authBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
+  <button id="btnLogin" style="padding:8px 16px; border:none; border-radius:8px; background:#2a6aff; color:#fff; cursor:pointer;">Log in</button>
+  <button id="btnSignup" style="padding:8px 16px; border:none; border-radius:8px; background:#4f4; color:#000; cursor:pointer;">Sign up</button>
+  <button id="btnLogout" style="display:none; padding:8px 16px; border:none; border-radius:8px; background:#b00020; color:#fff; cursor:pointer;">Sign out</button>
+  <button id="btnSettings" style="display:none; padding:8px 16px; border:none; border-radius:8px; background:#666; color:#fff; cursor:pointer;">Settings</button>
+</div>
+
+<!-- Auth Modals -->
+<div id="authModalOverlay" style="display:none; position:fixed; inset:0; background:#000a; z-index:9998; align-items:center; justify-content:center;"></div>
+<div id="authModal" style="display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center;">
+  <div id="authModalBox" style="background:#1b1b20; border-radius:14px; padding:18px 20px; width:min(92vw, 420px); margin:auto; box-shadow:0 10px 40px #000a;">
+    <div id="authModalTitle" style="font-weight:700; font-size:20px; margin-bottom:10px;">Auth</div>
+    <div id="authModalBody"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+      <button id="authCancel" style="padding:8px 14px; border:0; border-radius:8px; background:#555; color:#fff; cursor:pointer;">Cancel</button>
+      <button id="authSubmit" style="padding:8px 14px; border:0; border-radius:8px; background:#2a6aff; color:#fff; cursor:pointer;">Submit</button>
+    </div>
+  </div>
+</div>
+
 <div id="langSelectRow"></div>
 </div>
 </div>
@@ -2844,6 +2885,20 @@ function drawHUD() {
       if (deathStats) {
         deathStats.innerHTML = `${tr.zombiesKilled}: <b>${kills}</b><br>${tr.roundReached}: <b>${round}</b>`;
       }
+      // --- Submit score to ladder (robust, non-blocking) ---
+      try {
+        if (!window.__ladderSubmitted) {
+          window.__ladderSubmitted = true;
+          var player = (window.myPseudo && String(window.myPseudo)) || (window.pseudoInput && String(window.pseudoInput.value)) || '';
+          player = (player || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,15) || 'Anonymous';
+          fetch('/api/ladder', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify({ player: player, kills: Number(kills)||0, wave: Number(round)||0 })
+          }).catch(function(_){});
+        }
+      } catch(_){}
+
       // Met à jour les libellés
       const deathTitle = document.getElementById('deathTitle');
       if (deathTitle) deathTitle.textContent = tr.youDied || 'You died!';
@@ -2950,7 +3005,7 @@ function gameLoop(timestamp = 0) {
       lobbyScreen.style.display = 'flex';
       updateLobbyTexts();
       lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
-      pseudoInput.disabled = lobbyJoined;
+      pseudoInput.readOnly = lobbyJoined;
       lobbyJoin.textContent = tr.join;
     });
 
@@ -2964,7 +3019,7 @@ function gameLoop(timestamp = 0) {
       socket.emit('setPseudoAndReady', pseudoInput.value.trim());lobbyJoined = true;
       window.lobbyJoined = true;
       lobbyJoin.disabled = true;
-      pseudoInput.disabled = true;
+      pseudoInput.readOnly = true;
       lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
       try { updateButtonsDisabled(); } catch(_) {}
     };
@@ -3835,7 +3890,6 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
     setTimeout(updateButtonsDisabled, 0);
     // === Robust nickname sync & uniqueness enforcement (client-side wiring) ===
     (function(){
-      var __renameTimer = null;
       var __lastAcceptedPseudo = (window.myPseudo || '');
       function applyAcceptedPseudo(p){
         __lastAcceptedPseudo = p || '';
@@ -3856,18 +3910,23 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
           });
         }
       } catch(_){}
+      function sendRename(){
+        try {
+          if (!window.pseudoInput) return;
+          var p = (window.pseudoInput.value || '').trim();
+          if (!p) return;
+          if (!(window.socket && socket.connected)) return;
+          try { socket.emit('renamePseudo', { pseudo: p }); } catch(_){}
+        } catch(_){}
+      }
       if (window.pseudoInput) {
-        window.pseudoInput.addEventListener('input', function(){
+        // Trigger rename ONLY when the user finished typing: on blur or Enter
+        window.pseudoInput.addEventListener('blur', function(){ sendRename(); }, { passive: true });
+        window.pseudoInput.addEventListener('keydown', function(e){
           try {
-            var p = (window.pseudoInput.value || '').trim();
-            clearTimeout(__renameTimer);
-            __renameTimer = setTimeout(function(){
-              if (p && window.socket && socket.connected) {
-                try { socket.emit('renamePseudo', { pseudo: p }); } catch(_){}
-              }
-            }, 250);
+            if (e && (e.key === 'Enter' || e.keyCode === 13)) { e.preventDefault(); sendRename(); }
           } catch(_){}
-        }, { passive: true });
+        }, { passive: false });
       }
       try {
         if (window.socket) {
@@ -4176,7 +4235,7 @@ function renderManualPlayers() {
         }
         socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); 
         window.lobbyJoined = true;
-        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.disabled = true; } catch(_){}
+        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; } catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
       };
     }
@@ -4866,6 +4925,390 @@ function __alertPseudoTaken(){
   });
   window.addEventListener('resize', fitLobbyBoxMobile, {passive:true});
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitLobbyBoxMobile);
+})();
+</script>
+
+
+<script>
+/* === AUTH CLIENT === */
+(function(){
+  'use strict';
+  function trAuth(key, fallback){
+    try {
+      const lang = (window.currentLang || 'en');
+      const pack = (window.TRANSLATIONS && window.TRANSLATIONS[lang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
+      return pack[key] || fallback || key;
+    } catch(e){ return fallback || key; }
+  }
+  const btnLogin = document.getElementById('btnLogin');
+  const btnSignup = document.getElementById('btnSignup');
+  const btnLogout = document.getElementById('btnLogout');
+  const btnSettings = document.getElementById('btnSettings');
+  const modal = document.getElementById('authModal');
+  const overlay = document.getElementById('authModalOverlay');
+  const modalTitle = document.getElementById('authModalTitle');
+  const modalBody = document.getElementById('authModalBody');
+  const btnCancel = document.getElementById('authCancel');
+  const btnSubmit = document.getElementById('authSubmit');
+  const pseudoInput = document.getElementById('pseudoInput');
+  const lobbyJoin = document.getElementById('lobbyJoin');
+  const btnJoinLobbyList = document.getElementById('btnJoinLobbyList');
+  const btnCreateLobby = document.getElementById('btnCreateLobby');
+  let reservedPseudo = false;
+  let loggedUser = null;
+
+  function setAuthUI(loggedIn, username){
+    try {
+      if (btnLogin) btnLogin.style.display = loggedIn ? 'none' : '';
+      if (btnSignup) btnSignup.style.display = loggedIn ? 'none' : '';
+      if (btnLogout) btnLogout.style.display = loggedIn ? '' : 'none';
+      if (btnSettings) btnSettings.style.display = loggedIn ? '' : 'none';
+    } catch(_){}
+    try {
+      if (pseudoInput) {
+        if (loggedIn) {
+          pseudoInput.value = username || '';
+          pseudoInput.readOnly = true;
+          window.myPseudo = username || '';
+          try { localStorage.setItem('zombi_pseudo', window.myPseudo); } catch(_){}
+        } else {
+          pseudoInput.disabled = false;
+        }
+        if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled();
+      }
+    } catch(_){}
+    loggedUser = loggedIn ? (username || '') : null;
+    validatePseudoBlocking(); // re-validate
+  }
+
+  function updateAuthTexts(){
+    try {
+      if (btnLogin) btnLogin.textContent = trAuth('login','Log in');
+      if (btnSignup) btnSignup.textContent = trAuth('signup','Sign up');
+      if (btnLogout) btnLogout.textContent = trAuth('signout','Sign out');
+      if (btnSettings) btnSettings.textContent = trAuth('settings','Settings');
+      if (modal && modal.style.display !== 'none') {
+        document.getElementById('authCancel').textContent = trAuth('cancel','Cancel');
+        document.getElementById('authSubmit').textContent = trAuth('submit','Submit');
+      }
+    } catch(_){}
+  }
+  window.updateAuthTexts = updateAuthTexts;
+
+  // Hook into existing updateUITexts
+  setTimeout(function(){
+    try {
+      if (typeof window.updateUITexts === 'function') {
+        const _orig = window.updateUITexts;
+        window.updateUITexts = function(){ try { _orig.apply(this, arguments); } catch(_){ } try { updateAuthTexts(); } catch(_){ } };
+      } else {
+        updateAuthTexts();
+      }
+    } catch(_){}
+  }, 0);
+
+  function showModal(kind){
+    overlay.style.display = 'flex';
+    modal.style.display = 'flex';
+    if (kind === 'login') {
+      modalTitle.textContent = trAuth('login','Log in');
+      modalBody.innerHTML = ''
+        + '<div style="display:flex;flex-direction:column;gap:8px;">'
+        + '  <label>' + trAuth('username','Username') + '</label>'
+        + '  <input id="authUser" maxlength="15" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <label>' + trAuth('password','Password') + '</label>'
+        + '  <input id="authPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '</div>';
+      btnSubmit.onclick = doLogin;
+    } else if (kind === 'signup') {
+      modalTitle.textContent = trAuth('signup','Sign up');
+      modalBody.innerHTML = ''
+        + '<div style="display:flex;flex-direction:column;gap:8px;">'
+        + '  <label>' + trAuth('username','Username') + '</label>'
+        + '  <input id="authUser" maxlength="15" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <label>' + trAuth('password','Password') + '</label>'
+        + '  <input id="authPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <label>' + trAuth('confirmPassword','Confirm your password') + '</label>'
+        + '  <input id="authPass2" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '</div>';
+      btnSubmit.onclick = doSignup;
+    } else if (kind === 'settings') {
+      modalTitle.textContent = trAuth('settings','Settings');
+      modalBody.innerHTML = ''
+        + '<div style="display:flex;flex-direction:column;gap:8px;">'
+        + '  <label>' + trAuth('currentPassword','Current password') + '</label>'
+        + '  <input id="currPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <label>' + trAuth('newPassword','New password') + '</label>'
+        + '  <input id="newPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '</div>';
+      btnSubmit.onclick = doChangePassword;
+    }
+    btnCancel.textContent = trAuth('cancel','Cancel');
+    btnSubmit.textContent = trAuth('submit','Submit');
+    setTimeout(() => { const u = document.getElementById('authUser'); if (u) u.focus(); }, 30);
+  }
+  function hideModal(){ overlay.style.display='none'; modal.style.display='none'; modalBody.innerHTML=''; }
+
+  async function fetchJSON(url, opts){
+    const res = await fetch(url, Object.assign({ headers:{'Content-Type':'application/json'} }, opts||{}));
+    let data = null; try { data = await res.json(); } catch(_){}
+    return { ok: res.ok && data && (data.ok===true || data.ok===undefined), status: res.status, data };
+  }
+
+  async function doSignup(){
+    try {
+      const u = document.getElementById('authUser').value.trim();
+      const p = document.getElementById('authPass').value;
+      const p2 = document.getElementById('authPass2').value;
+      if (!u || !p || !p2) { alert(trAuth('fillAll')); return; }
+      if (p !== p2) { alert(trAuth('confirmPassword') + ' ✖'); return; }
+      const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      if (ok && (!data || data.ok)) { hideModal(); alert(trAuth('signupOk')); }
+      else {
+        if (data && data.code === 'exists') alert(trAuth('userExists'));
+        else if (data && (data.code === 'weak_password' || status === 400)) alert(trAuth('weakPassword'));
+        else alert('Error.');
+      }
+    } catch(e){ alert('Error'); }
+  }
+  async function doLogin(){
+    try {
+      const u = document.getElementById('authUser').value.trim();
+      const p = document.getElementById('authPass').value;
+      if (!u || !p) { alert(trAuth('fillAll')); return; }
+      const { ok, data } = await fetchJSON('/api/login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      if (ok && data && data.username) { hideModal(); setAuthUI(true, data.username); alert(trAuth('loginOk')); }
+      else { alert(trAuth('invalidCredentials')); }
+    } catch(e){ alert('Error'); }
+  }
+  async function doChangePassword(){
+    try {
+      const c = document.getElementById('currPass').value;
+      const n = document.getElementById('newPass').value;
+      if (!c || !n) { alert(trAuth('fillAll')); return; }
+      const { ok, data } = await fetchJSON('/api/change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
+      if (ok) { hideModal(); setAuthUI(false); alert(trAuth('pwdChanged')); }
+      else { if (data && data.code === 'weak_password') alert(trAuth('weakPassword')); else alert(trAuth('invalidCredentials')); }
+    } catch(e){ alert('Error'); }
+  }
+
+  // Check if pseudo is reserved by an account when not logged in
+  let checkTimer = null;
+  async function validatePseudoBlocking(){
+    try {
+      if (!pseudoInput) return;
+      const name = (pseudoInput.value || '').trim();
+      if (!name) { reservedPseudo = false; setButtonsEnabled(true); return; }
+      if (loggedUser && name.toLowerCase() === (loggedUser||'').toLowerCase()) {
+        reservedPseudo = false; setButtonsEnabled(true); return;
+      }
+      const { ok, data } = await fetchJSON('/api/username-taken?u=' + encodeURIComponent(name), { method:'GET' });
+      reservedPseudo = !!(ok && data && data.taken && !loggedUser);
+      setButtonsEnabled(!reservedPseudo);
+    } catch(_){ reservedPseudo = false; setButtonsEnabled(true); }
+  }
+  function setButtonsEnabled(enabled){
+    try {
+      [lobbyJoin, btnJoinLobbyList, btnCreateLobby].forEach(el => { if (el) el.disabled = !enabled; });
+      if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled();
+    } catch(_){}
+  }
+
+  if (pseudoInput) pseudoInput.addEventListener('input', function(){
+    clearTimeout(checkTimer);
+    checkTimer = setTimeout(validatePseudoBlocking, 200);
+  }, { passive:true });
+
+  if (btnLogin) btnLogin.addEventListener('click', function(){ showModal('login'); }, { passive:true });
+  if (btnSignup) btnSignup.addEventListener('click', function(){ showModal('signup'); }, { passive:true });
+  if (btnLogout) btnLogout.addEventListener('click', async function(){ try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ } setAuthUI(false); alert(trAuth('logoutOk')); }, { passive:true });
+  if (btnSettings) btnSettings.addEventListener('click', function(){ showModal('settings'); }, { passive:true });
+  if (overlay) overlay.addEventListener('click', hideModal, { passive:true });
+  if (btnCancel) btnCancel.addEventListener('click', hideModal, { passive:true });
+
+  // Intercept clicks to block reserved pseudo
+  function guardAction(e){
+    if (reservedPseudo) { e.preventDefault(); e.stopPropagation(); alert(trAuth('reservedName')); return false; }
+  }
+  [lobbyJoin, btnJoinLobbyList, btnCreateLobby].forEach(el => { if (el) el.addEventListener('click', guardAction, true); });
+  // Also guard chat sending (button click and Enter key) when pseudo is reserved
+  try {
+    var chatSendBtn = document.getElementById('chatSend');
+    var chatInputEl = document.getElementById('chatInput');
+    if (chatSendBtn) chatSendBtn.addEventListener('click', guardAction, true);
+    if (chatInputEl) chatInputEl.addEventListener('keydown', function(ev){
+      try {
+        var k = ev && (ev.key || ev.code || '');
+        var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13));
+        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); alert(trAuth('reservedName')); return false; }
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
+
+  // Also guard chat sending (button click and Enter key) when pseudo is reserved
+  try {
+    var chatSendBtn = document.getElementById('chatSend');
+    var chatInputEl = document.getElementById('chatInput');
+    if (chatSendBtn) chatSendBtn.addEventListener('click', guardAction, true);
+    if (chatInputEl) chatInputEl.addEventListener('keydown', function(ev){
+      try {
+        var k = ev && (ev.key || ev.code || '');
+        var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
+        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); alert(trAuth('reservedName')); return false; }
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
+
+  // Initial state from server
+  async function refreshMe(){
+    try {
+      const { ok, data } = await fetchJSON('/api/me', { method:'GET' });
+      if (ok && data && data.username) setAuthUI(true, data.username);
+      else setAuthUI(false);
+    } catch(_){ setAuthUI(false); }
+  }
+  document.addEventListener('DOMContentLoaded', function(){ refreshMe(); updateAuthTexts(); validatePseudoBlocking(); }, { passive:true });
+})();
+</script>
+
+<script>
+// Keep Ladder UI translated instantly on language change (button, title, back, table headers)
+(function(){
+  function currentTR(){
+    try { return (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {}; } catch(e){ return {}; }
+  }
+  function applyLadderTexts(){
+    try {
+      var tr = currentTR();
+      var b = document.getElementById('btnLadder'); if (b) b.textContent = tr.ladder || 'Ladder';
+      var t = document.getElementById('ladderTitle'); if (t) t.textContent = tr.ladderTitle || (tr.ladder || 'Ladder');
+      var back = document.getElementById('btnBackFromLadder'); if (back) back.textContent = tr.back || 'Back';
+      // Update table headers live if Ladder is open
+      var list = document.getElementById('ladderList');
+      if (list) {
+        var ths = list.querySelectorAll('thead th');
+        if (ths && ths.length >= 4) {
+          if (ths[0]) ths[0].textContent = tr.rank || 'Rank';
+          if (ths[1]) ths[1].textContent = tr.player || 'Player';
+          if (ths[2]) ths[2].textContent = tr.roundReached || 'Wave reached';
+          if (ths[3]) ths[3].textContent = tr.zombiesKilled || 'Zombies killed';
+        }
+      }
+    } catch(e){}
+  }
+  function hook(){
+    // Patch updateUITexts so any language switch updates Ladder labels immediately
+    if (typeof window.updateUITexts === 'function' && !window.__ladderHooked) {
+      window.__ladderHooked = true;
+      var _u = window.updateUITexts;
+      window.updateUITexts = function(){
+        try { _u.apply(this, arguments); } catch(_){}
+        applyLadderTexts();
+      };
+    }
+    applyLadderTexts();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook, {passive:true}); else hook();
+
+  // Also listen for generic lang change via Mutation (flags toggling currentLang on window)
+  (function observeLang(){
+    try {
+      var last = window.currentLang;
+      setInterval(function(){
+        if (window.currentLang !== last) { last = window.currentLang; applyLadderTexts(); }
+      }, 150);
+    } catch(_){}
+  })();
+})();
+</script>
+
+<script>
+(function(){
+  function qs(id){ return document.getElementById(id); }
+  const btnLadder = qs('btnLadder');
+  const btnBack = qs('btnBackFromLadder');
+  const panelLadder = qs('ladderPanel');
+  const panelManual = qs('manualLobbyPanel');
+  const panelList = qs('joinLobbyPanel');
+  const ladderList = qs('ladderList');
+
+  function showLadder(){
+    try { if (panelManual) panelManual.style.display = 'none'; } catch(_){}
+    try { if (panelList) panelList.style.display = 'none'; } catch(_){}
+    try { if (panelLadder) panelLadder.style.display = 'block'; } catch(_){}
+    // Fetch ladder
+    fetch('/api/ladder', { method: 'GET' })
+      .then(r => r.json().catch(()=>({ok:false})))
+      .then(data => {
+        try{
+          const tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+          if (!data || (data.ok===false)) {
+            ladderList.innerHTML = '<div style="text-align:center;color:#ccc;padding:8px;">' + (tr.noData || 'No data') + '</div>';
+            return;
+          }
+          const arr = Array.isArray(data.ladder) ? data.ladder : (Array.isArray(data) ? data : []);
+          if (!arr.length) {
+            ladderList.innerHTML = '<div style="text-align:center;color:#ccc;padding:8px;">' + (tr.noData || 'No data') + '</div>';
+            return;
+          }
+          // Build table
+          let html = '';
+          html += '<table style="width:100%; border-collapse:separate; border-spacing:0; font-size:14px;">';
+          html += '<thead><tr>';
+          html += '<th style="position:sticky;top:0;background:#222;border-bottom:1px solid #333;text-align:left;padding:8px 10px;">' + (tr.rank || 'Rank') + '</th>';
+          html += '<th style="position:sticky;top:0;background:#222;border-bottom:1px solid #333;text-align:left;padding:8px 10px;">' + (tr.player || 'Player') + '</th>';
+          html += '<th style="position:sticky;top:0;background:#222;border-bottom:1px solid #333;text-align:right;padding:8px 10px;">' + (tr.roundReached || 'Wave reached') + '</th>';
+          html += '<th style="position:sticky;top:0;background:#222;border-bottom:1px solid #333;text-align:right;padding:8px 10px;">' + (tr.zombiesKilled || 'Zombies killed') + '</th>';
+          html += '</tr></thead><tbody>';
+          for (let i=0; i<Math.min(arr.length, 100); i++){
+            const it = arr[i] || {};
+            const rank = (i+1);
+            const name = (it.player || it.pseudo || it.name || '???');
+            const wave = (it.wave|0);
+            const kills = (it.kills|0);
+            html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">';
+            html += '<td style="padding:6px 10px; color:#9ab;">#' + rank + '</td>';
+            html += '<td style="padding:6px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0;">' + escapeHtml(String(name)) + '</td>';
+            html += '<td style="padding:6px 10px; text-align:right;">' + wave + '</td>';
+            html += '<td style="padding:6px 10px; text-align:right;">' + kills + '</td>';
+            html += '</tr>';
+          }
+          html += '</tbody></table>';
+          ladderList.innerHTML = html;
+        } catch(e){ try{ ladderList.innerHTML = '<div style="text-align:center;color:#ccc;padding:8px;">Error</div>'; }catch(_){ } }
+      })
+      .catch(()=>{
+        try{ ladderList.innerHTML = '<div style="text-align:center;color:#ccc;padding:8px;">Error</div>'; }catch(_){}
+      });
+  }
+  function showMainFromLadder(){
+    try { if (panelLadder) panelLadder.style.display = 'none'; } catch(_){}
+    try { if (panelManual) panelManual.style.display = 'none'; } catch(_){}
+    try { if (panelList) panelList.style.display = 'none'; } catch(_){}
+  }
+  function escapeHtml(s){
+    return s.replace(/[&<>"]/g, function(c){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]);
+    });
+  }
+
+  if (btnLadder) btnLadder.addEventListener('click', function(){ showLadder(); }, { passive: true });
+  if (btnBack) btnBack.addEventListener('click', function(){ showMainFromLadder(); }, { passive: true });
+
+  // Expose for debug
+  
+  // Close ladder when main action buttons are clicked
+  const btnSolo = qs('lobbyJoin');
+  const btnJoin = qs('btnJoinLobbyList');
+  const btnCreate = qs('btnCreateLobby');
+  function hideLadderOnly(){ try { if (panelLadder) panelLadder.style.display = 'none'; } catch(_){} }
+  if (btnSolo) btnSolo.addEventListener('click', hideLadderOnly, { passive: true });
+  if (btnJoin) btnJoin.addEventListener('click', hideLadderOnly, { passive: true });
+  if (btnCreate) btnCreate.addEventListener('click', hideLadderOnly, { passive: true });
+
+  window.showLadder = showLadder;
 })();
 </script>
 

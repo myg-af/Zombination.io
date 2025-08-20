@@ -12,11 +12,14 @@ const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
 const compression = require('compression');
+const fs = require('fs');
+const crypto = require('crypto');
 
 const gameMapModule = require('./game/gameMap');
 
 const app = express();
 app.use(compression());
+app.use(express.json({ limit: '1mb' }));
 const server = http.createServer(app);
 const io = socketIo(server, {
   pingInterval: 10000,
@@ -2998,3 +3001,296 @@ server.listen(PORT, () => {
   console.log(`Serveur démarré sur le port ${PORT}`);
 });
 console.log('Après listen');
+
+/* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
+const USERS_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(USERS_DIR, 'users.json');
+
+function ensureUsersFile() {
+  try { if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true }); } catch(_){}
+  try { if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: {} }, null, 2)); } catch(_){}
+}
+ensureUsersFile();
+
+function loadUsers() {
+  try {
+    const raw = fs.readFileSync(USERS_FILE, 'utf8');
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && obj.users && typeof obj.users === 'object') return obj.users;
+  } catch(_){}
+  return {};
+}
+function saveUsers(users) {
+  try {
+    const tmp = USERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ users }, null, 2));
+    fs.renameSync(tmp, USERS_FILE);
+    return true;
+  } catch(e){ console.error('[AUTH] saveUsers failed', e); return false; }
+}
+function sanitizeUsername(u) {
+  try { return String(u||'').trim().substring(0,15).replace(/[^a-zA-Z0-9]/g, ''); } catch(_) { return ''; }
+}
+function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const iterations = 120000;
+  const keylen = 32;
+  const digest = 'sha256';
+  const hash = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+  return `pbkdf2$${digest}$${iterations}$${salt}$${hash}`;
+}
+function verifyPassword(password, stored) {
+  try {
+    const parts = String(stored||'').split('$');
+    if (parts.length !== 5) return false;
+    const [scheme, digest, iterStr, salt, hashHex] = parts;
+    if (scheme !== 'pbkdf2') return false;
+    const iterations = parseInt(iterStr,10);
+    const keylen = 32;
+    const comp = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+    const a = Buffer.from(comp,'hex'); const b = Buffer.from(hashHex,'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a,b);
+  } catch(_){ return false; }
+}
+
+function parseCookies(req) {
+  const out = {};
+  const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
+  if (!header) return out;
+  header.split(';').forEach(part => {
+    const i = part.indexOf('=');
+    if (i> -1) out[part.slice(0,i).trim()] = decodeURIComponent(part.slice(i+1).trim());
+  });
+  return out;
+}
+
+const sessions = new Map(); // token -> { username, createdAt }
+const SESSION_MAX_AGE_MS = 7*24*60*60*1000;
+function createSession(username) {
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions.set(token, { username, createdAt: Date.now() });
+  return token;
+}
+function getSessionUsernameByReq(req){
+  try {
+    const cookies = parseCookies(req);
+    const token = cookies['auth'] || '';
+    if (!token) return null;
+    const s = sessions.get(token);
+    if (!s) return null;
+    if ((Date.now() - s.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return s.username || null;
+  } catch(_){ return null; }
+}
+function setAuthCookie(res, token){
+  try { res.setHeader('Set-Cookie', `auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS/1000)}`); } catch(_){}
+}
+function clearAuthCookie(res){
+  try { res.setHeader('Set-Cookie', 'auth=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax'); } catch(_){}
+}
+setInterval(()=>{
+  try {
+    const now = Date.now();
+    for (const [t,s] of sessions) if ((now - (s.createdAt||0)) > SESSION_MAX_AGE_MS) sessions.delete(t);
+  } catch(_){}
+}, 60*60*1000);
+
+
+
+/* === LADDER JSON (Top 100) === */
+const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
+function ensureLadderFile(){
+  try { if (!fs.existsSync(path.dirname(LADDER_FILE))) fs.mkdirSync(path.dirname(LADDER_FILE), { recursive: true }); } catch(_){}
+  try { if (!fs.existsSync(LADDER_FILE)) fs.writeFileSync(LADDER_FILE, ''); } catch(_){}
+}
+ensureLadderFile();
+
+function loadLadder(){
+  try {
+    const raw = fs.readFileSync(LADDER_FILE, 'utf8');
+    if (!raw || !raw.trim()) return [];
+    const obj = JSON.parse(raw);
+    let arr = [];
+    if (Array.isArray(obj)) arr = obj;
+    else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
+    // sanitize
+    arr = arr.filter(e => e && typeof e.player === 'string' && Number.isFinite(e.wave) && Number.isFinite(e.kills) && Number.isFinite(e.ts));
+    return arr;
+  } catch(_) { return []; }
+}
+
+function saveLadder(arr){
+  try {
+    const tmp = LADDER_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
+    fs.renameSync(tmp, LADDER_FILE);
+    return true;
+  } catch(e){ console.error('[LADDER] save failed', e); return false; }
+}
+
+function sanitizePlayerName(u){
+  try { return String(u||'').trim().substring(0,15).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return ''; }
+}
+
+app.get('/api/ladder', (req,res)=>{
+  try {
+    ensureLadderFile();
+    let ladder = loadLadder();
+    // Deduplicate: keep best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+    // sort: wave desc, kills desc, ts asc
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
+    const top = ladder.slice(0, 100);
+    return res.json({ ok:true, ladder: top });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+app.post('/api/ladder', (req,res)=>{
+  try {
+    ensureLadderFile();
+    const { player, wave, kills } = req.body || {};
+    const name = sanitizePlayerName(player);
+    const w = Number(wave)||0;
+    const k = Number(kills)||0;
+    if (!name) return res.status(400).json({ ok:false, code:'bad_name' });
+    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return res.status(400).json({ ok:false, code:'bad_scores' });
+
+    let ladder = loadLadder();
+    // Find existing entry for this player (exact match on sanitized name)
+    const idx = ladder.findIndex(e => e && e.player === name);
+    const now = Date.now();
+    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
+
+    if (idx >= 0) {
+      const cur = ladder[idx];
+      const better = (incoming.wave|0) > (cur.wave|0) ||
+                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) > (cur.kills|0));
+      if (better) {
+        ladder[idx] = incoming;
+      } // else keep existing (equal or worse)
+    } else {
+      ladder.push(incoming);
+    }
+
+    // Deduplicate (safety) and keep only the best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+
+    // sort and keep top 100
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
+    ladder = ladder.slice(0, 100);
+
+    saveLadder(ladder);
+    return res.json({ ok:true });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+
+/* username taken checker (for unauthenticated pseudo) */
+app.get('/api/username-taken', (req,res)=>{
+  try {
+    const q = sanitizeUsername((req.query && req.query.u) || '');
+    if (!q) return res.json({ ok:true, taken:false });
+    const users = loadUsers();
+    const exists = !!users[normalizeKey(q)];
+    return res.json({ ok:true, taken: exists });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* current session */
+app.get('/api/me', (req,res)=>{
+  try {
+    const u = getSessionUsernameByReq(req);
+    if (u) return res.json({ ok:true, username: u });
+    return res.json({ ok:false });
+  } catch(e){ return res.json({ ok:false }); }
+});
+
+/* signup */
+app.post('/api/signup', (req,res)=>{
+  try {
+    ensureUsersFile();
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    if (!user || user.length < 3) return res.status(400).json({ ok:false, code:'invalid_username' });
+    if (pass.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(user);
+    if (users[key]) return res.status(409).json({ ok:false, code:'exists' });
+    users[key] = { username: user, usernameLower: key, passHash: hashPassword(pass), createdAt: Date.now() };
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    return res.json({ ok:true });
+  } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* login */
+app.post('/api/login', (req,res)=>{
+  try {
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    const users = loadUsers();
+    const u = users[normalizeKey(user)];
+    if (!u || !verifyPassword(pass, u.passHash)) return res.status(401).json({ ok:false, code:'invalid' });
+    const token = createSession(u.username);
+    setAuthCookie(res, token);
+    return res.json({ ok:true, username: u.username });
+  } catch(e){ console.error('[login]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* logout */
+app.post('/api/logout', (req,res)=>{
+  try {
+    const token = (parseCookies(req)['auth'] || '');
+    if (token) { try { sessions.delete(token); } catch(_){ } }
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* change password (requires login) */
+app.post('/api/change-password', (req,res)=>{
+  try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { currentPassword, newPassword } = req.body || {};
+    const curr = String(currentPassword || ''); const next = String(newPassword || '');
+    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const u = users[key];
+    if (!u || !verifyPassword(curr, u.passHash)) return res.status(401).json({ ok:false, code:'invalid_current' });
+    u.passHash = hashPassword(next);
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    for (const [t,s] of Array.from(sessions.entries())) if (s && s.username === u.username) sessions.delete(t);
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
