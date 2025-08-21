@@ -25,7 +25,7 @@ const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['websocket'],
+  transports: ['websocket','polling'],
 });
 
 // --- Chat globals ---
@@ -65,7 +65,6 @@ function getClientIP(socket) {
     return '';
   }
 }
-
 const {
   MAP_ROWS,
   MAP_COLS,
@@ -113,6 +112,23 @@ function getUpgradePrice(nextLevel) {
   const priceAt7 = tiers[tiers.length - 1] + (7 - tiers.length) * step;
   const k = nextLevel - 7;
   return Math.round(priceAt7 * Math.pow(1.2, k));
+}
+
+
+// === Helper: find a player's socket id by pseudo (case-insensitive) ===
+function findPlayerSidByPseudo(game, pseudo) {
+  try {
+    if (!game || !game.players) return null;
+    const target = String(pseudo || '').trim().toLowerCase();
+    if (!target) return null;
+    for (const sid in game.players) {
+      const p = game.players[sid];
+      if (!p) continue;
+      const name = String(p.pseudo || '').trim().toLowerCase();
+      if (name && name === target) return sid;
+    }
+  } catch(_) {}
+  return null;
 }
 
 let activeGames = [];
@@ -1162,7 +1178,136 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 io.on('connection', socket => {
 
-  // Ultra-aggressive: host cleanup BEFORE disconnect completes
+// === Cookie-based resume (mobile reconnect friendly) ===
+try {
+  const resume = getResumeFromCookies(socket && socket.handshake && socket.handshake.headers);
+  if (resume && resume.gid && resume.pseudo) {
+    const game = activeGames.find(g => g && g.id === resume.gid);
+    if (game && game.lobby && game.lobby.started) {
+      // Verify IP match if recorded (best-effort)
+      let ok = true;
+      try {
+        const ip = getClientIP(socket);
+        const prevSid = findPlayerSidByPseudo(game, resume.pseudo);
+        const prevIp = (prevSid && game.lobby && game.lobby.players && game.lobby.players[prevSid] && game.lobby.players[prevSid].ip) || null;
+        if (prevIp && ip && prevIp !== ip) ok = false;
+      } catch(_){}
+      if (ok) {
+        // Transfer player entity to new sid if exists
+        try {
+          const prevSid = findPlayerSidByPseudo(game, resume.pseudo);
+          if (prevSid && game.players && game.players[prevSid]) {
+            game.players[socket.id] = game.players[prevSid];
+            delete game.players[prevSid];
+          } else if (game.players && !game.players[socket.id]) {
+            game.players[socket.id] = {
+              x: (game.map && game.map[0] ? 40 : 0),
+              y: (game.map && game.map[0] ? 40 : 0),
+              vx:0, vy:0, alive:true, health:100, maxHealth:100,
+              damage:10, speed:40, goldGain:10, regen:0, lastShot:0, pseudo: resume.pseudo
+            };
+          }
+          if (game.lobby && game.lobby.players) {
+            game.lobby.players[socket.id] = { pseudo: resume.pseudo, ready: true, ip: getClientIP(socket) };
+          }
+        } catch(_){}
+        // Join room, update mapping
+        try { socket.join('lobby' + game.id); } catch(_){}
+        socketToGame[socket.id] = game.id;
+        // Reset throttles and send start payload only to this socket
+        try {
+          game._lastNetSend = game._lastNetSend || {};
+          game._lastNetSend[socket.id] = 0;
+          io.to(socket.id).emit('gameStarted', {
+            map: game.map,
+            players: game.players,
+            round: game.currentRound,
+            structures: game.structures,
+            structurePrices: SHOP_BUILD_PRICES
+          });
+          io.to(socket.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
+          const remaining = Math.max(0, (game.totalZombiesToSpawn||0) - (game.zombiesKilledThisWave||0));
+          io.to(socket.id).emit('zombiesRemaining', remaining);
+        } catch(_){}
+        __reclaimed = true;
+      }
+    }
+  }
+} catch(_){}
+
+
+// Allow a client to rebind into a recently started game after a transient reconnect (mobile-safe)
+socket.on('rebindGame', (payload, cb) => {
+  try {
+    payload = payload || {};
+    const gid = Number(payload.gameId) || 0;
+    let pseudo = String(payload.pseudo || '').trim().substring(0,10).replace(/[^a-zA-Z0-9]/g,'');
+    if (!gid || !pseudo) { try { if (cb) cb({ ok:false, reason:'invalid' }); } catch(_){ } return; }
+    const game = activeGames.find(g => g && g.id === gid);
+    if (!game || !game.lobby || !game.lobby.started) { try { if (cb) cb({ ok:false, reason:'no_game' }); } catch(_){ } return; }
+
+    // Find previous sid by pseudo
+    const prevSid = findPlayerSidByPseudo(game, pseudo);
+    // If the same socket is already present with player entry, nothing to do
+    if (prevSid && prevSid === socket.id) { try { if (cb) cb({ ok:true, reason:'already_bound' }); } catch(_){ } return; }
+
+    // If someone else is connected under that old SID, abort (avoid hijack)
+    try {
+      if (prevSid && io.sockets && io.sockets.sockets && io.sockets.sockets.get(prevSid)) {
+        try { if (cb) cb({ ok:false, reason:'already_connected' }); } catch(_){ }
+        return;
+      }
+    } catch(_){}
+
+    if (!prevSid && (!game.lobby.players || !game.lobby.players[socket.id])) {
+      // If no match by pseudo, allow rebind if current socket is already registered in lobby players
+      // (e.g., race during start). Otherwise fail fast.
+      try { if (cb) cb({ ok:false, reason:'not_found' }); } catch(_){ }
+      return;
+    }
+
+    // Transfer player entity to new socket id if needed
+    if (prevSid && game.players && game.players[prevSid]) {
+      game.players[socket.id] = game.players[prevSid];
+      delete game.players[prevSid];
+    } else if (game.players && !game.players[socket.id]) {
+      // Fallback: if player map uses current sid already, ensure it exists
+      game.players[socket.id] = {
+        x: (game.map && game.map[0] ? 40 : 0),
+        y: (game.map && game.map[0] ? 40 : 0),
+        vx:0, vy:0, alive:true, health:100, maxHealth:100,
+        damage:10, speed:40, goldGain:10, regen:0, lastShot:0, pseudo
+      };
+    }
+
+    // Update mapping + room
+    socketToGame[socket.id] = gid;
+    try { socket.join('lobby' + gid); } catch(_){}
+
+    // Seed net send timers
+    game._lastNetSend = game._lastNetSend || {};
+    game._lastNetSend[socket.id] = 0;
+
+    // Re-send start payload so the client leaves the menu immediately
+    try {
+      io.to(socket.id).emit('gameStarted', {
+        map: game.map,
+        players: game.players,
+        round: game.currentRound,
+        structures: game.structures,
+        structurePrices: SHOP_BUILD_PRICES
+      });
+      io.to(socket.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
+      io.to(socket.id).emit('zombiesRemaining', Math.max(0, (game.totalZombiesToSpawn||0) - (game.zombiesKilledThisWave||0)));
+    } catch(_){}
+
+    try { if (cb) cb({ ok:true }); } catch(_){ }
+  } catch(e) {
+    try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){ }
+  }
+});
+
+// Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
@@ -1550,7 +1695,7 @@ socket.on('kickPlayer', (data, cb) => {
 });
 
   socket.on('startManualLobby', (cb) => {
-    const gid = socketToGame[socket.id];
+const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
     if (game.lobby.hostId !== socket.id) { if (cb) cb({ ok:false, reason:'not_host' }); return; }
@@ -1644,7 +1789,7 @@ socket.on('skipRound', () => {
 });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-  const gameId = socketToGame[socket.id];
+const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
   pseudo = (pseudo || '').trim().substring(0, 10);
