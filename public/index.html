@@ -775,6 +775,9 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
 </script>
 <script>
 /* SWAP_G_T_IN_BUILD */
+/* RESTORE PSEUDO AT BOOT */
+try { var __sp = localStorage.getItem('myPseudo'); if (__sp && document.getElementById('pseudoInput')) { document.getElementById('pseudoInput').value = __sp; } } catch(_){}
+
 document.addEventListener('DOMContentLoaded', function(){
   const cont = document.getElementById('buildTiles');
   if (!cont) return;
@@ -3031,7 +3034,9 @@ function gameLoop(timestamp = 0) {
   requestAnimationFrame(gameLoop);
 }
 
-    socket.on('connect', () => { myId = socket.id; });
+    socket.on('connect', () => {
+    try{ var _p = (window.myPseudo || (document.getElementById('pseudoInput')&&document.getElementById('pseudoInput').value) || localStorage.getItem('myPseudo') || '').trim(); if(_p){ socket.emit('hello', { pseudo: _p }); } }catch(_){}
+ myId = socket.id; });
     socket.on('lobbyUpdate', (data) => {
       lobbyData = {
         started: !!data.started,
@@ -3067,7 +3072,7 @@ function gameLoop(timestamp = 0) {
         return;
       }
       socket.emit('setPseudoAndReady', pseudoInput.value.trim()); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
-      window.lobbyJoined = true;
+      window.lobbyJoined = true; try{ localStorage.setItem('myPseudo', (window.myPseudo||((pseudoInput&&pseudoInput.value)||'')) ); }catch(_){}
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
       
@@ -4043,7 +4048,7 @@ if (btnCreate) {
         myPseudo = p; window.myPseudo = p;
         // Optimistically switch to manual lobby UI to avoid any flicker or crash
         try {
-          window.lobbyJoined = true;
+          window.lobbyJoined = true; try{ localStorage.setItem('myPseudo', (window.myPseudo||((pseudoInput&&pseudoInput.value)||'')) ); }catch(_){}
           showManual();
           try { renderManualPlayers(); } catch(_) {}
           try { updateButtonsDisabled(); } catch(_) {}
@@ -4198,7 +4203,7 @@ socket.on('lobbiesList', function(list){
         socket.emit('joinLobbyById', { gameId: lob.id, pseudo: p }, function(res){
           if (res && res.ok) {
             myPseudo = p; window.myPseudo = p;
-            window.lobbyJoined = true;
+            window.lobbyJoined = true; try{ localStorage.setItem('myPseudo', (window.myPseudo||((pseudoInput&&pseudoInput.value)||'')) ); }catch(_){}
             showManual();
 
             try {
@@ -4350,7 +4355,7 @@ function renderManualPlayers() {
           return;
         }
         socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); try { localStorage.setItem('zombi_last_pseudo', String((pseudoInput && pseudoInput.value || '').trim())); } catch(_) {}
-        window.lobbyJoined = true;
+        window.lobbyJoined = true; try{ localStorage.setItem('myPseudo', (window.myPseudo||((pseudoInput&&pseudoInput.value)||'')) ); }catch(_){}
         try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
@@ -5042,7 +5047,10 @@ function __alertPseudoTaken(){
       mo.observe(box, {childList:true, subtree:true, attributes:true});
     }catch(_){}
   }
-  document.addEventListener('DOMContentLoaded', function(){
+  /* RESTORE PSEUDO AT BOOT */
+try { var __sp = localStorage.getItem('myPseudo'); if (__sp && document.getElementById('pseudoInput')) { document.getElementById('pseudoInput').value = __sp; } } catch(_){}
+
+document.addEventListener('DOMContentLoaded', function(){
     setVH(); fitLobbyBoxMobile(); ensureObserver();
   });
   window.addEventListener('load', function(){
@@ -5300,7 +5308,10 @@ function __alertPseudoTaken(){
       else setAuthUI(false);
     } catch(_){ setAuthUI(false); }
   }
-  document.addEventListener('DOMContentLoaded', function(){ refreshMe(); updateAuthTexts(); validatePseudoBlocking(); }, { passive:true });
+  /* RESTORE PSEUDO AT BOOT */
+try { var __sp = localStorage.getItem('myPseudo'); if (__sp && document.getElementById('pseudoInput')) { document.getElementById('pseudoInput').value = __sp; } } catch(_){}
+
+document.addEventListener('DOMContentLoaded', function(){ refreshMe(); updateAuthTexts(); validatePseudoBlocking(); }, { passive:true });
 })();
 </script>
 
@@ -5341,7 +5352,10 @@ function __alertPseudoTaken(){
     }
     applyLadderTexts();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook, {passive:true}); else hook();
+  if (document.readyState === 'loading') /* RESTORE PSEUDO AT BOOT */
+try { var __sp = localStorage.getItem('myPseudo'); if (__sp && document.getElementById('pseudoInput')) { document.getElementById('pseudoInput').value = __sp; } } catch(_){}
+
+document.addEventListener('DOMContentLoaded', hook, {passive:true}); else hook();
 
   // Also listen for generic lang change via Mutation (flags toggling currentLang on window)
   (function observeLang(){
