@@ -1709,28 +1709,38 @@ function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
 	let lastAimDir = { x: 1, y: 0 };
 	
 	window.addEventListener('keydown', e => {
-	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+	  const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
 		e.preventDefault(); // évite le scroll de la page !
 	  }
 	  keys[e.key.toLowerCase()] = true;
 	});
 	window.addEventListener('keyup', e => {
-	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+	  const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
 		e.preventDefault();
 	  }
 	  keys[e.key.toLowerCase()] = false;
 	});
 	
 window.addEventListener('mousedown', e => {
-  if (buildMode) { e.preventDefault(); return; }   // ← ajoute ça
+  const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+if (buildMode) { e.preventDefault(); return; }   // ← ajoute ça
   const sm = document.getElementById('shopModal');
   if (sm && sm.style.display === 'block') return;
   mouseDown = e.button === 0;
 });
 
-    window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+    window.addEventListener('mouseup', e => { const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
-      mousePos = { x: e.clientX, y: e.clientY };
+      const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+mousePos = { x: e.clientX, y: e.clientY };
       if (!isMobileDevice && myId && playersHealth[myId]) {
         const player = playersHealth[myId];
 		aimDir = {
@@ -3872,7 +3882,9 @@ el.innerHTML += `
     drawHUD();
 
     window.addEventListener('keydown', e => {
-      if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
+      const __t = e && (e.target || document.activeElement);
+if (__t && ( (__t.tagName && (__t.tagName === 'INPUT' || __t.tagName === 'TEXTAREA')) || __t.isContentEditable || (__t.closest && (__t.closest('#chatPanel') || __t.closest('#shopModal'))) )) { return; }
+if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
         socket.emit('killAllZombies');
       }
       if (e.key.toLowerCase() === 'o' && myPseudo === 'Myg') {
