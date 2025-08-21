@@ -1978,7 +1978,7 @@ socket.on('playerDied', () => {
     
     (function(){ try {
       const _p = game.players[socket.id];
-      if (_p && !_p._ladderSubmitted) {
+      if (_p && !_p.isBot && !_p._ladderSubmitted) {
         _p._ladderSubmitted = true;
         recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
       }
@@ -2717,7 +2717,7 @@ function handleZombieAttacks(game) {
             if (p.alive) {
               p.alive = false;
               
-              if (!p._ladderSubmitted) {
+              if (!p.isBot && !p._ladderSubmitted) {
                 p._ladderSubmitted = true;
                 recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
               }
@@ -3307,6 +3307,9 @@ app.get('/api/ladder', (req,res)=>{
       }
     }
     ladder = Array.from(best.values());
+    // Exclude bots from ladder (bots use pseudo like [BOTi] → sanitized as 'BOTi')
+    ladder = ladder.filter(e => !(e && typeof e.player === 'string' && /^BOT\d+$/i.test(e.player)));
+
     // sort: wave desc, kills desc, ts asc
     ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
     const top = ladder.slice(0, 100);
