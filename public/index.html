@@ -400,6 +400,19 @@ body.menu-hide-ui #fpsCounter,
 }</style>
 </head>
 <body>
+<script>
+  // Default UI scale: mobile x4, desktop x1 (can be overridden by setting window.__uiScale before)
+  (function(){
+    try {
+      if (typeof window.__uiScale === 'undefined' || window.__uiScale == null) {
+        var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+        window.__uiScale = isMobile ? 4 : 1;
+      }
+      try { if (window.debugLog) debugLog('🔭 uiScale default =', window.__uiScale); } catch(_){}
+    } catch(e){}
+  })();
+</script>
+
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
 <div id="devPerfPanel" style="position:fixed;left:8px;top:30px;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:10000;display:none;max-width:44vw;pointer-events:none;white-space:pre;line-height:1.2"></div>
 <canvas id="gameCanvas"></canvas>
@@ -5748,16 +5761,17 @@ function __alertPseudoTaken(){
     try {
       if (!canvas) return;
       var ratio = Math.max(1, (window.devicePixelRatio || 1));
+      var uiScale = (typeof window.__uiScale === 'number' && window.__uiScale > 0) ? window.__uiScale : 1;
       var cssW = canvas.clientWidth || 0;
       var cssH = canvas.clientHeight || 0;
       if (cssW === 0 || cssH === 0) { cssW = window.innerWidth || 0; cssH = window.innerHeight || 0; }
-      var targetW = Math.max(16, Math.floor(cssW * ratio));
-      var targetH = Math.max(16, Math.floor(cssH * ratio));
+      var targetW = Math.max(16, Math.floor((cssW * ratio) / uiScale));
+      var targetH = Math.max(16, Math.floor((cssH * ratio) / uiScale));
       if (canvas.width !== targetW || canvas.height !== targetH) {
         canvas.style.width = cssW + 'px';
         canvas.style.height = cssH + 'px';
         canvas.width = targetW; canvas.height = targetH;
-        debugLog('📐 canvas resized attr →', targetW, 'x', targetH, '(css=', cssW, 'x', cssH, 'ratio=', ratio, ')');
+        debugLog('📐 canvas resized attr →', targetW, 'x', targetH, '(css=', cssW, 'x', cssH, 'ratio=', ratio, 'uiScale=', uiScale, ')');
       }
     } catch(e){ try{ debugWarn('ensureCanvasSize error', e && (e.message||e)); }catch(_){ } }
   }
@@ -5787,6 +5801,7 @@ function __alertPseudoTaken(){
       // Normalize for devicePixelRatio so 1 unit = 1 CSS pixel
       try {
         var ratio = Math.max(1, (window.devicePixelRatio || 1));
+      var uiScale = (typeof window.__uiScale === 'number' && window.__uiScale > 0) ? window.__uiScale : 1;
         canvas.style.width = (canvas.clientWidth || window.innerWidth || 0) + 'px';
         canvas.style.height = (canvas.clientHeight || window.innerHeight || 0) + 'px';
         var ctx2d = canvas.getContext && canvas.getContext('2d');
