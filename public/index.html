@@ -2990,6 +2990,42 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 }
 
 	function updateCamera() {
+// Force center camera on player for mobile landscape every frame (alt approach)
+function forceLandscapeCenter(){
+  try {
+    if (!(typeof isMobileDevice !== 'undefined' ? isMobileDevice : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))) return;
+    // Landscape check: fallback to comparing widths if matchMedia unsupported
+    var landscape = false;
+    try { landscape = window.matchMedia('(orientation: landscape)').matches; } catch(_){ landscape = (window.innerWidth||0) > (window.innerHeight||0); }
+    if (!landscape) return;
+    if (!myId || !playersHealth || !playersHealth[myId] || !playersHealth[myId].alive) return;
+    var p = playersHealth[myId];
+
+    // Compute view size using *CSS* viewport as primary source (not only canvas attrs)
+    var cssW = (canvas && canvas.clientWidth) ? canvas.clientWidth : (window.innerWidth||0);
+    var cssH = (canvas && canvas.clientHeight) ? canvas.clientHeight : (window.innerHeight||0);
+    var ratio = Math.max(1, (window.devicePixelRatio||1));
+    var viewW = Math.max(16, Math.floor((cssW * ratio) / renderScale));
+    var viewH = Math.max(16, Math.floor((cssH * ratio) / renderScale));
+
+    var targetX = p.x - viewW/2;
+    var targetY = p.y - viewH/2;
+
+    // Clamp within map bounds if possible
+    var maxX = MAP_COLS*TILE_SIZE - viewW;
+    var maxY = MAP_ROWS*TILE_SIZE - viewH;
+    if (isFinite(maxX) && isFinite(maxY)){
+      if (maxX >= 0) targetX = Math.max(0, Math.min(targetX, maxX));
+      if (maxY >= 0) targetY = Math.max(0, Math.min(targetY, maxY));
+    }
+
+    // Only adjust if delta is significant to avoid jitter
+    if (Math.abs((cameraX||0) - targetX) > 0.5 || Math.abs((cameraY||0) - targetY) > 0.5){
+      cameraX = targetX;
+      cameraY = targetY;
+    }
+  } catch(_){}
+}
       const viewW = canvas.width / renderScale;
       const viewH = canvas.height / renderScale;
       if (isSpectator) {
@@ -3115,6 +3151,7 @@ function gameLoop(timestamp = 0) {
 
   update(deltaTime);
   updateCamera();
+  try { forceLandscapeCenter(); } catch(_){ }
 
   // Remet la transform, clear, puis applique le scale (zoom)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -4672,7 +4709,7 @@ function renderManualPlayers() {
   <div id="chatMessages" aria-live="polite"></div>
   <div id="chatInputRow">
     <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" autocomplete="off" autocorrect="off" autocapitalize="off" enterkeyhint="send" inputmode="text">
-    <button id="chatSend" type="button">Send</button>
+    <button id="chatSend" type="submit">Send</button>
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
@@ -4851,6 +4888,36 @@ document.addEventListener('submit', function(ev){
     }
   } catch(_){}
 }, true);
+// Ultra-robust capture for chat send interactions (change of approach)
+(function(){
+  try {
+    if (document.__chatCaptureBound) return;
+    document.__chatCaptureBound = true;
+    var lastTap = 0;
+    function maybeSendFrom(target){
+      try {
+        var btn = document.getElementById('chatSend');
+        var inp = document.getElementById('chatInput');
+        if (!btn || !inp) return false;
+        if (target && !target.closest) return false;
+        var hit = target.closest('#chatSend');
+        if (!hit) return false;
+        var now = Date.now();
+        if (now - lastTap < 150) return true; // throttle duplicate events
+        lastTap = now;
+        try { send(); } catch(_){}
+        return true;
+      } catch(_){ return false; }
+    }
+    ['pointerdown','pointerup','touchstart','touchend','click'].forEach(function(type){
+      document.addEventListener(type, function(ev){
+        try {
+          if (maybeSendFrom(ev.target)) { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){ } }
+        } catch(_){}
+      }, true); // capture to beat any interfering listeners
+    });
+  } catch(_){}
+})();
 // Robust chat control bindings (mobile-safe)
 (function(){
   if (!sendBtn || !input) return;
@@ -4878,8 +4945,6 @@ document.addEventListener('submit', function(ev){
     if (ev.key === 'Enter') { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
   });
 })();
- ev.stopPropagation(); }
-});
 // Socket bindings
   function initSocketBindings(){
     try {
