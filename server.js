@@ -1163,6 +1163,46 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
+  // === Client debug logging sink (mobile chat crash tracing) ===
+  try {
+    const LOG_DIR = path.join(__dirname, 'logs');
+    try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (_) {}
+    const _clientLogFile = path.join(LOG_DIR, 'client-chat-logs.ndjson');
+    const _clientErrFile = path.join(LOG_DIR, 'client-errors.ndjson');
+    function _appendLine(file, obj){
+      try { fs.appendFile(file, JSON.stringify(obj) + '\n', ()=>{}); } catch(_){}
+    }
+    const _ua = (socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
+    const _ip = (socket && (socket.conn && socket.conn.remoteAddress || socket.handshake && socket.handshake.address)) || '';
+    socket.on('client:log', (e) => {
+      try {
+        _appendLine(_clientLogFile, {
+          t: Date.now(),
+          sid: socket.id,
+          ip: String(_ip||'').replace(/^::ffff:/,''),
+          ua: _ua,
+          type: (e && e.type) || 'log',
+          msg: (e && e.msg) || null,
+          data: (e && e.data) || null
+        });
+      } catch(_){}
+    });
+    socket.on('client:err', (e) => {
+      try {
+        _appendLine(_clientErrFile, {
+          t: Date.now(),
+          sid: socket.id,
+          ip: String(_ip||'').replace(/^::ffff:/,''),
+          ua: _ua,
+          type: (e && e.type) || 'error',
+          msg: (e && e.msg) || null,
+          stack: (e && e.stack) || null,
+          data: (e && e.data) || null
+        });
+      } catch(_){}
+    });
+  } catch(_) {}
+
 
   // Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
@@ -1301,6 +1341,16 @@ socket.on('clientPing', () => {});
 
       // basic sanitize
       let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
+      // DEBUG LOG: received chat:send
+      try {
+        const __ua = (socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
+        const __ip = (socket && (socket.conn && socket.conn.remoteAddress || socket.handshake && socket.handshake.address)) || '';
+        const LOG_DIR = path.join(__dirname, 'logs');
+        try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (_) {}
+        const _clientLogFile = path.join(LOG_DIR, 'server-chat-accept.ndjson');
+        fs.appendFile(_clientLogFile, JSON.stringify({ t: Date.now(), sid: socket.id, ua: __ua, ip: String(__ip||'').replace(/^::ffff:/,''), channel, len: (text||'').length, preview: String(text||'').slice(0,120) }) + '\n', ()=>{});
+      } catch(_) {}
+
       if (!text) return;
       if (text.length > 50) text = text.slice(0,50);
 

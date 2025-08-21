@@ -5824,5 +5824,142 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
+
+<!-- CLIENT DEBUG LOGS: mobile in-game chat crash tracing -->
+<script>
+(function(){
+  try {
+    var SESSION_LOG_ID = (function(){ try{ return localStorage.getItem('logSessionId') }catch(_){ return null } })() || (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8));
+    try { localStorage.setItem('logSessionId', SESSION_LOG_ID); } catch(_){}
+    function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
+    function curChannelFromDOM(){
+      try {
+        var tLobby = document.getElementById('tabLobby');
+        var tWorld = document.getElementById('tabWorld');
+        if (tLobby && tLobby.classList.contains('active')) return 'lobby';
+        if (tWorld && tWorld.classList.contains('active')) return 'world';
+      } catch(_) {}
+      return 'world';
+    }
+    function inGameHeuristic(){
+      try { if (window.__ingame) return true; } catch(_){}
+      try {
+        var lobby = document.getElementById('lobbyScreen');
+        var canvas = document.getElementById('gameCanvas');
+        var lobbyHidden = lobby && lobby.style.display === 'none';
+        var canvasShown = canvas && canvas.style.display !== 'none';
+        return !!(canvasShown && lobbyHidden);
+      } catch(_){ return false; }
+    }
+    function collectCtx(extra){
+      var ctx = {
+        t: Date.now(),
+        sess: SESSION_LOG_ID,
+        ua: navigator.userAgent || '',
+        lang: (window.currentLang || navigator.language || ''),
+        mobile: isMobileUA(),
+        inGame: inGameHeuristic(),
+        channel: curChannelFromDOM(),
+        socketId: (window.socket && window.socket.id) || null,
+        focusedEl: (document.activeElement && document.activeElement.id) || null,
+        screen: { w: window.innerWidth||0, h: window.innerHeight||0, dpr: window.devicePixelRatio||1 },
+      };
+      if (extra && typeof extra === 'object') { try { for (var k in extra) ctx[k]=extra[k]; } catch(_){ } }
+      return ctx;
+    }
+    function sendLog(obj){
+      try {
+        if (window.socket && window.socket.emit) {
+          window.socket.emit('client:log', { type:'chat_trace', msg:'trace', data: obj });
+        }
+        if (window.debugLog) debugLog('🧪 chat_trace', obj);
+      } catch(_){}
+    }
+    function sendErr(obj){
+      try {
+        if (window.socket && window.socket.emit) {
+          window.socket.emit('client:err', { type:'chat_error', msg: (obj && obj.msg) || 'err', stack: obj && obj.stack, data: obj });
+        }
+        if (window.debugError) debugError('🧨 chat_error', obj);
+        else if (console && console.error) console.error('chat_error', obj);
+      } catch(_){}
+    }
+
+    // Wrap socket.emit to trace chat:send payloads
+    function attachEmitWrapper(){
+      try {
+        if (!window.socket || !window.socket.emit || window.socket.__emitWrapped) return false;
+        var _emit = window.socket.emit;
+        window.socket.emit = function(ev, data){
+          try {
+            if (ev === 'chat:send') {
+              var payload = data || {};
+              var text = (payload.text || '').toString();
+              sendLog(collectCtx({ phase:'emit_pre', ev: ev, len: text.length, textPreview: text.slice(0,120), channel: payload.channel||curChannelFromDOM() }));
+            }
+          } catch(_){}
+          try { return _emit.apply(this, arguments); } catch(e){ sendErr(collectCtx({ phase:'emit_throw', ev: ev, err: String(e&&e.message||e) })); throw e; }
+        };
+        window.socket.__emitWrapped = true;
+        return true;
+      } catch(_){ return false; }
+    }
+
+    // Listen server responses for errors and messages
+    function attachSocketListeners(){
+      try {
+        if (!window.socket || !window.socket.on || window.socket.__chatTraceBound) return false;
+        window.socket.on('chat:error', function(e){ try { sendLog(collectCtx({ phase:'recv_error', error: e })); } catch(_){ } });
+        window.socket.on('chat:msg', function(m){ try { if (m && m.sid === (window.socket && window.socket.id)) sendLog(collectCtx({ phase:'recv_ack_msg', msg: { ts: m.ts, channel: m.channel, len: (m.text||'').length } })); } catch(_){ } });
+        window.socket.on('gameStarted', function(info){ try { sendLog(collectCtx({ phase:'gameStarted', players: info && Object.keys((info && info.players)||{}).length })); } catch(_){ } });
+        window.socket.__chatTraceBound = true;
+        return true;
+      } catch(_){ return false; }
+    }
+
+    // Extra: button/key events
+    function bindUI(){
+      try {
+        var input = document.getElementById('chatInput');
+        var btn = document.getElementById('chatSend');
+        if (btn && !btn.__traceBound) {
+          btn.addEventListener('click', function(){ sendLog(collectCtx({ phase:'ui_click_send', valueLen: (input && (input.value||'').length) || 0 })); }, { passive: true });
+          btn.__traceBound = true;
+        }
+        if (input && !input.__traceBound) {
+          input.addEventListener('keydown', function(ev){
+            try {
+              var code = ev && (ev.code || ev.key || ev.keyCode);
+              if (code === 'Enter' || code === 13 || ev.key === 'Enter') {
+                sendLog(collectCtx({ phase:'ui_key_enter', valueLen: (input.value||'').length }));
+              }
+            } catch(_){}
+          });
+          input.__traceBound = true;
+        }
+        return true;
+      } catch(_){ return false; }
+    }
+
+    // Global error traps (capture crashes)
+    window.addEventListener('error', function(e){
+      try { sendErr(collectCtx({ msg: String(e && e.message || 'window_error'), stack: (e && e.error && e.error.stack) || null })); } catch(_){}
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      try { var r = e && e.reason; sendErr(collectCtx({ msg: 'unhandledrejection', stack: r && r.stack, reason: (r && (r.message||r)) })); } catch(_){}
+    });
+
+    // Retry binding until socket & DOM are ready
+    function tick(){
+      try { attachEmitWrapper(); attachSocketListeners(); bindUI(); } catch(_){}
+    }
+    tick();
+    var _int = setInterval(tick, 400);
+    // Stop retrying after a while
+    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 15000);
+  } catch(_){}
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
