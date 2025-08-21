@@ -5754,6 +5754,8 @@ function __alertPseudoTaken(){
       var targetW = Math.max(16, Math.floor(cssW * ratio));
       var targetH = Math.max(16, Math.floor(cssH * ratio));
       if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
         canvas.width = targetW; canvas.height = targetH;
         debugLog('📐 canvas resized attr →', targetW, 'x', targetH, '(css=', cssW, 'x', cssH, 'ratio=', ratio, ')');
       }
@@ -5782,6 +5784,15 @@ function __alertPseudoTaken(){
       if (!canvas) { debugWarn('🎯 no #gameCanvas'); return; }
       canvas.style.display='block'; canvas.style.visibility='visible'; canvas.style.opacity='1';
       ensureCanvasSize(canvas);
+      // Normalize for devicePixelRatio so 1 unit = 1 CSS pixel
+      try {
+        var ratio = Math.max(1, (window.devicePixelRatio || 1));
+        canvas.style.width = (canvas.clientWidth || window.innerWidth || 0) + 'px';
+        canvas.style.height = (canvas.clientHeight || window.innerHeight || 0) + 'px';
+        var ctx2d = canvas.getContext && canvas.getContext('2d');
+        if (ctx2d) { ctx2d.setTransform(ratio,0,0,ratio,0,0); debugLog('🔎 DPR applied to 2D context:', ratio); }
+      } catch(_) {}
+
       topmostAtCenter();
       var ok = drawMarker(canvas); if (ok) { readOnePixel(canvas); }
       var badge = document.getElementById('renderProbeBadge'); 
