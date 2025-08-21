@@ -4344,7 +4344,8 @@ function renderManualPlayers() {
     var lobbyJoin = document.getElementById('lobbyJoin');
     var pseudoInput = document.getElementById('pseudoInput');
     if (lobbyJoin){
-      lobbyJoin.onclick = function(){
+      if (lobbyJoin.onclick || lobbyJoin.__boundJoin) { /* skip duplicate bind */ }
+      else { lobbyJoin.__boundJoin = true; lobbyJoin.onclick = function(){
         if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
@@ -4354,7 +4355,7 @@ function renderManualPlayers() {
         try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
-      };
+      }; }
     }
   });
 
