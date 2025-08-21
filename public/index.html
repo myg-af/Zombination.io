@@ -5464,5 +5464,152 @@ function __alertPseudoTaken(){
 })();
 </script>
 
+
+  <!-- Visual Debug Console (non-intrusive) -->
+  <style id="debugConsoleStyles">
+    #debugConsole { position: fixed; left: 0; right: 0; bottom: 0; max-height: 42vh; z-index: 2147483647; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; background: rgba(0,0,0,0.75); color: #c7f284; overflow-y:auto; padding:6px 8px; display:none; box-shadow: 0 -4px 12px rgba(0,0,0,0.35); }
+    #debugConsole .line { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 1px 0; }
+    #debugConsoleBar { position: fixed; bottom: 8px; right: 8px; z-index: 2147483647; display:flex; gap:6px; }
+    #debugToggle, #debugClear { font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.65); color: #fff; backdrop-filter: blur(4px); }
+    #debugToggle:active, #debugClear:active { transform: translateY(1px); }
+    @media (hover:hover) { #debugToggle:hover, #debugClear:hover { background: rgba(0,0,0,0.8); } }
+  </style>
+  <div id="debugConsole" aria-label="Debug console (tap to scroll)"></div>
+  <div id="debugConsoleBar" aria-hidden="false">
+    <button id="debugToggle" type="button">🐛 Log</button>
+    <button id="debugClear" type="button">Clear</button>
+  </div>
+  <script>
+  (function(){
+    var dc = document.getElementById('debugConsole');
+    var toggle = document.getElementById('debugToggle');
+    var clearBtn = document.getElementById('debugClear');
+    var visible = false;
+    var MAX_LINES = 400;
+    function fmtArg(a){
+      try {
+        if (typeof a === 'string') return a;
+        if (a === null) return 'null';
+        if (typeof a === 'undefined') return 'undefined';
+        if (a instanceof Error) return a.name + ': ' + (a.message || String(a));
+        var s = JSON.stringify(a);
+        return s;
+      } catch(e){ try { return String(a); } catch(_) { return '[unprintable]'; } }
+    }
+    function ts(){
+      var d = new Date();
+      var ms = String(d.getMilliseconds()).padStart(3,'0');
+      return d.toTimeString().slice(0,8) + '.' + ms;
+    }
+    function write(kind, args){
+      try {
+        var line = document.createElement('div');
+        line.className = 'line';
+        var prefix = kind ? ('['+kind+'] ') : '';
+        var text = '['+ts()+'] ' + prefix + (args && args.length ? args.map(fmtArg).join(' ') : '');
+        line.textContent = text;
+        dc.appendChild(line);
+        if (dc.childElementCount > MAX_LINES) dc.removeChild(dc.firstChild);
+        dc.scrollTop = dc.scrollHeight;
+      } catch(e){ /* ignore */ }
+    }
+    window.debugLog = function(){ try { console.log.apply(console, arguments); } catch(_){} write('LOG', Array.prototype.slice.call(arguments)); };
+    window.debugWarn = function(){ try { console.warn.apply(console, arguments); } catch(_){} write('WARN', Array.prototype.slice.call(arguments)); };
+    window.debugError = function(){ try { console.error.apply(console, arguments); } catch(_){} write('ERR', Array.prototype.slice.call(arguments)); };
+    if (toggle) toggle.addEventListener('click', function(){ visible = !visible; dc.style.display = visible ? 'block' : 'none'; });
+    if (clearBtn) clearBtn.addEventListener('click', function(){ dc.innerHTML = ''; });
+    // Mirror console.* into overlay without breaking existing logs
+    (function(){
+      if (window.__consoleMirror) return;
+      var orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
+      function mirror(kind, args){ write(kind, Array.prototype.slice.call(args)); }
+      console.log = function(){ try { orig.log.apply(console, arguments); } catch(_){} mirror('LOG', arguments); };
+      console.info = function(){ try { orig.info.apply(console, arguments); } catch(_){} mirror('INFO', arguments); };
+      console.warn = function(){ try { orig.warn.apply(console, arguments); } catch(_){} mirror('WARN', arguments); };
+      console.error = function(){ try { orig.error.apply(console, arguments); } catch(_){} mirror('ERR', arguments); };
+      window.__consoleMirror = true;
+    })();
+    // Global error hooks
+    window.addEventListener('error', function(e){ write('UNCAUGHT', [e && e.message, (e && e.filename ? ('@'+e.filename+':'+e.lineno+':'+e.colno) : '')]); });
+    window.addEventListener('unhandledrejection', function(e){ write('PROMISE', [e && (e.reason && e.reason.message ? e.reason.message : String(e.reason || e))]); });
+
+    // Socket.IO hooks
+    function attachSocketDebug(s){
+      try {
+        if (!s || s.__debugAttached) return;
+        s.__debugAttached = true;
+        debugLog('📡 trying connect to server');
+        s.on('connect', function(){
+          try { debugLog('✅ connect', 'socket.id=', s.id, 'transport=', s.io && s.io.engine && s.io.engine.transport && s.io.engine.transport.name); } catch(_){}
+        });
+        try {
+          if (s.io && s.io.engine && s.io.engine.on) {
+            s.io.engine.on('upgrade', function(tr){ debugLog('⤴️ upgrade →', tr && tr.name); });
+          }
+        } catch(_){}
+        s.on('connect_error', function(err){ debugError('connect_error', err && (err.message || err)); });
+        if (s.io && s.io.on) {
+          s.io.on('reconnect_attempt', function(n){ debugWarn('reconnect_attempt', n, 'transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
+          s.io.on('reconnect', function(n){ debugLog('reconnect OK after', n, 'attempt(s), transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
+          s.io.on('reconnect_error', function(err){ debugError('reconnect_error', err && (err.message || err)); });
+          s.io.on('reconnect_failed', function(){ debugError('reconnect_failed'); });
+        }
+        s.on('disconnect', function(reason){ debugWarn('disconnect', reason); });
+        s.on('error', function(err){ debugError('socket error', err && (err.message || err)); });
+        // Wrap emit for key events
+        try {
+          var origEmit = s.emit.bind(s);
+          s.emit = function(ev){
+            var argv = Array.prototype.slice.call(arguments,1);
+            if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
+              debugLog('📤 emit', ev, argv);
+            }
+            return origEmit.apply(s, arguments);
+          };
+        } catch(_){}
+        // Key incoming events
+        s.on && s.on('gameStarted', function(payload){
+          try {
+            var pcount = payload && payload.players ? Object.keys(payload.players).length : 'n/a';
+            debugLog('🎮 gameStarted received', '; players=', pcount);
+          } catch(_){}
+        });
+        s.on && s.on('lobbyUpdate', function(data){
+          try { debugLog('📥 lobbyUpdate id=', data && data.id, 'started=', data && data.started); } catch(_){}
+        });
+      } catch(e){ debugWarn('attachSocketDebug error', String(e)); }
+    }
+    function tryAttach(){
+      try { if (window.socket) attachSocketDebug(window.socket); } catch(_){}
+      try { if (window.gameSocket) attachSocketDebug(window.gameSocket); } catch(_){}
+      try { if (window.__lastSocket) attachSocketDebug(window.__lastSocket); } catch(_){}
+    }
+    tryAttach();
+    // Monkeypatch io() to auto-attach any future sockets
+    (function(){
+      if (!window.io || window.__io_patched_for_debug) return;
+      var originalIO = window.io;
+      function patchedIO(){
+        var s = originalIO.apply(this, arguments);
+        try { window.__lastSocket = s; attachSocketDebug(s); } catch(_){}
+        return s;
+      }
+      try {
+        for (var k in originalIO) { try { patchedIO[k] = originalIO[k]; } catch(_){} }
+      } catch(_){}
+      window.io = patchedIO;
+      window.__io_patched_for_debug = true;
+    })();
+    // In case socket was created before our script, poll briefly
+    var attempts = 0;
+    var iv = setInterval(function(){
+      tryAttach();
+      attempts++;
+      if (attempts > 20) clearInterval(iv);
+    }, 500);
+  })();
+  </script>
+  <!-- /Visual Debug Console -->
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
