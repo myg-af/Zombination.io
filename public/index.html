@@ -31,7 +31,9 @@
     #lobbyJoin { padding: 7px 32px; border-radius: 8px; border:none; font-size: 20px; background:#49c749; color: #fff; cursor: pointer; margin-top: 7px; }
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
     #btnJoinLobbyList[disabled], #btnCreateLobby[disabled] { opacity: 0.6; cursor: not-allowed; }
-    #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
+    
+    #btnLadder[disabled], #btnLogin[disabled], #btnSignup[disabled], #btnLogout[disabled], #btnSettings[disabled] { opacity: 0.6; cursor: not-allowed; }
+#lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
 
@@ -455,7 +457,7 @@ body.menu-hide-ui #fpsCounter,
         
 <div id="lobbyTimer"></div>
 <div id="lobbyStatus"></div>
-<input id="pseudoInput" maxlength="15" placeholder="" type="text"/>
+<input id="pseudoInput" maxlength="10" placeholder="" type="text"/>
 <br/>
 <div id="lobbyBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px;">
 <button id="lobbyJoin"></button>
@@ -576,7 +578,23 @@ const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
-  try { socket.emit("clientHello", { v: (window.GAME_VERSION||"1.0.0"), tz: (Intl.DateTimeFormat().resolvedOptions().timeZone||"?") }); } catch(e){}
+  try {
+    socket.emit("clientHello", {
+      v: (window.GAME_VERSION || "1.0.0"),
+      tz: (Intl.DateTimeFormat().resolvedOptions().timeZone || "?")
+    });
+  } catch (e) {}
+
+  try {
+    let __gid = 0, __tok = '';
+    try { __gid = Number(localStorage.getItem('zombi_host_game') || '0'); } catch(_) {}
+    try { __tok = String(localStorage.getItem('zombi_host_token') || ''); } catch(_) {}
+    if (__gid && __tok) {
+      socket.emit('reclaimHost', { gameId: __gid, token: __tok }, function(res){
+        try { console.log('[reclaimHost]', res); } catch(_) {}
+      });
+    }
+  } catch (_) {}
 });
 socket.on("disconnect", (reason) => {
   console.warn("❌ Déconnecté du serveur. Raison:", reason);
@@ -1013,7 +1031,18 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
     }
     function updateLobbyTexts() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-      lobbyPlayers.textContent = `${tr.playersInGame} : ${lobbyData.count}/${lobbyData.max}`;
+            const _max = Number((lobbyData && lobbyData.max)) || 6;
+      let _count = 0;
+      try {
+        if (lobbyData && typeof lobbyData.players === 'object' && lobbyData.players) {
+          _count = Object.keys(lobbyData.players).length;
+        } else if (lobbyData && Array.isArray(lobbyData.players)) {
+          _count = lobbyData.players.length;
+        } else if (typeof lobbyData.count !== 'undefined') {
+          _count = Number(lobbyData.count) || 0;
+        }
+      } catch(_){ _count = Number(lobbyData && lobbyData.count) || 0; }
+      lobbyPlayers.textContent = `${tr.playersInGame} : ${_count}/${_max}`;
       lobbyTimer.textContent = `${tr.timeLeft} : ${lobbyData.timeLeft}s`;
       const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
       lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
@@ -2890,12 +2919,9 @@ function drawHUD() {
         if (!window.__ladderSubmitted) {
           window.__ladderSubmitted = true;
           var player = (window.myPseudo && String(window.myPseudo)) || (window.pseudoInput && String(window.pseudoInput.value)) || '';
-          player = (player || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,15) || 'Anonymous';
-          fetch('/api/ladder', {
-            method: 'POST',
-            headers: { 'Content-Type':'application/json' },
-            body: JSON.stringify({ player: player, kills: Number(kills)||0, wave: Number(round)||0 })
-          }).catch(function(_){});
+          player = (player || '').replace(/[^a-zA-Z0-9]/g,'').slice(0,10) || 'Anonymous';
+          /* Ladder is now recorded server-side on death; client no longer posts. */
+            if (!window.__ladderSubmitted) { window.__ladderSubmitted = true; }
         }
       } catch(_){}
 
@@ -2991,8 +3017,11 @@ function gameLoop(timestamp = 0) {
         count: Number(data.count)||0,
         max: Number(data.max)||0,
         timeLeft: Number(data.timeLeft)||0,
-        players: data.players || {}
+        players: data.players || {},
+        hostId: (data && data.hostId) || null
       };
+      try { window.lobbyData = lobbyData; } catch(_){}
+
       try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
       try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
@@ -3020,7 +3049,8 @@ function gameLoop(timestamp = 0) {
       window.lobbyJoined = true;
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
-      lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
+      
+          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
       try { updateButtonsDisabled(); } catch(_) {}
     };
 
@@ -3881,9 +3911,24 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
   function updateButtonsDisabled() {
     const hasPseudo = !!(pseudoInput && pseudoInput.value.trim());
     const shouldDisable = !hasPseudo || !!window.lobbyJoined;
+    const inLobby = !!window.lobbyJoined;
+
     if (btnJoinList) btnJoinList.disabled = shouldDisable;
     if (btnCreate) btnCreate.disabled = shouldDisable;
     if (lobbyJoin) lobbyJoin.disabled = shouldDisable;
+    // Also gray out Ladder and auth buttons when in a lobby
+try {
+  var _ladder = document.getElementById('btnLadder');
+  if (_ladder) _ladder.disabled = inLobby;
+  var _login = document.getElementById('btnLogin');
+  if (_login) _login.disabled = inLobby;
+  var _signup = document.getElementById('btnSignup');
+  if (_signup) _signup.disabled = inLobby;
+  var _settings = document.getElementById('btnSettings');
+  if (_settings) _settings.disabled = inLobby;
+  var _logout = document.getElementById('btnLogout');
+  if (_logout) _logout.disabled = inLobby;
+} catch(_){}
   }
   if (pseudoInput) {
     pseudoInput.addEventListener('input', updateButtonsDisabled, { passive: true });
@@ -3993,7 +4038,13 @@ if (btnCreate) {
               }
               btnCreate.disabled = false; window.lobbyJoined = false; showMain(); return;
             }
-            // Server will follow up with lobbyUpdate
+                        try {
+              if (res && res.ok && res.gameId && res.hostToken) {
+                try { localStorage.setItem('zombi_host_game', String(res.gameId)); } catch(_){}
+                try { localStorage.setItem('zombi_host_token', String(res.hostToken)); } catch(_){}
+              }
+            } catch(_){}
+// Server will follow up with lobbyUpdate
           } catch(err) {
             console.error('createLobby callback error', err);
 } finally {
@@ -4019,9 +4070,28 @@ if (btnCreate) {
   if (btnBackList) {
     btnBackList.addEventListener('click', function(){
       showMain();
-      try{ if (pseudoInput){ pseudoInput.disabled = false; if (window.myPseudo) pseudoInput.value = window.myPseudo; } }catch(_){}
+      try{
+        if (pseudoInput){
+          // Restore pseudo field state depending on login/join status
+          var loggedIn = false;
+          try {
+            var btnLg = document.getElementById('btnLogout');
+            loggedIn = !!(btnLg && btnLg.style.display !== 'none');
+          } catch(_){ }
+          pseudoInput.disabled = false;
+          if (loggedIn || window.lobbyJoined) {
+            pseudoInput.readOnly = true;
+            try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }
+          } else {
+            pseudoInput.readOnly = false;
+            try { pseudoInput.style.background = '#fff'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #444'; } catch(_){ }
+          }
+          if (window.myPseudo) pseudoInput.value = window.myPseudo;
+        }
+      }catch(_){ }
       clearInterval(listInterval);
       listInterval = null;
+      try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){ }
     }, { passive: true });
   }
 
@@ -4037,7 +4107,8 @@ if (btnCreate) {
       } catch(e){}
       showMain();
       window.lobbyJoined = false;
-      try{ if (pseudoInput){ pseudoInput.disabled = false; if (window.myPseudo) pseudoInput.value = window.myPseudo; } }catch(_){}
+      try{ if (pseudoInput){ pseudoInput.disabled = false; 
+          try { pseudoInput.readOnly = false; pseudoInput.style.background = '#fff'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #444'; } catch(_){ }if (window.myPseudo) pseudoInput.value = window.myPseudo; } }catch(_){}
       try { updateButtonsDisabled(); } catch(_) {}
     }, { passive: true });
   }
@@ -4087,7 +4158,7 @@ socket.on('lobbiesList', function(list){
       
       btn.onclick = function(){
         var raw = (pseudoInput && pseudoInput.value) ? pseudoInput.value : '';
-        var p = (raw || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+        var p = (raw || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
         if (!p) {
           try { pseudoInput && pseudoInput.focus(); pseudoInput && (pseudoInput.style.background='#fdd'); setTimeout(function(){ try{ pseudoInput.style.background=''; }catch(_){ } }, 600); } catch(_){}
           return;
@@ -4108,6 +4179,20 @@ socket.on('lobbiesList', function(list){
             myPseudo = p; window.myPseudo = p;
             window.lobbyJoined = true;
             showManual();
+
+            try {
+              window.lobbyData = window.lobbyData || {};
+              window.lobbyData.manual = true;
+              window.lobbyData.started = false;
+              if (typeof window.lobbyData.max !== 'number' || !window.lobbyData.max) window.lobbyData.max = 6;
+              try {
+                if (!window.lobbyData.players || typeof window.lobbyData.players !== 'object') window.lobbyData.players = {};
+                if (window.socket && socket.id) window.lobbyData.players[socket.id] = { pseudo: window.myPseudo || p };
+              } catch(_) {}
+              if (!Number.isFinite(window.lobbyData.count) || window.lobbyData.count < 1) window.lobbyData.count = 1;
+              if (typeof updateLobbyTexts === 'function') updateLobbyTexts();
+            } catch(_){}
+
             renderManualPlayers();
             try { updateButtonsDisabled(); } catch(_) {}
           } else if (res && res.reason === 'pseudo_taken') {
@@ -4140,8 +4225,8 @@ function renderManualPlayers() {
         const p = entries[i][1] || {};
         const name = (p && p.pseudo) ? p.pseudo : '';
         const canKick = isHost && sid !== socket.id; // host cannot kick self
-        let inner = '<div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">'
-                    + '<span>' + (name || '') + '</span>' + (((window.lobbyData && window.lobbyData.hostId === sid) || (!window.lobbyData?.hostId && entries && entries.length === 1 && window.socket && sid === window.socket.id)) ? '<span class="host-crown" title="Host" aria-label="Host" style="margin-left:6px">👑</span>' : '' )+ (canKick ? '<button class="kick-btn" data-target="' + sid + '" style="padding:4px 8px;font-size:12px;cursor:pointer;background:#b00020;color:#fff;border:none;border-radius:4px;">'+kickTxt+'</button>' : '')
+        let inner = '<div style="display:flex;align-items:center;gap:8px;">'
+                    + '<span>' + (name || '') + '</span>' + (((window.lobbyData && window.lobbyData.hostId === sid) || (!window.lobbyData?.hostId && entries && entries.length === 1 && window.socket && sid === window.socket.id)) ? '<span class="host-crown" title="Host" aria-label="Host" style="margin-left:6px">👑</span>' : '' )+ (canKick ? '<button class="kick-btn" data-target="' + sid + '" style="padding:4px 8px;font-size:12px;cursor:pointer;background:#b00020;color:#fff;border:none;border-radius:4px;margin-left:auto;">'+kickTxt+'</button>' : '')
                     + '</div>';
         cells.push({ inner, empty:false });
       } else {
@@ -4179,18 +4264,28 @@ function renderManualPlayers() {
 
   // Replace updateLobbyTexts to remove timer/waiting and only show players in manual lobbies
   window.updateLobbyTexts = function(){
-    var tr = (window.TRANSLATIONS && window.TRANSLATIONS[window.currentLang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
-    safe(function(){
-      var manualPanel = document.getElementById('manualLobbyPanel');
-      var lobbyPlayers = document.getElementById('lobbyPlayers');
-      var showPlayers = manualPanel && manualPanel.style.display !== 'none';
-      if (lobbyPlayers) lobbyPlayers.textContent = showPlayers ? (tr.playersInGame + ' : ' + (window.lobbyData?.count||0) + '/' + (window.lobbyData?.max||0)) : '';
-    });
-    safe(function(){
-      var t = document.getElementById('lobbyTimer'); if (t){ t.style.display='none'; t.textContent=''; }
-      var s = document.getElementById('lobbyStatus'); if (s){ s.style.display='none'; s.textContent=''; }
-    });
-  };
+  try {
+    var tr = (window.TRANSLATIONS && (window.TRANSLATIONS[window.currentLang] || window.TRANSLATIONS['en'])) || {};
+    var manualPanel = document.getElementById('manualLobbyPanel');
+    var lobbyPlayersEl = document.getElementById('lobbyPlayers');
+    var showPlayers = manualPanel && manualPanel.style.display !== 'none';
+    var max = 6, count = 0;
+    try { max = Number((window.lobbyData && window.lobbyData.max) || 6) || 6; } catch(_){ max = 6; }
+    try {
+      if (window.lobbyData && window.lobbyData.players && typeof window.lobbyData.players === 'object') {
+        count = Object.keys(window.lobbyData.players).length;
+      } else if (window.lobbyData && Array.isArray(window.lobbyData.players)) {
+        count = window.lobbyData.players.length;
+      } else if (typeof window.lobbyData?.count !== 'undefined') {
+        count = Number(window.lobbyData.count) || 0;
+      }
+    } catch(_){ count = Number(window.lobbyData && window.lobbyData.count) || 0; }
+    if (lobbyPlayersEl) lobbyPlayersEl.textContent = showPlayers ? ((tr.playersInGame || 'Players in game') + ' : ' + count + '/' + max) : '';
+    // Hide legacy timer/status unconditionally in this global updater
+    try { var t = document.getElementById('lobbyTimer'); if (t){ t.style.display='none'; t.textContent=''; } } catch(_){}
+    try { var s = document.getElementById('lobbyStatus'); if (s){ s.style.display='none'; s.textContent=''; } } catch(_){}
+  } catch(_){}
+};
 
   // Wrap updateUITexts to force the "Join" label (no waiting state on main)
   if (typeof window.updateUITexts === 'function'){
@@ -4235,7 +4330,8 @@ function renderManualPlayers() {
         }
         socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); 
         window.lobbyJoined = true;
-        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; } catch(_){}
+        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
+          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
       };
     }
@@ -4412,7 +4508,8 @@ function renderManualPlayers() {
               if (window.pseudoInput) {
                 pseudoInput.style.display = '';
                 pseudoInput.disabled = false;
-                if (!pseudoInput.value && window.myPseudo) pseudoInput.value = window.myPseudo;
+                
+          try { pseudoInput.readOnly = false; pseudoInput.style.background = '#fff'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #444'; } catch(_){ }if (!pseudoInput.value && window.myPseudo) pseudoInput.value = window.myPseudo;
                 try { pseudoInput.focus(); } catch(_){}
               }
             } catch(_){}
@@ -4542,14 +4639,18 @@ function renderManualPlayers() {
         const text = msg && msg.text ? String(msg.text) : '';
         const div = document.createElement('div');
         div.className = 'chatLine';
-        div.innerHTML = '<span class="chatName">' + name.replace(/</g,'&lt;') + ':</span>' + text.replace(/</g,'&lt;');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'chatName';
+        nameSpan.textContent = name + ':';
+        div.appendChild(nameSpan);
+        div.appendChild(document.createTextNode(text));
         list.appendChild(div);
       }
       list.scrollTop = list.scrollHeight + 1000;
     }catch(e){}
   }
 
-  // Push message
+  // Select channel
   function pushMsg(msg){
     try{
       if (!msg) return;
@@ -4564,7 +4665,11 @@ function renderManualPlayers() {
         const text = msg && msg.text ? String(msg.text) : '';
         const div = document.createElement('div');
         div.className = 'chatLine';
-        div.innerHTML = '<span class="chatName">' + name.replace(/</g,'&lt;') + ':</span>' + text.replace(/</g,'&lt;');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'chatName';
+        nameSpan.textContent = name + ':';
+        div.appendChild(nameSpan);
+        div.appendChild(document.createTextNode(text));
         list.appendChild(div);
         list.scrollTop = list.scrollHeight + 1000;
         while (list.childElementCount > 200) list.removeChild(list.firstElementChild);
@@ -4572,7 +4677,6 @@ function renderManualPlayers() {
     }catch(e){}
   }
 
-  // Select channel
   function selectChannel(ch){
     if (ch !== 'world' && ch !== 'lobby') ch = 'world';
     if (collapsedBtn && ch === 'lobby') { try { collapsedBtn.classList.remove('notify'); } catch(_){} }
@@ -4969,11 +5073,13 @@ function __alertPseudoTaken(){
         if (loggedIn) {
           pseudoInput.value = username || '';
           pseudoInput.readOnly = true;
-          window.myPseudo = username || '';
+          
+          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }window.myPseudo = username || '';
           try { localStorage.setItem('zombi_pseudo', window.myPseudo); } catch(_){}
         } else {
           pseudoInput.disabled = false;
-        }
+        
+          try { pseudoInput.readOnly = false; pseudoInput.style.background = '#fff'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #444'; } catch(_){ }}
         if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled();
       }
     } catch(_){}
@@ -5015,7 +5121,7 @@ function __alertPseudoTaken(){
       modalBody.innerHTML = ''
         + '<div style="display:flex;flex-direction:column;gap:8px;">'
         + '  <label>' + trAuth('username','Username') + '</label>'
-        + '  <input id="authUser" maxlength="15" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <input id="authUser" maxlength="10" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '  <label>' + trAuth('password','Password') + '</label>'
         + '  <input id="authPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '</div>';
@@ -5025,7 +5131,7 @@ function __alertPseudoTaken(){
       modalBody.innerHTML = ''
         + '<div style="display:flex;flex-direction:column;gap:8px;">'
         + '  <label>' + trAuth('username','Username') + '</label>'
-        + '  <input id="authUser" maxlength="15" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <input id="authUser" maxlength="10" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '  <label>' + trAuth('password','Password') + '</label>'
         + '  <input id="authPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '  <label>' + trAuth('confirmPassword','Confirm your password') + '</label>'
@@ -5040,6 +5146,8 @@ function __alertPseudoTaken(){
         + '  <input id="currPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '  <label>' + trAuth('newPassword','New password') + '</label>'
         + '  <input id="newPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
+        + '  <label>' + trAuth('confirmNewPassword','Confirm your new password') + '</label>'
+        + '  <input id="newPass2" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '</div>';
       btnSubmit.onclick = doChangePassword;
     }
@@ -5085,7 +5193,9 @@ function __alertPseudoTaken(){
     try {
       const c = document.getElementById('currPass').value;
       const n = document.getElementById('newPass').value;
-      if (!c || !n) { alert(trAuth('fillAll')); return; }
+      const n2 = (document.getElementById('newPass2') && document.getElementById('newPass2').value) || '';
+      if (!c || !n || !n2) { alert(trAuth('fillAll')); return; }
+      if (n !== n2) { alert(trAuth('confirmNewPassword') + ' ✖'); return; }
       const { ok, data } = await fetchJSON('/api/change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
       if (ok) { hideModal(); setAuthUI(false); alert(trAuth('pwdChanged')); }
       else { if (data && data.code === 'weak_password') alert(trAuth('weakPassword')); else alert(trAuth('invalidCredentials')); }
@@ -5238,6 +5348,7 @@ function __alertPseudoTaken(){
     try { if (panelManual) panelManual.style.display = 'none'; } catch(_){}
     try { if (panelList) panelList.style.display = 'none'; } catch(_){}
     try { if (panelLadder) panelLadder.style.display = 'block'; } catch(_){}
+    try{ if (typeof pseudoInput!=='undefined' && pseudoInput) pseudoInput.style.display='none'; }catch(_){ }
     // Fetch ladder
     fetch('/api/ladder', { method: 'GET' })
       .then(r => r.json().catch(()=>({ok:false})))
@@ -5270,7 +5381,7 @@ function __alertPseudoTaken(){
             const kills = (it.kills|0);
             html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">';
             html += '<td style="padding:6px 10px; color:#9ab;">#' + rank + '</td>';
-            html += '<td style="padding:6px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0;">' + escapeHtml(String(name)) + '</td>';
+            html += '<td style="padding:6px 10px; white-space:normal; overflow:visible; text-overflow:clip; word-break:break-word;">' + escapeHtml(String(name)) + '</td>';
             html += '<td style="padding:6px 10px; text-align:right;">' + wave + '</td>';
             html += '<td style="padding:6px 10px; text-align:right;">' + kills + '</td>';
             html += '</tr>';
@@ -5287,6 +5398,8 @@ function __alertPseudoTaken(){
     try { if (panelLadder) panelLadder.style.display = 'none'; } catch(_){}
     try { if (panelManual) panelManual.style.display = 'none'; } catch(_){}
     try { if (panelList) panelList.style.display = 'none'; } catch(_){}
+  
+    try{ if (typeof pseudoInput!=='undefined' && pseudoInput){ pseudoInput.style.display=''; if (window.myPseudo && !pseudoInput.value) pseudoInput.value = window.myPseudo; } }catch(_){ }
   }
   function escapeHtml(s){
     return s.replace(/[&<>"]/g, function(c){
@@ -5295,7 +5408,25 @@ function __alertPseudoTaken(){
   }
 
   if (btnLadder) btnLadder.addEventListener('click', function(){ showLadder(); }, { passive: true });
-  if (btnBack) btnBack.addEventListener('click', function(){ showMainFromLadder(); }, { passive: true });
+  if (btnBack) btnBack.addEventListener('click', function(){
+    showMainFromLadder();
+    try{
+      if (typeof pseudoInput!=='undefined' && pseudoInput){
+        var loggedIn = false;
+        try { var btnLg = document.getElementById('btnLogout'); loggedIn = !!(btnLg && btnLg.style.display !== 'none'); } catch(_){ }
+        pseudoInput.disabled = false;
+        if (loggedIn || window.lobbyJoined) {
+          pseudoInput.readOnly = true;
+          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }
+        } else {
+          pseudoInput.readOnly = false;
+          try { pseudoInput.style.background = '#fff'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #444'; } catch(_){ }
+        }
+        try { if (window.myPseudo) pseudoInput.value = window.myPseudo; } catch(_){ }
+        try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){ }
+      }
+    }catch(_){ }
+  }, { passive: true });
 
   // Expose for debug
   
@@ -5313,3 +5444,4 @@ function __alertPseudoTaken(){
 </script>
 
 </body></html>
+      try { window.lobbyData = lobbyData; } catch(_){}

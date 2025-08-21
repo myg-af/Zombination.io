@@ -890,3 +890,20 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
   add('kr', { rank:'순위', player:'플레이어', roundReached:'도달한 웨이브', zombiesKilled:'처치한 좀비' });
 })();
 
+;(function(){
+  try{
+    var T = (typeof TRANSLATIONS === 'object' && TRANSLATIONS) || {};
+    function set(lang, val){ T[lang] = Object.assign({}, T[lang]||{}); T[lang].confirmNewPassword = val; }
+    set('en','Confirm your new password');
+    set('fr','Confirmez votre nouveau mot de passe');
+    set('es','Confirma tu nueva contraseña');
+    set('pt','Confirme sua nova senha');
+    set('de','Bestätigen Sie Ihr neues Passwort');
+    set('ru','Подтвердите новый пароль');
+    set('cn','请确认新密码');
+    set('jp','新しいパスワードを確認してください');
+    set('pl','Potwierdź nowe hasło');
+    set('kr','새 비밀번호를 확인하세요');
+  }catch(_){}
+})();
+
