@@ -5585,6 +5585,16 @@ function __alertPseudoTaken(){
             if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
               debugLog('📤 emit', ev, argv);
             }
+            if (ev === 'setPseudoAndReady') {
+              try {
+                var now = Date.now();
+                if (typeof window.__lastJoinEmit === 'number' && (now - window.__lastJoinEmit) < 900) {
+                  debugWarn('⛔ duplicate setPseudoAndReady blocked within', (now - window.__lastJoinEmit), 'ms');
+                  return s; // swallow duplicate
+                }
+                window.__lastJoinEmit = now;
+              } catch(_){}
+            }
             return origEmit.apply(s, arguments);
           };
         } catch(_){}
