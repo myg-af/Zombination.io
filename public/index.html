@@ -574,7 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({ transports: ['websocket'] });
+const socket = io({ transports: ['polling','websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -3043,13 +3043,13 @@ function gameLoop(timestamp = 0) {
       };
       try { window.lobbyData = lobbyData; } catch(_){}
 
-      try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
+      try{ debugLog('📊 APP lobbyUpdate handler: started=', !!(data && data.started), 'count=', data && data.count, 'id=', data && data.id); }catch(_){} try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
       try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
-        lobbyStarted = true;
+        try{ debugLog('🧩 lobbyScreen hidden (display=none)'); }catch(_){} lobbyStarted = true;
         return;
       }
       lobbyScreen.style.display = 'flex';
@@ -3060,7 +3060,7 @@ function gameLoop(timestamp = 0) {
     });
 
     lobbyJoin.onclick = () => {
-      if (!pseudoInput.value.trim()) {
+      try{ debugLog('🟢 JOIN handler A invoked (arrow)'); }catch(_){} if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
@@ -3079,7 +3079,7 @@ function gameLoop(timestamp = 0) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => { try{ debugLog('🚀 APP gameStarted handler START'); }catch(_){} myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -3097,7 +3097,7 @@ function gameLoop(timestamp = 0) {
       } catch(e) {}
     currentRound = data.round;
       lobbyScreen.style.display = 'none';
-      isDead = false; playerHealth = 100; myKills = 0;
+      try{ debugLog('🧩 lobbyScreen hidden (display=none)'); }catch(_){} isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
 	  structures = data.structures || null;
@@ -4346,7 +4346,7 @@ function renderManualPlayers() {
     if (lobbyJoin){
       if (lobbyJoin.onclick || lobbyJoin.__boundJoin) { /* skip duplicate bind */ }
       else { lobbyJoin.__boundJoin = true; lobbyJoin.onclick = function(){
-        if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
+        try{ debugLog('🟣 JOIN handler B invoked (function)'); }catch(_){} if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
@@ -4479,7 +4479,7 @@ function renderManualPlayers() {
 
 <script>
 (function(){
-  function setMenuUIHidden(on){ try { document.body.classList.toggle('menu-hide-ui', !!on); } catch(e){} }
+  function setMenuUIHidden(on){ try { document.body.classList.toggle('menu-hide-ui', !!on); } catch(e){} }; try{ debugLog('🎛 setMenuUIHidden(', !!on, ') → has?', document.body.classList.contains('menu-hide-ui')); }catch(_){}
   // Initially hide until game starts
   setMenuUIHidden(true);
   try {
@@ -5581,19 +5581,21 @@ function __alertPseudoTaken(){
         try {
           var origEmit = s.emit.bind(s);
           s.emit = function(ev){
+            
             var argv = Array.prototype.slice.call(arguments,1);
-            if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
-              debugLog('📤 emit', ev, argv);
-            }
+            // Throttle duplicate JOIN
             if (ev === 'setPseudoAndReady') {
               try {
                 var now = Date.now();
                 if (typeof window.__lastJoinEmit === 'number' && (now - window.__lastJoinEmit) < 900) {
                   debugWarn('⛔ duplicate setPseudoAndReady blocked within', (now - window.__lastJoinEmit), 'ms');
-                  return s; // swallow duplicate
+                  return s;
                 }
                 window.__lastJoinEmit = now;
               } catch(_){}
+            }
+            if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
+              debugLog('📤 emit', ev, argv);
             }
             return origEmit.apply(s, arguments);
           };

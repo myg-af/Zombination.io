@@ -25,7 +25,7 @@ const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['websocket'],
+  transports: ['polling','websocket'],
 });
 
 // --- Chat globals ---
@@ -1017,7 +1017,8 @@ function stopSpawning(game) {
 
 function launchGame(game, readyPlayersArr = null) {
   
-  // === ROBUST START FIX ===
+  try{ console.log('[LAUNCH] game', game && game.id, 'readyCount=', (game && game.lobby && Object.values(game.lobby.players||{}).filter(p=>p&&p.ready).length)); }catch(_){ }
+// === ROBUST START FIX ===
   // Some clients may reconnect right before the game starts, changing their socket.id.
   // To avoid spawning "ghost" players that don't match current connections, we reconstruct
   // the readyPlayers list from the CURRENT room membership intersected with lobby.ready.
@@ -1140,6 +1141,7 @@ try {
 }
 
 
+  try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
   io.to('lobby' + game.id).emit('gameStarted', {
     map: game.map,
     players: game.players,
