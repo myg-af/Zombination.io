@@ -25,7 +25,7 @@ const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['polling','websocket'],
+  transports: ['websocket'],
 });
 
 // --- Chat globals ---
@@ -1166,8 +1166,7 @@ io.on('connection', socket => {
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
-  console.log('[CONNECT]', socket.id, 'transport=', (socket.conn && socket.conn.transport && socket.conn.transport.name));
-  try { socket.conn && socket.conn.on('upgrade', (t) => console.log('[UPGRADE]', socket.id, '->', (t && t.name))); } catch(_) {}
+  console.log('[CONNECT]', socket.id);
 
   // Token-based reclaim is now handled via 'reclaimHost' event from client after connect.
   let __reclaimed = false;
@@ -1729,8 +1728,8 @@ socket.on('renamePseudo', (data, cb) => {
 
 
   
-  socket.on('disconnect', (reason) => {
-    console.log('[DISCONNECT]', socket.id, 'reason=', reason);
+  socket.on('disconnect', () => {
+    console.log('[DISCONNECT]', socket.id);
 
     // Try to resolve the game from mapping
     const mappedId = socketToGame[socket.id];
