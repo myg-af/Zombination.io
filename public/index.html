@@ -400,19 +400,6 @@ body.menu-hide-ui #fpsCounter,
 }</style>
 </head>
 <body>
-<script>
-  // Default UI scale: mobile x4, desktop x1 (can be overridden by setting window.__uiScale before)
-  (function(){
-    try {
-      if (typeof window.__uiScale === 'undefined' || window.__uiScale == null) {
-        var isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-        window.__uiScale = isMobile ? 4 : 1;
-      }
-      try { if (window.debugLog) debugLog('🔭 uiScale default =', window.__uiScale); } catch(_){}
-    } catch(e){}
-  })();
-</script>
-
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
 <div id="devPerfPanel" style="position:fixed;left:8px;top:30px;background:#000c;color:#fff;padding:6px 10px;border-radius:6px;font:12px monospace;z-index:10000;display:none;max-width:44vw;pointer-events:none;white-space:pre;line-height:1.2"></div>
 <canvas id="gameCanvas"></canvas>
@@ -577,7 +564,9 @@ body.menu-hide-ui #fpsCounter,
 <div id="versionBox"></div>
 <script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
-<script src="/socket.io/socket.io.js"></script>
+<script src="/socket.io/socket.io.js">
+window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
+</script>
 <script>
 // === Global orientation caches ===
 window.prevPlayerPos = {};
@@ -585,10 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({ transports: ['polling','websocket'] })
-
-
-;
+const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -638,22 +624,6 @@ socket.on("lobbyUpdate", (data) => {
   try {
     console.log("📥 [SOCKET] Reçu lobbyUpdate:", data);
     window.lobbyData = data;
-
-      try {
-        var pseudoEl = document.getElementById('pseudoInput');
-        var mePseudo = pseudoEl ? String(pseudoEl.value || '') : '';
-        if (mePseudo && data && data.players) {
-          for (var sid in data.players) {
-            var p = data.players[sid];
-            if (p && String(p.pseudo||'') === mePseudo) {
-              window.__candidateSid = sid;
-              try { localStorage.setItem('zombi_candidate_sid', sid); } catch(_){}
-              break;
-            }
-          }
-        }
-      } catch(_){}
-
     // Persist last known lobby id (only while lobby not yet started)
     if (data && !data.started && typeof data.id !== "undefined") {
       try { localStorage.setItem('zombi_last_gid', String(data.id)); } catch(_){}
@@ -669,8 +639,7 @@ if (lobbyJoin) {
   lobbyJoin.addEventListener("click", () => {
     const pseudo = pseudoInput.value;
     console.log("👤 Bouton JOIN cliqué. Pseudo saisi:", pseudo);
-    try{ var now=Date.now(); if (typeof window.__joinLockTs==='number' && (now-window.__joinLockTs)<1200){ debugWarn('⛔ join re-entry blocked (A)', (now-window.__joinLockTs),'ms'); return; } window.__joinLockTs=now; var btn=document.getElementById('lobbyJoin'); if(btn){ btn.disabled=true; btn.dataset.clicked='1'; setTimeout(function(){ try{btn.disabled=false;}catch(_){}} , 3000);} }catch(_){}
-if (!pseudo) return;
+    if (!pseudo) return;
   });
 }
 
@@ -1358,15 +1327,6 @@ socket.on('stateUpdate', (payload) => {
   if (payload.zombies)        zombies = payload.zombies;
   if (payload.bullets)        bullets = payload.bullets;
   if (payload.playersHealth)  playersHealth = Object.assign({}, playersHealth, payload.playersHealth);
-  try {
-    if (!__centeredOnPlayerOnce && myId && playersHealth && playersHealth[myId] && isNum(playersHealth[myId].x) && isNum(playersHealth[myId].y)) {
-      __centeredOnPlayerOnce = true;
-      __lastValidMyPos = {x: playersHealth[myId].x, y: playersHealth[myId].y};
-      centerCameraOn(playersHealth[myId].x, playersHealth[myId].y);
-      try { debugLog('🎯 centered on first valid myPos from stateUpdate'); } catch(_){}
-    }
-  } catch(_){}
-
   if (typeof payload.round === 'number') currentRound = payload.round;
 
   // Apply destroyed structures
@@ -1456,20 +1416,6 @@ socket.on('stateUpdate', (payload) => {
 	}, 10000); // Toutes les 8 secondes (tu peux mettre 10000 pour 10s)
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-
-// --- Debug/robust helpers ---
-let __centeredOnPlayerOnce = false;
-let __lastValidMyPos = {x:0, y:0};
-function isNum(v){ return typeof v === 'number' && isFinite(v); }
-function centerCameraOn(x, y){
-  try{
-    const viewW = canvas.width / renderScale;
-    const viewH = canvas.height / renderScale;
-    cameraX = Math.max(0, Math.min(x - viewW/2, MAP_COLS*TILE_SIZE - viewW));
-    cameraY = Math.max(0, Math.min(y - viewH/2, MAP_ROWS*TILE_SIZE - viewH));
-  }catch(e){}
-}
-
 
 // Shots direction cache (owner -> recent aim)
 // recentShootDir is provided globally earlier
@@ -1595,59 +1541,7 @@ function resetWaveCounters(total = 0) {
 	}
 
 	updateRenderScale();
-// Aggressive camera recenter for mobile landscape
-(function(){
-  function isLandscape(){ try { return window.matchMedia('(orientation: landscape)').matches; } catch(_){ return (window.innerWidth || 0) > (window.innerHeight || 0); } }
-  function isMobile(){ try { return (typeof isMobileDevice !== 'undefined' ? isMobileDevice : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)); } catch(_){ return false; } }
-  function recenterCameraMobileLandscape(retries){
-    try {
-      if (!isMobile() || !isLandscape()) return;
-      var id = (typeof myId !== 'undefined') ? myId : null;
-      var me = (id && typeof playersHealth !== 'undefined' && playersHealth && playersHealth[id]) ? playersHealth[id] : null;
-      if (!me){
-        if ((retries|0) > 0) setTimeout(function(){ recenterCameraMobileLandscape((retries|0)-1); }, 120);
-        return;
-      }
-      if (typeof centerCameraOn === 'function'){
-        centerCameraOn(me.x, me.y);
-        try { if (typeof updateCamera === 'function') updateCamera(); } catch(_){}
-        try { requestAnimationFrame(function(){ try{ if (typeof updateCamera === 'function') updateCamera(); }catch(_){} }); } catch(_){}
-      }
-    } catch(_){}
-  }
-  function refreshAndRecenter(){
-    try { if (typeof updateRenderScale === 'function') updateRenderScale(); } catch(_){}
-    recenterCameraMobileLandscape(15);
-  }
-  window.addEventListener('orientationchange', refreshAndRecenter, { passive: true });
-  window.addEventListener('resize', refreshAndRecenter, { passive: true });
-  // Prime once now to fix initial landscape entry
-  setTimeout(refreshAndRecenter, 50);
-  setTimeout(refreshAndRecenter, 250);
-  setTimeout(refreshAndRecenter, 500);
-})();
-
-    
-    // Keep renderScale in sync with orientation/resize and recenter camera on mobile landscape
-function recenterCameraMobileLandscape(retries){
-  try {
-    if (!(isMobileDevice && window.matchMedia('(orientation: landscape)').matches)) return;
-    if (typeof myId === 'undefined' || !myId) { if (retries>0) setTimeout(function(){ recenterCameraMobileLandscape(retries-1); }, 100); return; }
-    var me = (playersHealth && playersHealth[myId]) ? playersHealth[myId] : null;
-    if (!me || !me.alive) { if (retries>0) setTimeout(function(){ recenterCameraMobileLandscape(retries-1); }, 100); return; }
-    if (typeof centerCameraOn === 'function') centerCameraOn(me.x, me.y);
-    if (typeof updateCamera === 'function') { updateCamera(); requestAnimationFrame(function(){ try{ updateCamera(); }catch(_){} }); }
-  } catch(_) {}
-}
-window.addEventListener('orientationchange', function(){
-  try { updateRenderScale(); } catch(_){ }
-  recenterCameraMobileLandscape(10);
-}, { passive: true });
-window.addEventListener('resize', function(){
-  try { updateRenderScale(); } catch(_){ }
-  recenterCameraMobileLandscape(2);
-}, { passive: true });
-const TILE_SIZE = 40;
+    const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 420;
@@ -2990,42 +2884,6 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 }
 
 	function updateCamera() {
-// Force center camera on player for mobile landscape every frame (alt approach)
-function forceLandscapeCenter(){
-  try {
-    if (!(typeof isMobileDevice !== 'undefined' ? isMobileDevice : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))) return;
-    // Landscape check: fallback to comparing widths if matchMedia unsupported
-    var landscape = false;
-    try { landscape = window.matchMedia('(orientation: landscape)').matches; } catch(_){ landscape = (window.innerWidth||0) > (window.innerHeight||0); }
-    if (!landscape) return;
-    if (!myId || !playersHealth || !playersHealth[myId] || !playersHealth[myId].alive) return;
-    var p = playersHealth[myId];
-
-    // Compute view size using *CSS* viewport as primary source (not only canvas attrs)
-    var cssW = (canvas && canvas.clientWidth) ? canvas.clientWidth : (window.innerWidth||0);
-    var cssH = (canvas && canvas.clientHeight) ? canvas.clientHeight : (window.innerHeight||0);
-    var ratio = Math.max(1, (window.devicePixelRatio||1));
-    var viewW = Math.max(16, Math.floor((cssW * ratio) / renderScale));
-    var viewH = Math.max(16, Math.floor((cssH * ratio) / renderScale));
-
-    var targetX = p.x - viewW/2;
-    var targetY = p.y - viewH/2;
-
-    // Clamp within map bounds if possible
-    var maxX = MAP_COLS*TILE_SIZE - viewW;
-    var maxY = MAP_ROWS*TILE_SIZE - viewH;
-    if (isFinite(maxX) && isFinite(maxY)){
-      if (maxX >= 0) targetX = Math.max(0, Math.min(targetX, maxX));
-      if (maxY >= 0) targetY = Math.max(0, Math.min(targetY, maxY));
-    }
-
-    // Only adjust if delta is significant to avoid jitter
-    if (Math.abs((cameraX||0) - targetX) > 0.5 || Math.abs((cameraY||0) - targetY) > 0.5){
-      cameraX = targetX;
-      cameraY = targetY;
-    }
-  } catch(_){}
-}
       const viewW = canvas.width / renderScale;
       const viewH = canvas.height / renderScale;
       if (isSpectator) {
@@ -3151,7 +3009,6 @@ function gameLoop(timestamp = 0) {
 
   update(deltaTime);
   updateCamera();
-  try { forceLandscapeCenter(); } catch(_){ }
 
   // Remet la transform, clear, puis applique le scale (zoom)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -3228,13 +3085,6 @@ function gameLoop(timestamp = 0) {
       MAP_ROWS = map.length;
       MAP_COLS = map[0].length;
       playersHealth = data.players;
-      try {
-        var me = (playersHealth && myId) ? playersHealth[myId] : null;
-        var ok = me && isNum(me.x) && isNum(me.y);
-        if (ok) { __lastValidMyPos = {x: me.x, y: me.y}; centerCameraOn(me.x, me.y); __centeredOnPlayerOnce = true; }
-        try { debugLog('🎯 gameStarted mePos=', ok ? (me.x+','+me.y) : 'n/a', 'centered=', !!ok); } catch(_){}
-      } catch(_){}
-
       
       // Guard: if my player exists, center camera immediately; else keep default until first update
       try {
@@ -4708,8 +4558,8 @@ function renderManualPlayers() {
   </div>
   <div id="chatMessages" aria-live="polite"></div>
   <div id="chatInputRow">
-    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" autocomplete="off" autocorrect="off" autocapitalize="off" enterkeyhint="send" inputmode="text">
-    <button id="chatSend" type="submit">Send</button>
+    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" />
+    <button id="chatSend">Send</button>
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
@@ -4789,7 +4639,7 @@ function renderManualPlayers() {
       positionCollapsedBtn();
       try { localStorage.setItem('chatCollapsed','1'); } catch(_){}
     } else {
-      if (panel) panel.style.display = 'flex';
+      if (panel) if (panel && panel.style) panel.style.display = 'flex';
       if (collapsedBtn) collapsedBtn.style.display = 'none';
       if (collapsedBtn) collapsedBtn.classList.remove('notify');
       positionCollapsedBtn();
@@ -4803,7 +4653,7 @@ function renderManualPlayers() {
     try{
       chatSeen[ch] = new Set((chatBuf[ch]||[]).map(m => ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000))));
       const arr = (chatBuf[ch]||[]);
-      list.innerHTML = '';
+      if (list) list.innerHTML = '';
       for (let i=0;i<arr.length;i++){
         const msg = arr[i];
         const name = msg && msg.pseudo ? String(msg.pseudo) : 'player';
@@ -4815,9 +4665,9 @@ function renderManualPlayers() {
         nameSpan.textContent = name + ':';
         div.appendChild(nameSpan);
         div.appendChild(document.createTextNode(text));
-        list.appendChild(div);
+        if (list) { list.appendChild(div); }
       }
-      list.scrollTop = list.scrollHeight + 1000;
+      if (list) { list.scrollTop = list.scrollHeight + 1000; }
     }catch(e){}
   }
 
@@ -4841,9 +4691,9 @@ function renderManualPlayers() {
         nameSpan.textContent = name + ':';
         div.appendChild(nameSpan);
         div.appendChild(document.createTextNode(text));
-        list.appendChild(div);
-        list.scrollTop = list.scrollHeight + 1000;
-        while (list.childElementCount > 200) list.removeChild(list.firstElementChild);
+        if (list) { list.appendChild(div); }
+        if (list) { list.scrollTop = list.scrollHeight + 1000; }
+        if (list) { while (list.childElementCount > 200) list.removeChild(list.firstElementChild); }
       }
     }catch(e){}
   }
@@ -4851,12 +4701,12 @@ function renderManualPlayers() {
   function selectChannel(ch){
     if (ch !== 'world' && ch !== 'lobby') ch = 'world';
     if (collapsedBtn && ch === 'lobby') { try { collapsedBtn.classList.remove('notify'); } catch(_){} }
-    if (tabLobby && ch === 'lobby') { try { tabLobby.classList.remove('notify'); } catch(_){} }
-    if (tabWorld && ch === 'world') { try { tabWorld.classList.remove('notify'); } catch(_){} }
+    if (tabLobby && ch === 'lobby') { try { if (tabLobby) tabLobby.classList.remove('notify'); } catch(_){} }
+    if (tabWorld && ch === 'world') { try { if (tabWorld) tabWorld.classList.remove('notify'); } catch(_){} }
     if (ch === currentChannel) return;
     currentChannel = ch;
-    tabWorld.classList.toggle('active', ch === 'world');
-    tabLobby.classList.toggle('active', ch === 'lobby');
+    if (tabWorld) tabWorld.classList.toggle('active', ch === 'world');
+    if (tabLobby) tabLobby.classList.toggle('active', ch === 'lobby');
     renderChannel(currentChannel);
     pendingHistoryFor = ch;
     try { if (window.socket) window.socket.emit('chat:join', { channel: ch }); } catch(_){ }
@@ -4867,85 +4717,24 @@ function renderManualPlayers() {
 
   // Send
   function send(){
-  try {
-    if (!window.socket || !window.socket.connected) return;
-    const now = Date.now();
-    if (now - lastSent < COOLDOWN_MS) return;
-    let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
-    if (!t) return;
-    if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
-    window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
-    lastSent = now;
-    input.value = '';
-  } catch(e){}
-}
-  // Prevent accidental form submissions inside chat (mobile safety)
-document.addEventListener('submit', function(ev){
-  try {
-    var el = ev.target;
-    if (el && el.closest && el.closest('#chatPanel')) {
-      ev.preventDefault(); ev.stopPropagation();
-    }
-  } catch(_){}
-}, true);
-// Ultra-robust capture for chat send interactions (change of approach)
-(function(){
-  try {
-    if (document.__chatCaptureBound) return;
-    document.__chatCaptureBound = true;
-    var lastTap = 0;
-    function maybeSendFrom(target){
-      try {
-        var btn = document.getElementById('chatSend');
-        var inp = document.getElementById('chatInput');
-        if (!btn || !inp) return false;
-        if (target && !target.closest) return false;
-        var hit = target.closest('#chatSend');
-        if (!hit) return false;
-        var now = Date.now();
-        if (now - lastTap < 150) return true; // throttle duplicate events
-        lastTap = now;
-        try { send(); } catch(_){}
-        return true;
-      } catch(_){ return false; }
-    }
-    ['pointerdown','pointerup','touchstart','touchend','click'].forEach(function(type){
-      document.addEventListener(type, function(ev){
-        try {
-          if (maybeSendFrom(ev.target)) { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){ } }
-        } catch(_){}
-      }, true); // capture to beat any interfering listeners
-    });
-  } catch(_){}
-})();
-// Robust chat control bindings (mobile-safe)
-(function(){
-  if (!sendBtn || !input) return;
-  if (sendBtn.__bound) return;
-  sendBtn.__bound = true;
-
-  const handler = function(ev){
-    try { ev.preventDefault(); ev.stopPropagation(); } catch(_){}
-    try { send(); } catch(_){}
-  };
-
-  // Pointer-first (covers mouse/touch/stylus), with safe fallbacks
-  ['pointerup','click','touchend'].forEach(function(type){
-    try { sendBtn.addEventListener(type, handler, { passive: false }); } catch(_){}
+    try {
+      if (!window.socket || !window.socket.connected) return;
+      const now = Date.now();
+      if (now - lastSent < COOLDOWN_MS) return;
+      let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
+      if (!t) return;
+      if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
+      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
+      lastSent = now;
+      input.value = '';
+    } catch(e){}
+  }
+  if (sendBtn) sendBtn.addEventListener('click', send);
+  if (input) input.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter'){ ev.preventDefault(); send(); }
   });
 
-  try { sendBtn.disabled = false; } catch(_){}
-
-  input.addEventListener('keydown', function(ev){
-    if (ev.key === 'Enter') { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){}
-      try{ send(); }catch(_){}
-    }
-  });
-  input.addEventListener('keypress', function(ev){
-    if (ev.key === 'Enter') { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
-  });
-})();
-// Socket bindings
+  // Socket bindings
   function initSocketBindings(){
     try {
       if (!window.socket) return false;
@@ -4953,7 +4742,7 @@ document.addEventListener('submit', function(ev){
       if (__chatBoundTo === window.socket) return true;
       __chatBoundTo = window.socket;
 
-      panel.style.display = 'flex';
+      if (panel && panel.style) panel.style.display = 'flex';
       window.socket.emit('chat:join', { channel: currentChannel });
 
       if (window.socket.off){
@@ -5675,304 +5464,5 @@ function __alertPseudoTaken(){
 })();
 </script>
 
-
-  <!-- Visual Debug Console -->
-  <style id="debugConsoleStyles">
-    #debugConsole { position: fixed; left: 0; right: 0; bottom: 0; max-height: 42vh; z-index: 2147483647; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; background: rgba(0,0,0,0.75); color: #c7f284; overflow-y:auto; padding:6px 8px; display:none; box-shadow: 0 -4px 12px rgba(0,0,0,0.35); }
-    #debugConsole .line { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 1px 0; }
-    #debugConsoleBar { position: fixed; bottom: 8px; right: 8px; z-index: 2147483647; display:flex; gap:6px; }
-    #debugToggle, #debugClear, #debugCopy { font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.65); color: #fff; backdrop-filter: blur(4px); }
-    #debugToggle:active, #debugClear:active, #debugCopy:active { transform: translateY(1px); }
-    @media (hover:hover) { #debugToggle:hover, #debugClear:hover, #debugCopy:hover { background: rgba(0,0,0,0.8); } }
-  </style>
-  <div id="debugConsole" aria-label="Debug console (tap to scroll)"></div>
-  <div id="debugConsoleBar" aria-hidden="false">
-    <button id="debugToggle" type="button">🐛 Log</button>
-    <button id="debugClear" type="button">Clear</button>
-    <button id="debugCopy" type="button">Copy</button>
-  </div>
-  <script>
-  (function(){
-    var dc = document.getElementById('debugConsole');
-    var toggle = document.getElementById('debugToggle');
-    var clearBtn = document.getElementById('debugClear');
-    var copyBtn = document.getElementById('debugCopy');
-    var MAX_LINES = 400;
-    function fmtArg(a){
-      try {
-        if (typeof a === 'string') return a;
-        if (a === null) return 'null';
-        if (typeof a === 'undefined') return 'undefined';
-        if (a instanceof Error) return a.name + ': ' + (a.message || String(a));
-        var s = JSON.stringify(a);
-        return s;
-      } catch(e){ try { return String(a); } catch(_) { return '[unprintable]'; } }
-    }
-    function ts(){
-      var d = new Date();
-      var ms = String(d.getMilliseconds()).padStart(3,'0');
-      return d.toTimeString().slice(0,8) + '.' + ms;
-    }
-    function write(kind, args){
-      try {
-        var line = document.createElement('div');
-        line.className = 'line';
-        var prefix = kind ? ('['+kind+'] ') : '';
-        var text = '['+ts()+'] ' + prefix + (args && args.length ? args.map(fmtArg).join(' ') : '');
-        line.textContent = text;
-        dc.appendChild(line);
-        if (dc.childElementCount > MAX_LINES) dc.removeChild(dc.firstChild);
-        dc.scrollTop = dc.scrollHeight;
-      } catch(e){ /* ignore */ }
-    }
-    window.debugLog = function(){ try { console.log.apply(console, arguments); } catch(_){} write('LOG', Array.prototype.slice.call(arguments)); };
-    window.debugWarn = function(){ try { console.warn.apply(console, arguments); } catch(_){} write('WARN', Array.prototype.slice.call(arguments)); };
-    window.debugError = function(){ try { console.error.apply(console, arguments); } catch(_){} write('ERR', Array.prototype.slice.call(arguments)); };
-    if (toggle) toggle.addEventListener('click', function(){ dc.style.display = (dc.style.display === 'block') ? 'none' : 'block'; });
-    if (clearBtn) clearBtn.addEventListener('click', function(){ dc.innerHTML = ''; });
-    if (copyBtn) copyBtn.addEventListener('click', async function(){
-      try {
-        var parts = [];
-        try { for (var i=0;i<dc.children.length;i++){ parts.push(dc.children[i].textContent); } } catch(_){ parts.push(dc.textContent || ''); }
-        var text = parts.join('\n');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          var ta = document.createElement('textarea');
-          ta.value = text; ta.style.position='fixed'; ta.style.opacity='0'; ta.style.left='-9999px';
-          document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand('copy'); } catch(_) {}
-          document.body.removeChild(ta);
-        }
-        var old = copyBtn.textContent; copyBtn.textContent = 'Copied!'; copyBtn.disabled = true;
-        debugLog('📋 copied', dc.children.length || 0, 'line(s) to clipboard');
-        setTimeout(function(){ copyBtn.textContent = 'Copy'; copyBtn.disabled = false; }, 1400);
-      } catch(e){ debugError('copy failed', e && (e.message || e)); }
-    });
-    // Mirror console.* into overlay
-    (function(){
-      if (window.__consoleMirror) return;
-      var orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
-      function mirror(kind, args){ write(kind, Array.prototype.slice.call(args)); }
-      console.log = function(){ try { orig.log.apply(console, arguments); } catch(_){} mirror('LOG', arguments); };
-      console.info = function(){ try { orig.info.apply(console, arguments); } catch(_){} mirror('INFO', arguments); };
-      console.warn = function(){ try { orig.warn.apply(console, arguments); } catch(_){} mirror('WARN', arguments); };
-      console.error = function(){ try { orig.error.apply(console, arguments); } catch(_){} mirror('ERR', arguments); };
-      window.__consoleMirror = true;
-    })();
-  })();
-  </script>
-  <!-- /Visual Debug Console -->
-
-
-<script>
-(function(){
-  if (window.__forceGameEnterInstalled) return;
-  window.__forceGameEnterInstalled = true;
-  window.forceGameEnter = function(){
-    try {
-      window.__ingame = true;
-      var lobby = document.getElementById('lobbyScreen');
-      if (lobby) { lobby.style.setProperty('display','none','important'); }
-      try { var m1 = document.getElementById('manualLobbyPanel'); if (m1) m1.style.display = 'none'; } catch(_){}
-      try { var m2 = document.getElementById('joinLobbyPanel'); if (m2) m2.style.display = 'none'; } catch(_){}
-      try { document.body.classList.remove('menu-hide-ui'); } catch(_){}
-      var canvas = document.getElementById('gameCanvas');
-      if (canvas) { canvas.style.display='block'; canvas.style.visibility='visible'; canvas.style.opacity='1'; }
-      try { var btn = document.getElementById('lobbyJoin'); if (btn) { btn.disabled = true; btn.onclick = null; btn.dataset.clicked='1'; } } catch(_){}
-      if (!window.__gameLoopStarted && typeof window.gameLoop === 'function') {
-        window.__gameLoopStarted = true;
-        debugLog('🎯 forceGameEnter: starting gameLoop()');
-        setTimeout(function(){ try { window.gameLoop(); } catch(e){ debugError('gameLoop start error', e && e.message); } }, 120);
-      } else {
-        debugLog('🎯 forceGameEnter: gameLoop already started');
-      }
-    } catch(e) { debugError('forceGameEnter error', e && (e.message||e)); }
-  };
-})();
-</script>
-
-
-<script>
-// NON_BLOCKING_GAMESTARTED_HELPER
-(function(){
-  try {
-    socket.on('gameStarted', function(data){
-      try {
-        // Try to fix myId if not found (solo or from candidate sid)
-        if (typeof playersHealth !== 'undefined' && data && data.players) {
-          try { playersHealth = data.players; } catch(_){}
-          try {
-            var ok = (typeof myId !== 'undefined') && playersHealth && playersHealth[myId];
-            if (!ok) {
-              var cand = window.__candidateSid || (function(){ try { return localStorage.getItem('zombi_candidate_sid'); } catch(_){ return null; } })();
-              if (cand && playersHealth[cand]) { myId = cand; debugWarn('🧭 myId fallback to candidateSid:', cand); ok = true; }
-              if (!ok) {
-                var keys = Object.keys(playersHealth||{});
-                if (keys.length === 1) { myId = keys[0]; debugWarn('🧭 myId fallback to sole id:', myId); ok = true; }
-              }
-            }
-            debugLog('🧪 postStart check: myId=', myId, 'hasMine=', !!(playersHealth && myId && playersHealth[myId]), 'keys=', playersHealth ? Object.keys(playersHealth).length : 'n/a');
-          } catch(e){ debugWarn('postStart myId check error', e && e.message); }
-        }
-        if (typeof forceGameEnter === 'function') forceGameEnter();
-      } catch(e){ debugError('postStart handler error', e && e.message); }
-    });
-  } catch(e){}
-})();
-</script>
-
-<script>
-(function(){
-  function attachSocketDebug(s){
-    try {
-      if (!s || s.__debugAttached) return;
-      s.__debugAttached = true;
-      debugLog('📡 trying connect to server');
-      s.on('connect', function(){
-        try { debugLog('✅ connect', 'socket.id=', s.id, 'transport=', s.io && s.io.engine && s.io.engine.transport && s.io.engine.transport.name); } catch(_){}
-      });
-      try {
-        if (s.io && s.io.engine && s.io.engine.on) {
-          s.io.engine.on('upgrade', function(tr){ debugLog('⤴️ upgrade →', tr && tr.name); });
-        }
-      } catch(_){}
-      s.on('connect_error', function(err){ debugError('connect_error', err && (err.message || err)); });
-      if (s.io && s.io.on) {
-        s.io.on('reconnect_attempt', function(n){ debugWarn('reconnect_attempt', n, 'transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
-        s.io.on('reconnect', function(n){ debugLog('reconnect OK after', n, 'attempt(s), transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
-        s.io.on('reconnect_error', function(err){ debugError('reconnect_error', err && (err.message || err)); });
-        s.io.on('reconnect_failed', function(){ debugError('reconnect_failed'); });
-      }
-      s.on('disconnect', function(reason){ debugWarn('disconnect', reason); });
-      s.on('error', function(err){ debugError('socket error', err && (err.message || err)); });
-      // Wrap emit for key events with throttle for setPseudoAndReady
-      try {
-        var origEmit = s.emit.bind(s);
-        s.emit = function(ev){
-          var argv = Array.prototype.slice.call(arguments,1);
-          if (ev === 'setPseudoAndReady') {
-            try {
-              var now = Date.now();
-              if (typeof window.__lastJoinEmit === 'number' && (now - window.__lastJoinEmit) < 900) {
-                debugWarn('⛔ duplicate setPseudoAndReady blocked within', (now - window.__lastJoinEmit), 'ms');
-                return s;
-              }
-              window.__lastJoinEmit = now;
-            } catch(_){}
-          }
-          if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
-            debugLog('📤 emit', ev, argv);
-          }
-          return origEmit.apply(s, arguments);
-        };
-      } catch(_){}
-      // Incoming markers
-      s.on('gameStarted', function(payload){
-        try {
-          var pcount = payload && payload.players ? Object.keys(payload.players).length : 'n/a';
-          debugLog('🎮 gameStarted received', '; players=', pcount);
-        } catch(_){}
-      });
-      s.on('lobbyUpdate', function(data){
-        try { debugLog('📥 lobbyUpdate id=', data && data.id, 'started=', data && data.started); } catch(_){}
-      });
-    } catch(e){ debugWarn('attachSocketDebug error', String(e)); }
-  }
-  try { attachSocketDebug(window.socket); } catch(_){}
-  // Patch global io() to auto-attach for future sockets
-  (function(){
-    if (!window.io || window.__io_patched_for_debug) return;
-    var originalIO = window.io;
-    function patchedIO(){
-      var s = originalIO.apply(this, arguments);
-      try { attachSocketDebug(s); } catch(_){}
-      return s;
-    }
-    try { for (var k in originalIO) { patchedIO[k] = originalIO[k]; } } catch(_){}
-    window.io = patchedIO; window.__io_patched_for_debug = true;
-  })();
-})();
-</script>
-
-  <div id="renderProbeBadge" style="position:fixed;left:8px;top:8px;z-index:2147483646;background:rgba(0,0,0,0.5);color:#fff;font:11px/1.3 ui-monospace,monospace;padding:4px 6px;border-radius:6px;display:none">🧪 render-probe</div>
-
-<script>
-(function(){
-  function topmostAtCenter(){
-    try {
-      var el = document.elementFromPoint(Math.floor(window.innerWidth/2), Math.floor(window.innerHeight/2));
-      if (!el) { debugWarn('🧱 topmost@center = null'); return; }
-      var id = el.id ? ('#'+el.id) : '';
-      var cls = el.className ? ('.'+String(el.className).replace(/\s+/g,'.')) : '';
-      debugLog('🧱 topmost@center =', el.tagName+id+cls);
-    } catch(e){ try{ debugError('topmost error', e && (e.message||e)); }catch(_){ } }
-  }
-  function ensureCanvasSize(canvas){
-    try {
-      if (!canvas) return;
-      var ratio = Math.max(1, (window.devicePixelRatio || 1));
-      var uiScale = (typeof window.__uiScale === 'number' && window.__uiScale > 0) ? window.__uiScale : 1;
-      var cssW = canvas.clientWidth || 0;
-      var cssH = canvas.clientHeight || 0;
-      if (cssW === 0 || cssH === 0) { cssW = window.innerWidth || 0; cssH = window.innerHeight || 0; }
-      var targetW = Math.max(16, Math.floor((cssW * ratio) / uiScale));
-      var targetH = Math.max(16, Math.floor((cssH * ratio) / uiScale));
-      if (canvas.width !== targetW || canvas.height !== targetH) {
-        canvas.style.width = cssW + 'px';
-        canvas.style.height = cssH + 'px';
-        canvas.width = targetW; canvas.height = targetH;
-        debugLog('📐 canvas resized attr →', targetW, 'x', targetH, '(css=', cssW, 'x', cssH, 'ratio=', ratio, 'uiScale=', uiScale, ')');
-      }
-    } catch(e){ try{ debugWarn('ensureCanvasSize error', e && (e.message||e)); }catch(_){ } }
-  }
-  function drawMarker(canvas){
-    try {
-      if (!canvas) { debugWarn('drawMarker: no canvas'); return false; }
-      var ctx = canvas.getContext && canvas.getContext('2d');
-      if (!ctx) { debugWarn('drawMarker: 2d ctx unavailable (maybe WebGL-only canvas)'); return false; }
-      ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = '#00ff88'; ctx.fillRect(2,2,8,8);
-      ctx.fillStyle = '#ffffff'; ctx.font = '10px ui-monospace,monospace'; ctx.fillText('tick', 14, 10);
-      ctx.restore(); return true;
-    } catch(e){ try{ debugError('drawMarker error', e && (e.message||e)); }catch(_){ } return false; }
-  }
-  function readOnePixel(canvas){
-    try {
-      var ctx = canvas.getContext && canvas.getContext('2d'); if (!ctx) return null;
-      var d = ctx.getImageData(3,3,1,1).data; var rgba = [d[0],d[1],d[2],d[3]];
-      debugLog('🧬 pixel@3,3 =', rgba.join(',')); return rgba;
-    } catch(e){ try{ debugWarn('readOnePixel error', e && (e.message||e)); }catch(_){ } return null; }
-  }
-  window.ensureCanvasReady = function(){
-    try {
-      var canvas = document.getElementById('gameCanvas');
-      if (!canvas) { debugWarn('🎯 no #gameCanvas'); return; }
-      canvas.style.display='block'; canvas.style.visibility='visible'; canvas.style.opacity='1';
-      ensureCanvasSize(canvas);
-      // Normalize for devicePixelRatio so 1 unit = 1 CSS pixel
-      try {
-        var ratio = Math.max(1, (window.devicePixelRatio || 1));
-      var uiScale = (typeof window.__uiScale === 'number' && window.__uiScale > 0) ? window.__uiScale : 1;
-        canvas.style.width = (canvas.clientWidth || window.innerWidth || 0) + 'px';
-        canvas.style.height = (canvas.clientHeight || window.innerHeight || 0) + 'px';
-        var ctx2d = canvas.getContext && canvas.getContext('2d');
-        if (ctx2d) { ctx2d.setTransform(ratio,0,0,ratio,0,0); debugLog('🔎 DPR applied to 2D context:', ratio); }
-      } catch(_) {}
-
-      topmostAtCenter();
-      var ok = drawMarker(canvas); if (ok) { readOnePixel(canvas); }
-      var badge = document.getElementById('renderProbeBadge'); 
-      if (badge) { badge.style.display='block'; setTimeout(function(){ try{ badge.style.display='none'; }catch(_){ } }, 2000); }
-    } catch(e){ try{ debugError('ensureCanvasReady error', e && (e.message||e)); }catch(_){ } }
-  };
-  window.addEventListener('orientationchange', function(){ try{ ensureCanvasReady(); }catch(_){ } });
-  window.addEventListener('resize', function(){ try{ ensureCanvasReady(); }catch(_){ } });
-  setTimeout(function(){ try{ ensureCanvasReady(); }catch(_){ } }, 500);
-})();
-</script>
-
-<script>
-// GAMESTARTED_CANVASREADY_HELPER
-try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
-</script>
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
