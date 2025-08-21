@@ -25,7 +25,8 @@ const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['websocket', 'polling'],
+  transports: ['polling','websocket'],
+  allowEIO3: true,
 });
 
 // --- Chat globals ---
