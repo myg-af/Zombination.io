@@ -1595,7 +1595,27 @@ function resetWaveCounters(total = 0) {
 	}
 
 	updateRenderScale();
-    const TILE_SIZE = 40;
+    
+    // Keep renderScale in sync with orientation/resize and recenter camera on mobile landscape
+    window.addEventListener('orientationchange', function(){
+      try { updateRenderScale(); } catch(_){ }
+      try {
+        if (isMobileDevice && window.matchMedia('(orientation: landscape)').matches) {
+          var me = (typeof playersHealth!=='undefined' && playersHealth && playersHealth[myId]) ? playersHealth[myId] : null;
+          if (me && typeof centerCameraOn === 'function') centerCameraOn(me.x, me.y);
+        }
+      } catch(_){}
+    }, { passive: true });
+    window.addEventListener('resize', function(){
+      try { updateRenderScale(); } catch(_){ }
+      try {
+        if (isMobileDevice && window.matchMedia('(orientation: landscape)').matches) {
+          var me = (typeof playersHealth!=='undefined' && playersHealth && playersHealth[myId]) ? playersHealth[myId] : null;
+          if (me && typeof centerCameraOn === 'function') centerCameraOn(me.x, me.y);
+        }
+      } catch(_){}
+    }, { passive: true });
+const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 420;
@@ -4619,8 +4639,8 @@ function renderManualPlayers() {
   </div>
   <div id="chatMessages" aria-live="polite"></div>
   <div id="chatInputRow">
-    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" />
-    <button id="chatSend">Send</button>
+    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" / autocomplete="off" autocorrect="off" autocapitalize="off" enterkeyhint="send" inputmode="text">
+    <button id="chatSend" type="button">Send</button>
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
@@ -4785,15 +4805,30 @@ function renderManualPlayers() {
       let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
       if (!t) return;
       if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
-      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
+      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') }
+  // Prevent any form submissions inside chat from navigating/reloading (mobile safety)
+  document.addEventListener('submit', function(ev){
+    try {
+      var el = ev.target;
+      if (el && el.closest && el.closest('#chatPanel')) { ev.preventDefault(); ev.stopPropagation(); }
+    } catch(_) {}
+  }, true);
+);
       lastSent = now;
       input.value = '';
     } catch(e){}
   }
-  if (sendBtn) sendBtn.addEventListener('click', send);
+  if (sendBtn) {
+    sendBtn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); send(); }, { passive: false });
+    sendBtn.addEventListener('touchend', function(ev){ ev.preventDefault(); ev.stopPropagation(); send(); }, { passive: false });
+}
+
   if (input) input.addEventListener('keydown', function(ev){
-    if (ev.key === 'Enter'){ ev.preventDefault(); send(); }
-  });
+    if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); send(); }
+});
+if (input) input.addEventListener('keypress', function(ev){
+    if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); }
+});
 
   // Socket bindings
   function initSocketBindings(){
