@@ -1177,6 +1177,72 @@ io.on('connection', socket => {
     socketToGame[socket.id] = game.id;
     socket.join('lobby' + game.id);
   }
+
+  // Allow non-host players to reclaim their previous lobby seat after a reconnect (by gameId + pseudo)
+  socket.on('reclaimPlayer', (payload, cb) => {
+    try {
+      payload = payload || {};
+      const targetId = Number(payload.gameId) || 0;
+      let pseudo = String(payload.pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+      if (!targetId || !pseudo) { try { if (cb) cb({ ok:false, reason:'invalid' }); } catch(_){} return; }
+      const currentGid = socketToGame[socket.id];
+      const target = activeGames.find(g => g && g.id === targetId);
+      if (!target || !target.lobby || target.lobby.started) { try { if (cb) cb({ ok:false, reason:'not_joinable' }); } catch(_){} return; }
+
+      // Find a stale roster entry matching this pseudo (socket no longer connected)
+      const roster = (target.lobby && target.lobby.players) || {};
+      const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+      let oldSid = null;
+      for (const sid in roster) {
+        const entry = roster[sid];
+        if (!entry) continue;
+        if (String(entry.pseudo || '') === pseudo) {
+          const alive = socketsMap && socketsMap.get(sid);
+          if (!alive) { oldSid = sid; break; }
+        }
+      }
+      if (!oldSid) { try { if (cb) cb({ ok:false, reason:'no_match' }); } catch(_){} return; }
+
+      // Move the roster entry to this new socket id
+      try {
+        roster[socket.id] = roster[oldSid];
+        delete roster[oldSid];
+      } catch(_) {}
+
+      // Move the socket to the right room and update mapping
+      try {
+        const prev = activeGames.find(g => g && g.id === currentGid);
+        if (prev && prev.id !== target.id) { try { socket.leave('lobby' + prev.id); } catch(_){} }
+      } catch(_) {}
+      try { socket.join('lobby' + target.id); } catch(_) {}
+      socketToGame[socket.id] = target.id;
+
+      broadcastLobby(target);
+      try { if (cb) cb({ ok:true, gameId: target.id }); } catch(_) {}
+    } catch(e) {
+      try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
+    }
+  });
+
+  // Client asked for an explicit lobby state snapshot
+  socket.on('requestLobbyState', () => {
+    try {
+      const gid = socketToGame[socket.id];
+      const g = activeGames.find(x => x && x.id === gid);
+      if (g) {
+        io.to(socket.id).emit('lobbyUpdate', {
+          id: g.id,
+          players: g.lobby.players,
+          count: Object.keys(g.lobby.players||{}).length,
+          max: MAX_PLAYERS,
+          timeLeft: g.lobby.timeLeft,
+          started: g.lobby.started,
+          manual: !!(g.lobby && g.lobby.manual),
+          hostId: (g.lobby && g.lobby.hostId) || null,
+        });
+      }
+    } catch(_) {}
+  });
 socket.on('clientPing', () => {});
 
   
@@ -1975,19 +2041,8 @@ socket.on('killAllZombies', () => {
   game._zombieCount = 0;
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
+});
 
-// Fallback manual-lobby host cleanup on disconnect (robustness)
-socket.on('disconnect', () => {
-  try {
-    const ownedManuals = (activeGames || []).filter(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id);
-    for (const game of ownedManuals) {
-      try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_){}
-    }
-  } catch (e) {
-    console.error('[disconnect fallback] error', e);
-  }
-});
-});
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
   const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion

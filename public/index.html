@@ -594,6 +594,18 @@ socket.on("connect", () => {
         try { console.log('[reclaimHost]', res); } catch(_) {}
       });
     }
+
+  // Try to reclaim previous lobby seat (non-host) if we have a saved lobby id + pseudo
+  try {
+    var __last_gid = 0, __last_pseudo = '';
+    try { __last_gid = Number(localStorage.getItem('zombi_last_gid') || '0'); } catch(_){}
+    try { __last_pseudo = String(localStorage.getItem('zombi_last_pseudo') || localStorage.getItem('zombi_pseudo') || '').trim(); } catch(_){}
+    if (__last_gid && __last_pseudo) {
+      socket.emit('reclaimPlayer', { gameId: __last_gid, pseudo: __last_pseudo }, function(res){
+        try { console.log('[reclaimPlayer]', res); } catch(_){}
+      });
+    }
+  } catch(_) {}
   } catch (_) {}
 });
 socket.on("disconnect", (reason) => {
@@ -607,9 +619,18 @@ window.addEventListener('error', function(e){ try { console.error('Global error:
 window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
 
 // LOBBY STATE LOGS
+
 socket.on("lobbyUpdate", (data) => {
-  console.log("📥 [SOCKET] Reçu lobbyUpdate:", data);
+  try {
+    console.log("📥 [SOCKET] Reçu lobbyUpdate:", data);
+    window.lobbyData = data;
+    // Persist last known lobby id (only while lobby not yet started)
+    if (data && !data.started && typeof data.id !== "undefined") {
+      try { localStorage.setItem('zombi_last_gid', String(data.id)); } catch(_){}
+    }
+  } catch (e) { try { console.error(e); } catch(_){} }
 });
+
 socket.emit("requestLobbyState");
 console.log("📤 [SOCKET] Emit requestLobbyState");
 
@@ -3045,7 +3066,7 @@ function gameLoop(timestamp = 0) {
         setTimeout(() => pseudoInput.style.background = "", 600);
         return;
       }
-      socket.emit('setPseudoAndReady', pseudoInput.value.trim());lobbyJoined = true;
+      socket.emit('setPseudoAndReady', pseudoInput.value.trim()); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
       window.lobbyJoined = true;
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
@@ -4328,7 +4349,7 @@ function renderManualPlayers() {
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
-        socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); 
+        socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); try { localStorage.setItem('zombi_last_pseudo', String((pseudoInput && pseudoInput.value || '').trim())); } catch(_) {}
         window.lobbyJoined = true;
         try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
