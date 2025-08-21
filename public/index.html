@@ -3082,7 +3082,7 @@ try{ debugLog('📊 APP lobbyUpdate handler: started=', !!(data && data.started)
         window.__joinLockTs = now; 
       } catch(_){}
       try { var btn = document.getElementById('lobbyJoin'); if (btn) { btn.disabled = true; btn.dataset.clicked = '1'; } } catch(_){} 
-try{ debugLog('🟢 JOIN handler A invoked (arrow)'); }catch(_){} if (!pseudoInput.value.trim()) {
+if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
@@ -3102,7 +3102,13 @@ try{ debugLog('🟢 JOIN handler A invoked (arrow)'); }catch(_){} if (!pseudoInp
     };
 
     socket.on('gameStarted', (data) => { 
+      
       try {
+        if (window.__gameStartHandled) { try{ if (window.debugWarn) debugWarn('🚫 duplicate gameStarted ignored'); }catch(_){ } return; }
+        window.__gameStartHandled = true;
+      } catch(_){}
+      try { if (window.forceGameEnter) window.forceGameEnter(); } catch(_) {}
+try {
         if (window.__gameStartHandled) { try{ debugWarn('🚫 duplicate gameStarted ignored'); }catch(_){ } return; }
         window.__gameStartHandled = true;
       } catch(_){}
@@ -4397,7 +4403,7 @@ function renderManualPlayers() {
           window.__joinLockTs = now; 
         } catch(_){}
         try { var btn = document.getElementById('lobbyJoin'); if (btn) { btn.disabled = true; btn.dataset.clicked = '1'; } } catch(_){} 
-try{ debugLog('🟣 JOIN handler B invoked (function)'); }catch(_){} if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
+if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
@@ -5694,6 +5700,46 @@ function __alertPseudoTaken(){
   })();
   </script>
   <!-- /Visual Debug Console -->
+
+
+<script>
+// ---- Force game entry helper (idempotent) ----
+(function(){
+  if (window.__forceGameEnterInstalled) return;
+  window.__forceGameEnterInstalled = true;
+  window.forceGameEnter = function(){
+    try {
+      window.__ingame = true;
+      // Ensure lobby panels are hidden regardless of other CSS
+      var lobby = document.getElementById('lobbyScreen');
+      if (lobby) { lobby.style.setProperty('display','none','important'); }
+      try { var m1 = document.getElementById('manualLobbyPanel'); if (m1) m1.style.display = 'none'; } catch(_){}
+      try { var m2 = document.getElementById('joinLobbyPanel'); if (m2) m2.style.display = 'none'; } catch(_){}
+      try { document.body.classList.remove('menu-hide-ui'); } catch(_){}
+      // Ensure canvas is visible
+      var canvas = document.getElementById('gameCanvas');
+      if (canvas) {
+        canvas.style.display = 'block';
+        canvas.style.visibility = 'visible';
+        canvas.style.opacity = '1';
+        try { canvas.style.zIndex = '0'; } catch(_){}
+      }
+      // Disable the join button to avoid re-entrance
+      try { var btn = document.getElementById('lobbyJoin'); if (btn) { btn.disabled = true; btn.onclick = null; btn.__boundJoin = true; } } catch(_){}
+      // Start the loop once if not already
+      if (!window.__gameLoopStarted && typeof window.gameLoop === 'function') {
+        window.__gameLoopStarted = true;
+        try { if (window.debugLog) debugLog('🎯 forceGameEnter: starting gameLoop()'); } catch(_){}
+        setTimeout(function(){ try { window.gameLoop(); } catch(e){ try { if (window.debugError) debugError('gameLoop start error', e && e.message); }catch(_){ } } }, 120);
+      } else {
+        try { if (window.debugLog) debugLog('🎯 forceGameEnter: gameLoop already started'); } catch(_){}
+      }
+    } catch(e) {
+      try { if (window.debugError) debugError('forceGameEnter error', e && (e.message || e)); } catch(_){ }
+    }
+  };
+})();
+</script>
 
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
