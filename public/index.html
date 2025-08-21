@@ -5470,20 +5470,22 @@ function __alertPseudoTaken(){
     #debugConsole { position: fixed; left: 0; right: 0; bottom: 0; max-height: 42vh; z-index: 2147483647; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; background: rgba(0,0,0,0.75); color: #c7f284; overflow-y:auto; padding:6px 8px; display:none; box-shadow: 0 -4px 12px rgba(0,0,0,0.35); }
     #debugConsole .line { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 1px 0; }
     #debugConsoleBar { position: fixed; bottom: 8px; right: 8px; z-index: 2147483647; display:flex; gap:6px; }
-    #debugToggle, #debugClear { font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.65); color: #fff; backdrop-filter: blur(4px); }
-    #debugToggle:active, #debugClear:active { transform: translateY(1px); }
-    @media (hover:hover) { #debugToggle:hover, #debugClear:hover { background: rgba(0,0,0,0.8); } }
+    #debugToggle, #debugClear, #debugCopy { font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.65); color: #fff; backdrop-filter: blur(4px); }
+    #debugToggle:active, #debugClear:active, #debugCopy:active { transform: translateY(1px); }
+    @media (hover:hover) { #debugToggle:hover, #debugClear:hover, #debugCopy:hover { background: rgba(0,0,0,0.8); } }
   </style>
   <div id="debugConsole" aria-label="Debug console (tap to scroll)"></div>
   <div id="debugConsoleBar" aria-hidden="false">
     <button id="debugToggle" type="button">🐛 Log</button>
     <button id="debugClear" type="button">Clear</button>
+    <button id="debugCopy" type="button">Copy</button>
   </div>
   <script>
   (function(){
     var dc = document.getElementById('debugConsole');
     var toggle = document.getElementById('debugToggle');
     var clearBtn = document.getElementById('debugClear');
+    var copyBtn = document.getElementById('debugCopy');
     var visible = false;
     var MAX_LINES = 400;
     function fmtArg(a){
@@ -5518,6 +5520,24 @@ function __alertPseudoTaken(){
     window.debugError = function(){ try { console.error.apply(console, arguments); } catch(_){} write('ERR', Array.prototype.slice.call(arguments)); };
     if (toggle) toggle.addEventListener('click', function(){ visible = !visible; dc.style.display = visible ? 'block' : 'none'; });
     if (clearBtn) clearBtn.addEventListener('click', function(){ dc.innerHTML = ''; });
+    if (copyBtn) copyBtn.addEventListener('click', async function(){
+      try {
+        var parts = [];
+        try { for (var i=0;i<dc.children.length;i++){ parts.push(dc.children[i].textContent); } } catch(_){ parts.push(dc.textContent || ''); }
+        var text = parts.join('\n');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          var ta = document.createElement('textarea');
+          ta.value = text; ta.style.position='fixed'; ta.style.opacity='0'; ta.style.left='-9999px';
+          document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand('copy'); } catch(_) {}
+          document.body.removeChild(ta);
+        }
+        var old = copyBtn.textContent; copyBtn.textContent = 'Copied!'; copyBtn.disabled = true;
+        debugLog('📋 copied', dc.children.length || 0, 'line(s) to clipboard');
+        setTimeout(function(){ copyBtn.textContent = old; copyBtn.disabled = false; }, 1400);
+      } catch(e){ debugError('copy failed', e && (e.message || e)); }
+    });
     // Mirror console.* into overlay without breaking existing logs
     (function(){
       if (window.__consoleMirror) return;
