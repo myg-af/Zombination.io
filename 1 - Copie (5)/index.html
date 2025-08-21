@@ -574,11 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({
-  transports: ['websocket','polling'],
-  upgrade: true,
-  rememberUpgrade: true
-});
+const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -5468,5 +5464,49 @@ function __alertPseudoTaken(){
 })();
 </script>
 
+<script>
+// --- Mobile tap->click bridge (robust, no side effects) ---
+(function(){
+  try {
+    function tapToClick(el){
+      if (!el) return;
+      // Avoid duplicate bindings
+      if (el.__tapBound) return; el.__tapBound = true;
+      // Convert a touchend/pointerup into a click for iOS/Android
+      function forward(){
+        try { (typeof el.click === 'function') ? el.click() : (el.dispatchEvent && el.dispatchEvent(new Event('click', {bubbles:true}))); } catch(_){}
+      }
+      try { el.addEventListener('touchend', forward, {passive:true}); } catch(_){}
+      try { el.addEventListener('pointerup', forward, {passive:true}); } catch(_){}
+    }
+    function bindAll(){
+      try { tapToClick(document.getElementById('lobbyJoin')); } catch(_){}
+      try { tapToClick(document.getElementById('btnStartManual')); } catch(_){}
+      try { tapToClick(document.getElementById('btnCreateLobby')); } catch(_){}
+      try { tapToClick(document.getElementById('btnJoinLobbyList')); } catch(_){}
+      // Delegate inside lobbies list for dynamic join buttons
+      try {
+        var list = document.getElementById('lobbiesList');
+        if (list && !list.__tapDelegated){
+          list.__tapDelegated = true;
+          list.addEventListener('touchend', function(ev){
+            try{
+              var t = ev.target;
+              if (!t) return;
+              // If the touch end happened on or inside a <button>, click it.
+              var btn = t.closest ? t.closest('button') : null;
+              if (btn) { try { btn.click(); } catch(_){ } }
+            }catch(_){}
+          }, {passive:true});
+        }
+      } catch(_){}
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindAll, {passive:true});
+    } else { bindAll(); }
+    // Rebind when we show/hide lobby panels (UI rebuilt)
+    try { window.addEventListener('focus', bindAll, {passive:true}); } catch(_){}
+  } catch(_){}
+})();
+</script>
 </body></html>
-      try { window.lobbyData = lobbyData; } catch(_){}
