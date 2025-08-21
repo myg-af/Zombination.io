@@ -1595,6 +1595,38 @@ function resetWaveCounters(total = 0) {
 	}
 
 	updateRenderScale();
+// Aggressive camera recenter for mobile landscape
+(function(){
+  function isLandscape(){ try { return window.matchMedia('(orientation: landscape)').matches; } catch(_){ return (window.innerWidth || 0) > (window.innerHeight || 0); } }
+  function isMobile(){ try { return (typeof isMobileDevice !== 'undefined' ? isMobileDevice : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)); } catch(_){ return false; } }
+  function recenterCameraMobileLandscape(retries){
+    try {
+      if (!isMobile() || !isLandscape()) return;
+      var id = (typeof myId !== 'undefined') ? myId : null;
+      var me = (id && typeof playersHealth !== 'undefined' && playersHealth && playersHealth[id]) ? playersHealth[id] : null;
+      if (!me){
+        if ((retries|0) > 0) setTimeout(function(){ recenterCameraMobileLandscape((retries|0)-1); }, 120);
+        return;
+      }
+      if (typeof centerCameraOn === 'function'){
+        centerCameraOn(me.x, me.y);
+        try { if (typeof updateCamera === 'function') updateCamera(); } catch(_){}
+        try { requestAnimationFrame(function(){ try{ if (typeof updateCamera === 'function') updateCamera(); }catch(_){} }); } catch(_){}
+      }
+    } catch(_){}
+  }
+  function refreshAndRecenter(){
+    try { if (typeof updateRenderScale === 'function') updateRenderScale(); } catch(_){}
+    recenterCameraMobileLandscape(15);
+  }
+  window.addEventListener('orientationchange', refreshAndRecenter, { passive: true });
+  window.addEventListener('resize', refreshAndRecenter, { passive: true });
+  // Prime once now to fix initial landscape entry
+  setTimeout(refreshAndRecenter, 50);
+  setTimeout(refreshAndRecenter, 250);
+  setTimeout(refreshAndRecenter, 500);
+})();
+
     
     // Keep renderScale in sync with orientation/resize and recenter camera on mobile landscape
 function recenterCameraMobileLandscape(retries){
@@ -4798,29 +4830,55 @@ function renderManualPlayers() {
 
   // Send
   function send(){
-    try {
-      if (!window.socket || !window.socket.connected) return;
-      const now = Date.now();
-      if (now - lastSent < COOLDOWN_MS) return;
-      let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
-      if (!t) return;
-      if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
-      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') }
-  // Prevent any form submissions inside chat from navigating/reloading (mobile safety)
-  lastSent = now;
-      input.value = '';
-    } catch(e){}
-  }
-  if (sendBtn) {
-    sendBtn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); send(); }, { passive: false });
-    sendBtn.addEventListener('touchend', function(ev){ ev.preventDefault(); ev.stopPropagation(); send(); }, { passive: false });
+  try {
+    if (!window.socket || !window.socket.connected) return;
+    const now = Date.now();
+    if (now - lastSent < COOLDOWN_MS) return;
+    let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
+    if (!t) return;
+    if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
+    window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
+    lastSent = now;
+    input.value = '';
+  } catch(e){}
 }
+  // Prevent accidental form submissions inside chat (mobile safety)
+document.addEventListener('submit', function(ev){
+  try {
+    var el = ev.target;
+    if (el && el.closest && el.closest('#chatPanel')) {
+      ev.preventDefault(); ev.stopPropagation();
+    }
+  } catch(_){}
+}, true);
+// Robust chat control bindings (mobile-safe)
+(function(){
+  if (!sendBtn || !input) return;
+  if (sendBtn.__bound) return;
+  sendBtn.__bound = true;
 
-  if (input) input.addEventListener('keydown', function(ev){
-  if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); send(); }
-});
-if (input) input.addEventListener('keypress', function(ev){
-  if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); }
+  const handler = function(ev){
+    try { ev.preventDefault(); ev.stopPropagation(); } catch(_){}
+    try { send(); } catch(_){}
+  };
+
+  // Pointer-first (covers mouse/touch/stylus), with safe fallbacks
+  ['pointerup','click','touchend'].forEach(function(type){
+    try { sendBtn.addEventListener(type, handler, { passive: false }); } catch(_){}
+  });
+
+  try { sendBtn.disabled = false; } catch(_){}
+
+  input.addEventListener('keydown', function(ev){
+    if (ev.key === 'Enter') { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){}
+      try{ send(); }catch(_){}
+    }
+  });
+  input.addEventListener('keypress', function(ev){
+    if (ev.key === 'Enter') { try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} }
+  });
+})();
+ ev.stopPropagation(); }
 });
 // Socket bindings
   function initSocketBindings(){
