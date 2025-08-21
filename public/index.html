@@ -5464,5 +5464,55 @@ function __alertPseudoTaken(){
 })();
 </script>
 
+<!-- MOBILE-START BLOCK (do not allow starting games from mobile: solo or manual start) -->
+<script>
+(function(){
+  // Reuse global isMobileDevice if present; else do a basic detection
+  var __isMobile = (typeof window.isMobileDevice !== 'undefined')
+    ? !!window.isMobileDevice
+    : (function(){
+        var ua = navigator.userAgent || '';
+        var m1 = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+        var m2 = false;
+        try {
+          var mq = window.matchMedia && (window.matchMedia('(pointer:coarse)').matches || window.matchMedia('(max-width: 768px)').matches);
+          m2 = !!mq;
+        } catch(_){}
+        return m1 || m2;
+      })();
+
+  function blockIfMobile(e){
+    if (!__isMobile) return;
+    try { e.stopImmediatePropagation(); } catch(_){}
+    try { e.preventDefault(); } catch(_){}
+    try {
+      var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+      var msg = (tr.mobileStartBlocked) || 'Le jeu ne peut pas être lancé depuis un appareil mobile.';
+      alert(msg);
+    } catch(_){ alert('Le jeu ne peut pas être lancé depuis un appareil mobile.'); }
+  }
+
+  function setup(){
+    var joinBtn = document.getElementById('lobbyJoin'); // solo start
+    if (joinBtn) {
+      // Capture phase to override any existing listeners
+      joinBtn.addEventListener('click', blockIfMobile, true);
+      if (__isMobile) { try { joinBtn.disabled = true; joinBtn.title = 'Mobile non supporté pour lancer une partie'; } catch(_){ } }
+    }
+    var startBtn = document.getElementById('btnStartManual'); // manual lobby start
+    if (startBtn) {
+      startBtn.addEventListener('click', blockIfMobile, true);
+      if (__isMobile) { try { startBtn.disabled = true; startBtn.title = 'Mobile non supporté pour lancer une partie'; } catch(_){ } }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup, { once: true });
+  } else {
+    setup();
+  }
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
