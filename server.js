@@ -59,27 +59,12 @@ function getClientIP(socket) {
         if (f.startsWith('::ffff:')) f = f.slice(7);
         if (f) ip = f;
       }
-
-// === Helper: detect mobile clients from headers (server-side guard) ===
-function detectMobileUA(headers) {
-  try {
-    headers = headers || {};
-    const chMobile = String(headers['sec-ch-ua-mobile'] || '').toLowerCase();
-    if (chMobile.includes('?1') || chMobile.includes('1')) return true;
-    const ua = String(headers['user-agent'] || '');
-    // Common mobile substrings
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-  } catch (_) {
-    return false;
-  }
-}
     }
     return ip;
   } catch (e) {
     return '';
   }
 }
-
 const {
   MAP_ROWS,
   MAP_COLS,
@@ -1175,11 +1160,7 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
-// Detect and cache if this socket is on a mobile device
-try { socket.__isMobile = detectMobileUA(socket && socket.handshake && socket.handshake.headers); } catch(_){ socket.__isMobile = false; }
-
-
-  // Ultra-aggressive: host cleanup BEFORE disconnect completes
+// Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
@@ -1567,8 +1548,6 @@ socket.on('kickPlayer', (data, cb) => {
 });
 
   socket.on('startManualLobby', (cb) => {
-    // Block game start from mobile clients (host on mobile not allowed)
-if (socket.__isMobile) { try { if (cb) cb({ ok:false, reason:'mobile_not_allowed' }); } catch(_){ } return; }
 const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
@@ -1663,8 +1642,6 @@ socket.on('skipRound', () => {
 });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-  // Block SOLO auto-start on mobile devices
-if (socket.__isMobile) { try { io.to(socket.id).emit('startDenied', { reason:'mobile_not_allowed' }); } catch(_){ } return; }
 const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
