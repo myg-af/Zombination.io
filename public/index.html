@@ -574,7 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({ transports: ['polling','websocket'] });
+const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -3043,13 +3043,13 @@ function gameLoop(timestamp = 0) {
       };
       try { window.lobbyData = lobbyData; } catch(_){}
 
-      try{ debugLog('📊 APP lobbyUpdate handler: started=', !!(data && data.started), 'count=', data && data.count, 'id=', data && data.id); }catch(_){} try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
+      try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
       try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
-        try{ debugLog('🧩 lobbyScreen hidden (display=none)'); }catch(_){} lobbyStarted = true;
+        lobbyStarted = true;
         return;
       }
       lobbyScreen.style.display = 'flex';
@@ -3060,7 +3060,7 @@ function gameLoop(timestamp = 0) {
     });
 
     lobbyJoin.onclick = () => {
-      try{ debugLog('🟢 JOIN handler A invoked (arrow)'); }catch(_){} if (!pseudoInput.value.trim()) {
+      if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
@@ -3079,7 +3079,7 @@ function gameLoop(timestamp = 0) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { try{ debugLog('🚀 APP gameStarted handler START'); }catch(_){} myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -3097,7 +3097,7 @@ function gameLoop(timestamp = 0) {
       } catch(e) {}
     currentRound = data.round;
       lobbyScreen.style.display = 'none';
-      try{ debugLog('🧩 lobbyScreen hidden (display=none)'); }catch(_){} isDead = false; playerHealth = 100; myKills = 0;
+      isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
 	  structures = data.structures || null;
@@ -4344,9 +4344,8 @@ function renderManualPlayers() {
     var lobbyJoin = document.getElementById('lobbyJoin');
     var pseudoInput = document.getElementById('pseudoInput');
     if (lobbyJoin){
-      if (lobbyJoin.onclick || lobbyJoin.__boundJoin) { /* skip duplicate bind */ }
-      else { lobbyJoin.__boundJoin = true; lobbyJoin.onclick = function(){
-        try{ debugLog('🟣 JOIN handler B invoked (function)'); }catch(_){} if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
+      lobbyJoin.onclick = function(){
+        if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
@@ -4355,7 +4354,7 @@ function renderManualPlayers() {
         try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
-      }; }
+      };
     }
   });
 
@@ -4479,7 +4478,7 @@ function renderManualPlayers() {
 
 <script>
 (function(){
-  function setMenuUIHidden(on){ try { document.body.classList.toggle('menu-hide-ui', !!on); } catch(e){} }; try{ debugLog('🎛 setMenuUIHidden(', !!on, ') → has?', document.body.classList.contains('menu-hide-ui')); }catch(_){}
+  function setMenuUIHidden(on){ try { document.body.classList.toggle('menu-hide-ui', !!on); } catch(e){} }
   // Initially hide until game starts
   setMenuUIHidden(true);
   try {
@@ -5464,185 +5463,6 @@ function __alertPseudoTaken(){
   window.showLadder = showLadder;
 })();
 </script>
-
-
-  <!-- Visual Debug Console (non-intrusive) -->
-  <style id="debugConsoleStyles">
-    #debugConsole { position: fixed; left: 0; right: 0; bottom: 0; max-height: 42vh; z-index: 2147483647; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; background: rgba(0,0,0,0.75); color: #c7f284; overflow-y:auto; padding:6px 8px; display:none; box-shadow: 0 -4px 12px rgba(0,0,0,0.35); }
-    #debugConsole .line { white-space: pre-wrap; word-break: break-word; margin: 0; padding: 1px 0; }
-    #debugConsoleBar { position: fixed; bottom: 8px; right: 8px; z-index: 2147483647; display:flex; gap:6px; }
-    #debugToggle, #debugClear, #debugCopy { font-size: 12px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.65); color: #fff; backdrop-filter: blur(4px); }
-    #debugToggle:active, #debugClear:active, #debugCopy:active { transform: translateY(1px); }
-    @media (hover:hover) { #debugToggle:hover, #debugClear:hover, #debugCopy:hover { background: rgba(0,0,0,0.8); } }
-  </style>
-  <div id="debugConsole" aria-label="Debug console (tap to scroll)"></div>
-  <div id="debugConsoleBar" aria-hidden="false">
-    <button id="debugToggle" type="button">🐛 Log</button>
-    <button id="debugClear" type="button">Clear</button>
-    <button id="debugCopy" type="button">Copy</button>
-  </div>
-  <script>
-  (function(){
-    var dc = document.getElementById('debugConsole');
-    var toggle = document.getElementById('debugToggle');
-    var clearBtn = document.getElementById('debugClear');
-    var copyBtn = document.getElementById('debugCopy');
-    var visible = false;
-    var MAX_LINES = 400;
-    function fmtArg(a){
-      try {
-        if (typeof a === 'string') return a;
-        if (a === null) return 'null';
-        if (typeof a === 'undefined') return 'undefined';
-        if (a instanceof Error) return a.name + ': ' + (a.message || String(a));
-        var s = JSON.stringify(a);
-        return s;
-      } catch(e){ try { return String(a); } catch(_) { return '[unprintable]'; } }
-    }
-    function ts(){
-      var d = new Date();
-      var ms = String(d.getMilliseconds()).padStart(3,'0');
-      return d.toTimeString().slice(0,8) + '.' + ms;
-    }
-    function write(kind, args){
-      try {
-        var line = document.createElement('div');
-        line.className = 'line';
-        var prefix = kind ? ('['+kind+'] ') : '';
-        var text = '['+ts()+'] ' + prefix + (args && args.length ? args.map(fmtArg).join(' ') : '');
-        line.textContent = text;
-        dc.appendChild(line);
-        if (dc.childElementCount > MAX_LINES) dc.removeChild(dc.firstChild);
-        dc.scrollTop = dc.scrollHeight;
-      } catch(e){ /* ignore */ }
-    }
-    window.debugLog = function(){ try { console.log.apply(console, arguments); } catch(_){} write('LOG', Array.prototype.slice.call(arguments)); };
-    window.debugWarn = function(){ try { console.warn.apply(console, arguments); } catch(_){} write('WARN', Array.prototype.slice.call(arguments)); };
-    window.debugError = function(){ try { console.error.apply(console, arguments); } catch(_){} write('ERR', Array.prototype.slice.call(arguments)); };
-    if (toggle) toggle.addEventListener('click', function(){ visible = !visible; dc.style.display = visible ? 'block' : 'none'; });
-    if (clearBtn) clearBtn.addEventListener('click', function(){ dc.innerHTML = ''; });
-    if (copyBtn) copyBtn.addEventListener('click', async function(){
-      try {
-        var parts = [];
-        try { for (var i=0;i<dc.children.length;i++){ parts.push(dc.children[i].textContent); } } catch(_){ parts.push(dc.textContent || ''); }
-        var text = parts.join('\n');
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          var ta = document.createElement('textarea');
-          ta.value = text; ta.style.position='fixed'; ta.style.opacity='0'; ta.style.left='-9999px';
-          document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand('copy'); } catch(_) {}
-          document.body.removeChild(ta);
-        }
-        var old = copyBtn.textContent; copyBtn.textContent = 'Copied!'; copyBtn.disabled = true;
-        debugLog('📋 copied', dc.children.length || 0, 'line(s) to clipboard');
-        setTimeout(function(){ copyBtn.textContent = old; copyBtn.disabled = false; }, 1400);
-      } catch(e){ debugError('copy failed', e && (e.message || e)); }
-    });
-    // Mirror console.* into overlay without breaking existing logs
-    (function(){
-      if (window.__consoleMirror) return;
-      var orig = { log: console.log, info: console.info, warn: console.warn, error: console.error };
-      function mirror(kind, args){ write(kind, Array.prototype.slice.call(args)); }
-      console.log = function(){ try { orig.log.apply(console, arguments); } catch(_){} mirror('LOG', arguments); };
-      console.info = function(){ try { orig.info.apply(console, arguments); } catch(_){} mirror('INFO', arguments); };
-      console.warn = function(){ try { orig.warn.apply(console, arguments); } catch(_){} mirror('WARN', arguments); };
-      console.error = function(){ try { orig.error.apply(console, arguments); } catch(_){} mirror('ERR', arguments); };
-      window.__consoleMirror = true;
-    })();
-    // Global error hooks
-    window.addEventListener('error', function(e){ write('UNCAUGHT', [e && e.message, (e && e.filename ? ('@'+e.filename+':'+e.lineno+':'+e.colno) : '')]); });
-    window.addEventListener('unhandledrejection', function(e){ write('PROMISE', [e && (e.reason && e.reason.message ? e.reason.message : String(e.reason || e))]); });
-
-    // Socket.IO hooks
-    function attachSocketDebug(s){
-      try {
-        if (!s || s.__debugAttached) return;
-        s.__debugAttached = true;
-        debugLog('📡 trying connect to server');
-        s.on('connect', function(){
-          try { debugLog('✅ connect', 'socket.id=', s.id, 'transport=', s.io && s.io.engine && s.io.engine.transport && s.io.engine.transport.name); } catch(_){}
-        });
-        try {
-          if (s.io && s.io.engine && s.io.engine.on) {
-            s.io.engine.on('upgrade', function(tr){ debugLog('⤴️ upgrade →', tr && tr.name); });
-          }
-        } catch(_){}
-        s.on('connect_error', function(err){ debugError('connect_error', err && (err.message || err)); });
-        if (s.io && s.io.on) {
-          s.io.on('reconnect_attempt', function(n){ debugWarn('reconnect_attempt', n, 'transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
-          s.io.on('reconnect', function(n){ debugLog('reconnect OK after', n, 'attempt(s), transport=', s.io.engine && s.io.engine.transport && s.io.engine.transport.name); });
-          s.io.on('reconnect_error', function(err){ debugError('reconnect_error', err && (err.message || err)); });
-          s.io.on('reconnect_failed', function(){ debugError('reconnect_failed'); });
-        }
-        s.on('disconnect', function(reason){ debugWarn('disconnect', reason); });
-        s.on('error', function(err){ debugError('socket error', err && (err.message || err)); });
-        // Wrap emit for key events
-        try {
-          var origEmit = s.emit.bind(s);
-          s.emit = function(ev){
-            
-            var argv = Array.prototype.slice.call(arguments,1);
-            // Throttle duplicate JOIN
-            if (ev === 'setPseudoAndReady') {
-              try {
-                var now = Date.now();
-                if (typeof window.__lastJoinEmit === 'number' && (now - window.__lastJoinEmit) < 900) {
-                  debugWarn('⛔ duplicate setPseudoAndReady blocked within', (now - window.__lastJoinEmit), 'ms');
-                  return s;
-                }
-                window.__lastJoinEmit = now;
-              } catch(_){}
-            }
-            if (['setPseudoAndReady','startManualLobby','joinManualLobby','createManualLobby','reclaimPlayer'].indexOf(ev) !== -1) {
-              debugLog('📤 emit', ev, argv);
-            }
-            return origEmit.apply(s, arguments);
-          };
-        } catch(_){}
-        // Key incoming events
-        s.on && s.on('gameStarted', function(payload){
-          try {
-            var pcount = payload && payload.players ? Object.keys(payload.players).length : 'n/a';
-            debugLog('🎮 gameStarted received', '; players=', pcount);
-          } catch(_){}
-        });
-        s.on && s.on('lobbyUpdate', function(data){
-          try { debugLog('📥 lobbyUpdate id=', data && data.id, 'started=', data && data.started); } catch(_){}
-        });
-      } catch(e){ debugWarn('attachSocketDebug error', String(e)); }
-    }
-    function tryAttach(){
-      try { if (window.socket) attachSocketDebug(window.socket); } catch(_){}
-      try { if (window.gameSocket) attachSocketDebug(window.gameSocket); } catch(_){}
-      try { if (window.__lastSocket) attachSocketDebug(window.__lastSocket); } catch(_){}
-    }
-    tryAttach();
-    // Monkeypatch io() to auto-attach any future sockets
-    (function(){
-      if (!window.io || window.__io_patched_for_debug) return;
-      var originalIO = window.io;
-      function patchedIO(){
-        var s = originalIO.apply(this, arguments);
-        try { window.__lastSocket = s; attachSocketDebug(s); } catch(_){}
-        return s;
-      }
-      try {
-        for (var k in originalIO) { try { patchedIO[k] = originalIO[k]; } catch(_){} }
-      } catch(_){}
-      window.io = patchedIO;
-      window.__io_patched_for_debug = true;
-    })();
-    // In case socket was created before our script, poll briefly
-    var attempts = 0;
-    var iv = setInterval(function(){
-      tryAttach();
-      attempts++;
-      if (attempts > 20) clearInterval(iv);
-    }, 500);
-  })();
-  </script>
-  <!-- /Visual Debug Console -->
 
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
