@@ -575,6 +575,77 @@ window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
 const socket = io({ transports: ['polling','websocket'] });
+
+// === Socket.IO Telemetry (lightweight) ===
+    // Wrap emit to trace critical actions
+    try {
+      const __origEmit = socket.emit.bind(socket);
+      socket.emit = function(event) {
+        try {
+          var args = Array.prototype.slice.call(arguments, 1);
+          if (event === 'setPseudoAndReady' || event === 'startManualLobby' || event === 'joinManualLobby' || event === 'createManualLobby') {
+            console.log('📤 emit', event, args, 'connected=', !!(socket && socket.connected), 'transport=', transportName());
+          }
+        } catch(_){}
+        return __origEmit.apply(this, arguments);
+      };
+    } catch(_) {}
+    // Log when game actually starts
+    try {
+      socket.on('gameStarted', function(payload){
+        try {
+          console.log('🎮 gameStarted received for socket.id=', socket.id, '; isSolo=', !!(payload && payload.solo), '; players=', (payload && payload.players ? Object.keys(payload.players).length : 'n/a'));
+        } catch(_) {}
+      });
+    } catch(_) {}
+
+(function(){
+  try {
+    if (window.__SOCKET_TELEM_BOUND__) return;
+    window.__SOCKET_TELEM_BOUND__ = true;
+
+    function transportName() {
+      try { return (socket && socket.io && socket.io.engine && socket.io.engine.transport && socket.io.engine.transport.name) || 'unknown'; }
+      catch (e) { return 'unknown'; }
+    }
+
+    // Log current transport on first connect
+    socket.once('connect', () => {
+      try {
+        console.log('✅ connect socket.id=', socket.id, 'transport=', transportName());
+        if (socket && socket.io && socket.io.engine) {
+          try {
+            socket.io.engine.once('upgrade', (t) => console.log('⤴️ upgrade →', (t && t.name) || 'unknown'));
+          } catch (_) {}
+        }
+      } catch(e) {}
+    });
+
+    // Reconnect lifecycle
+    if (socket && socket.io) {
+      try {
+        socket.io.on('reconnect_attempt', (attempt) => console.log('🔄 reconnect_attempt', attempt, 'transport=', transportName()));
+      } catch(_) {}
+      try {
+        socket.io.on('reconnect', (attempt) => console.log('🔁 reconnect OK after', attempt, 'attempt(s), transport=', transportName()));
+      } catch(_) {}
+      try {
+        socket.io.on('reconnect_error', (err) => console.warn('⚠️ reconnect_error:', err && (err.message || err)));
+      } catch(_) {}
+      try {
+        socket.io.on('reconnect_failed', () => console.error('❌ reconnect_failed'));
+      } catch(_) {}
+    }
+
+    // Generic errors
+    socket.on('error', (err) => console.error('🚫 socket error:', err));
+    try { socket.io && socket.io.on('error', (err) => console.error('🚫 manager error:', err)); } catch(_) {}
+
+  } catch(err) {
+    console.error('Telemetry setup failed:', err);
+  }
+})();
+
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
