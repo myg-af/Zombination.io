@@ -1177,6 +1177,8 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
+  let __reclaimed = false; socket.__reclaimed = false;
+
 
 // === Cookie-based resume (mobile reconnect friendly) ===
 try {
@@ -1229,7 +1231,7 @@ try {
           const remaining = Math.max(0, (game.totalZombiesToSpawn||0) - (game.zombiesKilledThisWave||0));
           io.to(socket.id).emit('zombiesRemaining', remaining);
         } catch(_){}
-        __reclaimed = true;
+        __reclaimed = true; socket.__reclaimed = true;
       }
     }
   }
@@ -1302,7 +1304,8 @@ socket.on('rebindGame', (payload, cb) => {
     } catch(_){}
 
     try { if (cb) cb({ ok:true }); } catch(_){ }
-  } catch(e) {
+  ;
+        socket.__reclaimed = true; __reclaimed = true;} catch(e) {
     try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){ }
   }
 });
@@ -1314,9 +1317,9 @@ socket.on('rebindGame', (payload, cb) => {
   console.log('[CONNECT]', socket.id);
 
   // Token-based reclaim is now handled via 'reclaimHost' event from client after connect.
-  let __reclaimed = false;
+  
 
-      if (!__reclaimed) {
+      if (!__reclaimed && !(socket && socket.__reclaimed)) {
 // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
     const game = getAvailableLobby();
     socketToGame[socket.id] = game.id;

@@ -3030,8 +3030,12 @@ function gameLoop(timestamp = 0) {
   requestAnimationFrame(gameLoop);
 }
 
-    socket.on('connect', () => { myId = socket.id; });socket.on('lobbyUpdate', (data) => {
-      try { window.__lastGameId = (data && data.id) || window.__lastGameId; } catch(_){ }
+    socket.on('connect', () => {
+    try { if (window.__wasInGame && window.__lastGameId && window.myPseudo) { socket.emit('rebindGame', { gameId: window.__lastGameId, pseudo: window.myPseudo }); } } catch(_){}
+    myId = socket.id; });socket.on('lobbyUpdate', (data) => {
+      // ULTIME: if already in game, never reshow lobby overlay
+  try { if (typeof inGame !== 'undefined' && inGame) { lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ } return; } } catch(_){}
+try { window.__lastGameId = (data && data.id) || window.__lastGameId; } catch(_){ }
       lobbyData = {
         started: !!data.started,
         count: Number(data.count)||0,
@@ -3047,7 +3051,7 @@ function gameLoop(timestamp = 0) {
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
-        lobbyScreen.style.display = 'none';
+        lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
         lobbyStarted = true;
         return;
       }
@@ -3091,6 +3095,7 @@ if (!pseudoInput.value.trim()) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
+    lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
     socket.on('gameStarted', (data) => {
       try { document.cookie = 'zombi_resume=' + encodeURIComponent(JSON.stringify({gid:(window.lobbyData&&window.lobbyData.id)||0,pseudo:(window.myPseudo||((pseudoInput&&pseudoInput.value)||''))})) + '; path=/; max-age=3600'; } catch(_){ }
       
@@ -3111,7 +3116,7 @@ if (!pseudoInput.value.trim()) {
         }
       } catch(e) {}
     currentRound = data.round;
-      lobbyScreen.style.display = 'none';
+      lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
       isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
