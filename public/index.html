@@ -574,7 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({ transports: ['websocket','polling'], upgrade: true });
+const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -616,7 +616,8 @@ socket.on("connect_error", (err) => {
 });
 // Global guards to prevent any crash from bubbling up and blanking the page
 window.addEventListener('error', function(e){ try { console.error('Global error:', e && e.message, e); } catch(_){} });
-window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason, e); } catch(_){} });
+window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
+
 // LOBBY STATE LOGS
 
 socket.on("lobbyUpdate", (data) => {
@@ -3030,12 +3031,8 @@ function gameLoop(timestamp = 0) {
   requestAnimationFrame(gameLoop);
 }
 
-    socket.on('connect', () => {
-    try { if (window.__wasInGame && window.__lastGameId && window.myPseudo) { socket.emit('rebindGame', { gameId: window.__lastGameId, pseudo: window.myPseudo }); } } catch(_){}
-    myId = socket.id; });socket.on('lobbyUpdate', (data) => {
-      // ULTIME: if already in game, never reshow lobby overlay
-  try { if (typeof inGame !== 'undefined' && inGame) { lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ } return; } } catch(_){}
-try { window.__lastGameId = (data && data.id) || window.__lastGameId; } catch(_){ }
+    socket.on('connect', () => { myId = socket.id; });
+    socket.on('lobbyUpdate', (data) => {
       lobbyData = {
         started: !!data.started,
         count: Number(data.count)||0,
@@ -3051,7 +3048,7 @@ try { window.__lastGameId = (data && data.id) || window.__lastGameId; } catch(_)
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
-        lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
+        lobbyScreen.style.display = 'none';
         lobbyStarted = true;
         return;
       }
@@ -3062,13 +3059,8 @@ try { window.__lastGameId = (data && data.id) || window.__lastGameId; } catch(_)
       lobbyJoin.textContent = tr.join;
     });
 
-        // Robust mobile binding: avoid double-tap and handle touch/pointer
-    let __joinBusy = false;
-    function __handleJoin(ev){
-      if (__joinBusy) return;
-      __joinBusy = true;
-      try { if (ev && ev.preventDefault) ev.preventDefault(); } catch(_){}
-if (!pseudoInput.value.trim()) {
+    lobbyJoin.onclick = () => {
+      if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
@@ -3076,30 +3068,18 @@ if (!pseudoInput.value.trim()) {
       }
       socket.emit('setPseudoAndReady', pseudoInput.value.trim()); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
       window.lobbyJoined = true;
-      try { document.cookie = 'zombi_resume=' + encodeURIComponent(JSON.stringify({gid:(window.lobbyData&&window.lobbyData.id)||0,pseudo:(window.myPseudo||((pseudoInput&&pseudoInput.value)||''))})) + '; path=/; max-age=3600'; } catch(_){ }
-      
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
-
+      
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
       try { updateButtonsDisabled(); } catch(_) {}
-      setTimeout(function(){ __joinBusy = false; }, 600);
-    }
-    // Replace onclick logic by addEventListener on multiple input types
-    lobbyJoin.addEventListener('click', __handleJoin, { passive: false });
-    lobbyJoin.addEventListener('touchend', __handleJoin, { passive: false });
-    lobbyJoin.addEventListener('pointerup', __handleJoin, { passive: false });
-
+    };
 
     pseudoInput.onkeydown = (e) => {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
-    socket.on('gameStarted', (data) => {
-      try { document.cookie = 'zombi_resume=' + encodeURIComponent(JSON.stringify({gid:(window.lobbyData&&window.lobbyData.id)||0,pseudo:(window.myPseudo||((pseudoInput&&pseudoInput.value)||''))})) + '; path=/; max-age=3600'; } catch(_){ }
-      
-      try { window.__wasInGame = true; window.__lastGameId = (window.lobbyData && window.lobbyData.id) || window.__lastGameId; } catch(_){} myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -3116,7 +3096,7 @@ if (!pseudoInput.value.trim()) {
         }
       } catch(e) {}
     currentRound = data.round;
-      lobbyScreen.style.display = 'none'; try{ lobbyScreen.style.pointerEvents='none'; }catch(_){ }
+      lobbyScreen.style.display = 'none';
       isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
@@ -4154,19 +4134,12 @@ if (btnCreate) {
     }, { passive: true });
   }
 if (btnStartManual) {
-    btnStartManual.addEventListener('click', function()
-      {
-      try { document.cookie = 'zombi_resume=' + encodeURIComponent(JSON.stringify({gid:(window.lobbyData&&window.lobbyData.id)||0,pseudo:(window.myPseudo||((pseudoInput&&pseudoInput.value)||''))})) + '; path=/; max-age=3600'; } catch(_){ }
+    btnStartManual.addEventListener('click', function(){
       socket.emit('startManualLobby', function(res){
         // if not host, ignore; server will no-op
       });
     }, { passive: true });
   }
-if (btnStartManual) {
-  // add touch/pointer aliases to trigger the same action
-  btnStartManual.addEventListener('touchend', function(){ btnStartManual.click(); }, { passive: true });
-  btnStartManual.addEventListener('pointerup', function(){ btnStartManual.click(); }, { passive: true });
-}
 
   function requestLobbies() {
     socket.emit('requestLobbies');
@@ -4803,9 +4776,7 @@ function renderManualPlayers() {
         try { sendBtn.disabled = true; setTimeout(function(){ sendBtn.disabled = false; }, Math.min(1200, e.waitMs || 1000)); } catch(_){}
       });
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
-      window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}
-      try { if (window.__wasInGame && window.__lastGameId && window.myPseudo) { window.socket.emit('rebindGame', { gameId: window.__lastGameId, pseudo: window.myPseudo }); } } catch(_){}
-    });
+      window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
       return true;
     } catch(e){ return false; }
@@ -4868,13 +4839,6 @@ function renderManualPlayers() {
 */
 (function(){
   try {
-// Do not hide chat on mobile devices
-try {
-  var __isMobile = (typeof isMobile === 'function') ? !!isMobile() :
-    /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent||'');
-  if (__isMobile) { return; }
-} catch(_){}
-
     var FORCED_HIDE = false;
 
     function getEl(id){ return document.getElementById(id); }
