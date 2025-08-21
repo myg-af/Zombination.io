@@ -25,7 +25,7 @@ const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['websocket','polling'],
+  transports: ['websocket'],
 });
 
 // --- Chat globals ---
@@ -65,6 +65,7 @@ function getClientIP(socket) {
     return '';
   }
 }
+
 const {
   MAP_ROWS,
   MAP_COLS,
@@ -1160,7 +1161,8 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
-// Ultra-aggressive: host cleanup BEFORE disconnect completes
+
+  // Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
@@ -1548,7 +1550,7 @@ socket.on('kickPlayer', (data, cb) => {
 });
 
   socket.on('startManualLobby', (cb) => {
-const gid = socketToGame[socket.id];
+    const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
     if (game.lobby.hostId !== socket.id) { if (cb) cb({ ok:false, reason:'not_host' }); return; }
@@ -1642,7 +1644,7 @@ socket.on('skipRound', () => {
 });
 
   socket.on('setPseudoAndReady', (pseudo) => {
-const gameId = socketToGame[socket.id];
+  const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
   pseudo = (pseudo || '').trim().substring(0, 10);

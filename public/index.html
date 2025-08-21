@@ -574,7 +574,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
-const socket = io({ transports: ['websocket','polling'], upgrade: true });
+const socket = io({ transports: ['websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
   console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -3059,13 +3059,8 @@ function gameLoop(timestamp = 0) {
       lobbyJoin.textContent = tr.join;
     });
 
-        // Robust mobile binding: avoid double-tap and handle touch/pointer
-    let __joinBusy = false;
-    function __handleJoin(ev){
-      if (__joinBusy) return;
-      __joinBusy = true;
-      try { if (ev && ev.preventDefault) ev.preventDefault(); } catch(_){}
-if (!pseudoInput.value.trim()) {
+    lobbyJoin.onclick = () => {
+      if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
@@ -3075,16 +3070,10 @@ if (!pseudoInput.value.trim()) {
       window.lobbyJoined = true;
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
-
+      
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
       try { updateButtonsDisabled(); } catch(_) {}
-      setTimeout(function(){ __joinBusy = false; }, 600);
-    }
-    // Replace onclick logic by addEventListener on multiple input types
-    lobbyJoin.addEventListener('click', __handleJoin, { passive: false });
-    lobbyJoin.addEventListener('touchend', __handleJoin, { passive: false });
-    lobbyJoin.addEventListener('pointerup', __handleJoin, { passive: false });
-
+    };
 
     pseudoInput.onkeydown = (e) => {
       if (e.key === "Enter") lobbyJoin.click();
@@ -4145,18 +4134,12 @@ if (btnCreate) {
     }, { passive: true });
   }
 if (btnStartManual) {
-    btnStartManual.addEventListener('click', function()
-      {
+    btnStartManual.addEventListener('click', function(){
       socket.emit('startManualLobby', function(res){
         // if not host, ignore; server will no-op
       });
     }, { passive: true });
   }
-if (btnStartManual) {
-  // add touch/pointer aliases to trigger the same action
-  btnStartManual.addEventListener('touchend', function(){ btnStartManual.click(); }, { passive: true });
-  btnStartManual.addEventListener('pointerup', function(){ btnStartManual.click(); }, { passive: true });
-}
 
   function requestLobbies() {
     socket.emit('requestLobbies');
@@ -4856,13 +4839,6 @@ function renderManualPlayers() {
 */
 (function(){
   try {
-// Do not hide chat on mobile devices
-try {
-  var __isMobile = (typeof isMobile === 'function') ? !!isMobile() :
-    /android|iphone|ipad|ipod|opera mini|iemobile|mobile/i.test(navigator.userAgent||'');
-  if (__isMobile) { return; }
-} catch(_){}
-
     var FORCED_HIDE = false;
 
     function getEl(id){ return document.getElementById(id); }
