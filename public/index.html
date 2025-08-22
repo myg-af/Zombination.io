@@ -3545,7 +3545,48 @@ buildTiles.forEach(btn => {
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
-      try { updateBuildTilesState(); } catch(_) {}
+      try { updateBuildTilesState();
+
+// Mobile build buttons: trigger same build mode behavior + preview at player position
+(function setupMobileBuildButtons(){
+  try {
+    const cont = document.getElementById('mobile-build');
+    if (!cont) return;
+    const buttons = cont.querySelectorAll('.mb-btn');
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', function(e){
+        e.preventDefault();
+        const type = btn.getAttribute('data-type');
+        if (!type) return;
+
+        if (buildMode === type) {
+          buildMode = null;
+          buildHover = { tx: -1, ty: -1 };
+          try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
+          try { updateBuildTilesState(); } catch(_){}
+          try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+          return;
+        }
+
+        buildMode = type;
+        try {
+          if (window.playersHealth && window.myId && playersHealth[myId]) {
+            const me = playersHealth[myId];
+            const tx0 = Math.max(0, Math.min(MAP_COLS - 1, Math.floor(me.x / TILE_SIZE)));
+            const ty0 = Math.max(0, Math.min(MAP_ROWS - 1, Math.floor(me.y / TILE_SIZE)));
+            buildHover.tx = tx0; 
+            buildHover.ty = ty0;
+          }
+        } catch(_){}
+
+        try { document.body.dataset.buildMode = String(type || ''); } catch(_){}
+        try { updateBuildTilesState(); } catch(_){}
+        try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+      }, { passive: false });
+    });
+  } catch(_){}
+})();
+ } catch(_) {}
       
       try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
 try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
