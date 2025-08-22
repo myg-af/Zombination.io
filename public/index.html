@@ -5852,7 +5852,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   try {
     if (window.__NAV_GUARD_INSTALLED) return;
     window.__NAV_GUARD_INSTALLED = true;
-    var GUARD_DEFAULT_MS = 1800;
+    var GUARD_DEFAULT_MS = 2500;
     var guardUntil = 0;
 
     function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
@@ -5868,6 +5868,24 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
     }
     function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
     function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
+    // Global capture to swallow interactions during guard
+    function swallowIfActive(ev){
+      try{
+        if (active()){
+          if (ev && ev.cancelable && ev.preventDefault) ev.preventDefault();
+          if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+          if (ev && ev.stopPropagation) ev.stopPropagation();
+          log('swallow_' + (ev && ev.type || 'evt'));
+          return false;
+        }
+      }catch(_){}
+    }
+    try {
+      ['click','touchstart','touchend','pointerdown','pointerup'].forEach(function(t){
+        try { document.addEventListener(t, swallowIfActive, { capture:true, passive:false }); } catch(_){ document.addEventListener(t, swallowIfActive, true); }
+      });
+    } catch(_){}
+    
 
     function log(type, extra){
       try {
@@ -5956,6 +5974,26 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
     }
     bindChatGuard();
     var _int = setInterval(bindChatGuard, 500);
+    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
+  } catch(_){}
+})();
+</script>
+
+
+<script>
+(function(){
+  try {
+    function bindSocketDiag(){
+      try {
+        if (!window.socket || !window.socket.on || window.socket.__navDiagBound) return false;
+        window.socket.on('forceReload', function(){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'forceReload' } }); } catch(_){}});
+        window.socket.on('disconnect', function(reason){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'disconnect', reason: String(reason||'') } }); } catch(_){}});
+        window.socket.__navDiagBound = true;
+        return true;
+      } catch(_){ return false; }
+    }
+    bindSocketDiag();
+    var _int = setInterval(bindSocketDiag, 500);
     setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
   } catch(_){}
 })();
