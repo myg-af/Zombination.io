@@ -1142,7 +1142,7 @@ try {
 
 
   try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
-  io.to('lobby' + game.id).emit('gameStarted', {
+  io.to('lobby' + game.id).emit('gameStarted', { gameId: game.id,
     map: game.map,
     players: game.players,
     round: game.currentRound,
@@ -2775,7 +2775,7 @@ function handleZombieAttacks(game) {
                 p._ladderSubmitted = true;
                 recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
               }
-io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound });
+io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, gameId: game.id });
             }
           } else {
             io.to(pid).emit('healthUpdate', p.health);
