@@ -6129,6 +6129,107 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
     }
   } catch(_e){ /* ignore */ }
 })();
+
+// ---- Mobile: long-press & drag from build buttons to place ----
+(function(){
+  try {
+    var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (!isTouch) return;
+
+    var tilesCont = document.getElementById('buildTiles');
+    var quickCont = document.getElementById('mobile-build');
+    if (!tilesCont && !quickCont) return;
+
+    var activeTouchId = null;
+    var dragging = false, moved = false;
+    var startX = 0, startY = 0, lastX = 0, lastY = 0;
+    var currentType = null;
+
+    function getTypeFromTarget(target){
+      var el = target;
+      var hops = 0;
+      while (el && hops < 6){
+        if (el.getAttribute && el.getAttribute('data-type')) return el.getAttribute('data-type');
+        el = el.parentNode; hops++;
+      }
+      return null;
+    }
+
+    function startDrag(e){
+      var t = (e.changedTouches && e.changedTouches[0]) || (e.targetTouches && e.targetTouches[0]);
+      if (!t) return;
+      var type = getTypeFromTarget(e.target);
+      if (!type) return;
+      e.preventDefault(); e.stopPropagation();
+
+      // Enter build mode using existing logic (price checks, etc)
+      try {
+        if (typeof setBuildMode === 'function') setBuildMode(type);
+        else { buildMode = type; buildHover = { tx:-1, ty:-1 }; }
+      } catch(_){ buildMode = type; buildHover = { tx:-1, ty:-1 }; }
+
+      activeTouchId = t.identifier;
+      dragging = true; moved = false; currentType = type;
+      startX = lastX = t.clientX; startY = lastY = t.clientY;
+
+      var st = screenToWorldTile(t.clientX, t.clientY);
+      buildHover.tx = st.tx; buildHover.ty = st.ty;
+
+      document.addEventListener('touchmove', moveDrag, { passive: false });
+      document.addEventListener('touchend', endDrag, { passive: false });
+      document.addEventListener('touchcancel', endDrag, { passive: false });
+    }
+
+    function findActiveTouch(e){
+      var t = null;
+      if (activeTouchId !== null && e.touches){
+        var list = Array.prototype.slice.call(e.touches);
+        for (var i=0;i<list.length;i++){ if (list[i].identifier === activeTouchId){ t = list[i]; break; } }
+      }
+      if (!t && e.changedTouches){
+        var list2 = Array.prototype.slice.call(e.changedTouches);
+        for (var j=0;j<list2.length;j++){ if (list2[j].identifier === activeTouchId){ t = list2[j]; break; } }
+      }
+      return t;
+    }
+
+    function moveDrag(e){
+      if (!dragging) return;
+      var t = findActiveTouch(e);
+      if (!t) return;
+      e.preventDefault(); e.stopPropagation();
+
+      lastX = t.clientX; lastY = t.clientY;
+      if (!moved && Math.hypot(lastX - startX, lastY - startY) >= 2) moved = true;
+
+      var st = screenToWorldTile(lastX, lastY);
+      buildHover.tx = st.tx; buildHover.ty = st.ty;
+    }
+
+    function endDrag(e){
+      if (!dragging) return;
+      var t = findActiveTouch(e);
+      if (!t) return;
+      e.preventDefault(); e.stopPropagation();
+
+      if (moved){
+        var el = document.elementFromPoint(lastX, lastY);
+        if (el && el.id === 'gameCanvas'){
+          tryPlaceStructureAtCursor(lastX, lastY);
+        }
+      }
+      dragging = false; moved = false; activeTouchId = null; currentType = null;
+      // remove listeners
+      document.removeEventListener('touchmove', moveDrag);
+      document.removeEventListener('touchend', endDrag);
+      document.removeEventListener('touchcancel', endDrag);
+    }
+
+    if (tilesCont) tilesCont.addEventListener('touchstart', startDrag, { passive: false });
+    if (quickCont) quickCont.addEventListener('touchstart', startDrag, { passive: false });
+  } catch(_e){ /* ignore */ }
+})();
+// ---- /Mobile: long-press & drag from build buttons to place ----
 </script>
 
 </body></html>
