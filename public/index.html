@@ -5932,5 +5932,130 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
+
+<style id="mobile-portrait-lock-and-size-overrides">
+/* === Mobile portrait "lock" & UI size tweaks (no effect on desktop) === */
+
+/* Fullscreen rotate overlay (only shows on mobile + landscape) */
+#rotateOverlay{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.9);
+  color: #fff;
+  z-index: 2147483647;
+  font-weight: 700;
+  text-align: center;
+  padding: 28px;
+  line-height: 1.35;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (hover: none) and (pointer: coarse) and (orientation: landscape){
+  #rotateOverlay{ display: flex; }
+}
+
+/* Mobile-only UI sizing + right alignment for build tiles */
+@media (hover: none) and (pointer: coarse){
+  /* Make build tiles hug the right edge */
+  #buildTiles{ justify-content: flex-end; }
+  /* Slightly smaller shop & auto-fire buttons */
+  #shopBtn{ font-size: 18px !important; padding: 8px 18px 8px 14px !important; }
+  #autoFireBtn{ font-size: 14px !important; padding: 3px 8px 3px 5px !important; gap: 6px !important; }
+  #autoFireBtn > span:first-child{ width: 12px !important; height: 12px !important; }
+
+  /* Smaller construction blocks */
+  #buildTiles .build-tile > div:first-child{ width: 36px !important; height: 36px !important; }
+  #buildTiles .build-tile > div + div{ font-size: 12px !important; padding: 2px 6px !important; }
+
+  /* Keep the bar tight to the right/bottom on mobile */
+  #buildBar{ right: 12px !important; bottom: 112px !important; gap: 8px !important; }
+}
+</style>
+
+
+<script id="mobile-portrait-lock-and-zoom">
+(function(){
+  const isMobile = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+  // Ensure overlay node exists (idempotent)
+  function ensureRotateOverlay(){
+    if (!document.getElementById('rotateOverlay')){
+      const d = document.createElement('div');
+      d.id = 'rotateOverlay';
+      d.setAttribute('aria-hidden', 'true');
+      d.textContent = 'Tournez votre appareil en mode portrait';
+      document.body.appendChild(d);
+    }
+  }
+
+  // Best-effort portrait lock using Screen Orientation API (requires user gesture/fullscreen on many browsers)
+  async function tryLockPortrait(){
+    if (!isMobile) return;
+    try {
+      if (screen.orientation && screen.orientation.lock){
+        await screen.orientation.lock('portrait');
+      }
+    } catch(_e){
+      // ignore — overlay + CSS will enforce UX when in landscape
+    }
+  }
+
+  function once(el, ev, fn, opts){
+    const wrap = function(e){ try{ fn(e); }finally{ el.removeEventListener(ev, wrap, opts);} };
+    el.addEventListener(ev, wrap, opts);
+  }
+
+  // Inject overlay ASAP
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', ensureRotateOverlay, {passive:true});
+  } else {
+    ensureRotateOverlay();
+  }
+
+  if (isMobile){
+    // Try to lock on first user interaction
+    ['pointerup','touchend','click'].forEach(ev => once(window, ev, tryLockPortrait, {passive:true}));
+    // Retry on orientation changes
+    window.addEventListener('orientationchange', tryLockPortrait, {passive:true});
+  }
+
+  // Zoom out a bit when the game starts (mobile only) — relies on existing pinchScale/updateRenderScale
+  function mobileZoomOut(){
+    if (!isMobile) return;
+    try {
+      // Respect existing clamp constants if present
+      var minP = (typeof MIN_PINCH === 'number') ? MIN_PINCH : 0.6;
+      var maxP = (typeof MAX_PINCH === 'number') ? MAX_PINCH : 1.6;
+      var target = 0.85; // slightly zoomed out
+      if (typeof pinchScale === 'number') {
+        pinchScale = Math.max(minP, Math.min(maxP, target));
+      } else {
+        window.pinchScale = target;
+      }
+      if (typeof updateRenderScale === 'function') updateRenderScale();
+    } catch(_e){ /* no-op */ }
+  }
+
+  try {
+    if (window.socket && typeof socket.on === 'function'){
+      socket.on('gameStarted', function(){ tryLockPortrait(); mobileZoomOut(); });
+    } else {
+      // Fallback: if socket arrives later, hook then
+      const iv = setInterval(function(){
+        if (window.socket && typeof socket.on === 'function'){
+          clearInterval(iv);
+          socket.on('gameStarted', function(){ tryLockPortrait(); mobileZoomOut(); });
+        }
+      }, 120);
+      setTimeout(()=>clearInterval(iv), 10000);
+    }
+  } catch(_e){ /* ignore */ }
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
