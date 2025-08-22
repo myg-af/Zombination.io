@@ -5824,54 +5824,5 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
-
-<script>
-// Legacy chat mitigation (Plan B): disable legacy lobby chat UI in-game on mobile, to force IG overlay usage.
-(function(){
-  try {
-    function isMobile(){
-      try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; }
-    }
-    function logOn(msg){ try { if (window.debugWarn) debugWarn(msg); } catch(_){ } }
-    function setLegacyChat(enabled){
-      try {
-        var panel = document.getElementById('chatPanel');
-        var btn   = document.getElementById('chatCollapsedBtn');
-        var input = document.getElementById('chatInput');
-        var send  = document.getElementById('chatSend');
-        if (!enabled){
-          if (panel){ panel.style.display = 'none'; panel.setAttribute('data-ig-disabled','1'); }
-          if (btn){ btn.style.display = 'none'; btn.setAttribute('data-ig-disabled','1'); }
-          if (input){ input.disabled = true; input.setAttribute('data-ig-disabled','1'); }
-          if (send){ send.disabled = true; send.setAttribute('data-ig-disabled','1'); }
-          logOn('LEGACYCHAT off (in-game mobile)');
-        } else {
-          if (panel && panel.getAttribute('data-ig-disabled')==='1'){ panel.style.display = ''; panel.removeAttribute('data-ig-disabled'); }
-          if (btn && btn.getAttribute('data-ig-disabled')==='1'){ btn.style.display = ''; btn.removeAttribute('data-ig-disabled'); }
-          if (input && input.getAttribute('data-ig-disabled')==='1'){ input.disabled = false; input.removeAttribute('data-ig-disabled'); }
-          if (send && send.getAttribute('data-ig-disabled')==='1'){ send.disabled = false; send.removeAttribute('data-ig-disabled'); }
-          logOn('LEGACYCHAT on (lobby/pc)');
-        }
-      } catch(_){}
-    }
-    function bind(){
-      try {
-        if (!window.socket || !window.socket.on || window.__legacyChatMitigationBound) return;
-        window.__legacyChatMitigationBound = true;
-        window.socket.on('gameStarted', function(){ if (isMobile()) setLegacyChat(false); });
-        window.socket.on('lobbyUpdate', function(d){ try { if (d && d.started === false) setLegacyChat(true); } catch(_){ } });
-        window.socket.on('kicked', function(){ setLegacyChat(true); });
-        window.socket.on('disconnect', function(){ setLegacyChat(true); });
-      } catch(_){}
-    }
-    bind();
-    var _tries = 0;
-    var _int = setInterval(function(){ if (++_tries>20) try{clearInterval(_int);}catch(_){}
-      try { bind(); } catch(_){}
-    }, 400);
-  } catch(_){}
-})();
-</script>
-
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
