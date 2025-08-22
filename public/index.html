@@ -413,26 +413,18 @@ body.menu-hide-ui #fpsCounter,
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }</style>
-
-<!-- Mobile-only selection highlight for construction tiles/buttons -->
-<style>
-@media (hover: none) and (pointer: coarse) {
-  /* Green square highlight around selected build tile (menu de constructions) */
-  #buildTiles .build-tile.is-selected > div:first-child {
-    outline: 3px solid #33e06a;
-    outline-offset: -2px;
-    box-shadow: 0 0 0 3px rgba(51, 224, 106, 0.30), 0 0 10px rgba(51, 224, 106, 0.35);
-    border-radius: 6px;
-  }
-  /* Highlight for mobile quick buttons (if used) */
-  .mobile-build .mb-btn.is-selected {
-    outline: 3px solid #33e06a;
+<!-- MOBILE: Selected build tile green outline -->
+<style id="mobile-build-selected-style">
+@media (hover: none) and (pointer: coarse){
+  #buildTiles .build-tile.mobile-selected{
+    outline: 3px solid #33fc69;
     outline-offset: 2px;
-    box-shadow: 0 0 10px rgba(51, 224, 106, 0.35);
+    border-radius: 12px;
+    /* subtle glow without repaint storms */
+    box-shadow: 0 0 0 1px rgba(51,252,105,0.25);
   }
 }
 </style>
-
 </head>
 <body>
 <script>
@@ -6159,65 +6151,60 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
 </script>
 
-
-<!-- Mobile-only selection sync: reflects current buildMode as a green square -->
-<script>
+<!-- MOBILE: Selected build tile outline sync (non-invasive) -->
+<script id="mobile-build-selected-script">
 (function(){
-  // Safely detect mobile (do not affect PC)
-  function isMobilePointer(){
-    try { return window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches; }
-    catch(_){ return false; }
-  }
-
-  function updateBuildSelectionUI(){
-    try {
-      // Clear any previous selection on both UIs
-      document.querySelectorAll('#buildTiles .build-tile.is-selected').forEach(function(el){ el.classList.remove('is-selected'); });
-      document.querySelectorAll('.mobile-build .mb-btn.is-selected').forEach(function(el){ el.classList.remove('is-selected'); });
-      // Desktop: no highlight at all
-      if (!isMobilePointer()) return;
-      // Nothing selected?
-      var mode = (typeof window.buildMode !== 'undefined') ? window.buildMode : null;
-      if (!mode) return;
-      // Highlight the matching construction button(s)
-      var a = document.querySelector('#buildTiles .build-tile[data-type="' + mode + '"]');
-      if (a) a.classList.add('is-selected');
-      var b = document.querySelector('.mobile-build .mb-btn[data-type="' + mode + '"]');
-      if (b) b.classList.add('is-selected');
-    } catch(_){ /* never crash */ }
-  }
-  window.updateBuildSelectionUI = updateBuildSelectionUI;
-
-  // Immediate sync after UI is ready
-  try { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', updateBuildSelectionUI, { once:true }); } else { updateBuildSelectionUI(); } } catch(_){}
-
-  // Gentle polling on mobile to catch any buildMode change (e.g., after drag-to-place or server ACK)
   try {
-    if (!window.__buildSelSync) {
-      window.__buildSelSync = true;
-      var last = null;
-      setInterval(function(){
-        try {
-          var cur = (typeof window.buildMode !== 'undefined') ? window.buildMode : null;
-          if (cur !== last) { last = cur; updateBuildSelectionUI(); }
-        } catch(_){}
-      }, 120);
+    var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches)
+                   || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+    function applyMobileBuildSelectionUI(){
+      try {
+        var cont = document.getElementById('buildTiles');
+        if (!cont) return;
+        var btns = cont.querySelectorAll('.build-tile');
+        // clear previous
+        btns.forEach(function(b){ b.classList.remove('mobile-selected'); });
+        if (!isMobile) return;
+        var type = (typeof window.buildMode === 'string') ? window.buildMode : null;
+        if (!type) return;
+        var active = cont.querySelector('.build-tile[data-type="' + type + '"]');
+        if (active) active.classList.add('mobile-selected');
+      } catch(_e){ /* no-op on any failure to avoid mobile crashes */ }
     }
-  } catch(_){}
 
-  // Also refresh right after user taps a build button (without touching placement logic)
-  try {
-    document.querySelectorAll('#buildTiles .build-tile').forEach(function(btn){
-      btn.addEventListener('click', function(){ setTimeout(updateBuildSelectionUI, 0); }, { passive:true });
-    });
-  } catch(_){}
-  try {
-    document.querySelectorAll('.mobile-build .mb-btn').forEach(function(btn){
-      btn.addEventListener('click', function(){ setTimeout(updateBuildSelectionUI, 0); }, { passive:true });
-    });
-  } catch(_){}
+    // Defer click hook on the container so we don't touch existing logic
+    (function attachClickSync(){
+      try {
+        var cont = document.getElementById('buildTiles');
+        if (!cont || cont.__mobileSelectedPatch) return;
+        cont.__mobileSelectedPatch = true;
+        // Use capture + microtask defer to run after original handlers updated buildMode
+        cont.addEventListener('click', function(){ setTimeout(applyMobileBuildSelectionUI, 0); }, { passive: true, capture: true });
+      } catch(_){}
+    })();
+
+    // Poll gently to catch async changes (drag-to-place end, server OK, etc.)
+    var ivId = setInterval(function(){
+      if (document.readyState === 'loading') return;
+      applyMobileBuildSelectionUI();
+    }, 220);
+
+    // Keep media-query based flag up to date
+    window.addEventListener('resize', function(){
+      try { isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches)
+                        || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0); } catch(_){}
+      applyMobileBuildSelectionUI();
+    }, { passive: true });
+    window.addEventListener('orientationchange', function(){ applyMobileBuildSelectionUI(); }, { passive: true });
+
+    // Also sync when page becomes visible again
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) applyMobileBuildSelectionUI(); }, { passive: true });
+
+    // Expose for any existing code to call if desired (safe no-op on desktop)
+    window.applyMobileBuildSelectionUI = applyMobileBuildSelectionUI;
+  } catch(_err){ /* swallow to ensure zero crash surface */ }
 })();
 </script>
-
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
