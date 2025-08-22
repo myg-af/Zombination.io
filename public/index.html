@@ -4661,6 +4661,7 @@ function renderManualPlayers() {
   </div>
 </div>
 
+
 <script>
 (function(){
   var IS_MOBILE = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
@@ -4704,20 +4705,6 @@ function renderManualPlayers() {
         els.modal.style.display = 'flex';
         UNREAD = 0;
         if (els.badge) { els.badge.style.display = 'none'; els.badge.textContent = '0'; }
-        // lazy-load last 50 from lobby
-        try {
-          if (window.socket) {
-            window.socket.emit('chat:pull', { channel: 'lobby' }, function(res){
-              try{
-                if (res && res.ok && Array.isArray(res.history)) {
-                  els.list.innerHTML = '';
-                  res.history.forEach(function(m){ appendMsg(m); });
-                  scrollToBottom();
-                }
-              }catch(_){}
-            });
-          }
-        } catch(_){}
         try { els.input.focus(); } catch(_){}
       } catch(_){}
     }
@@ -4728,7 +4715,7 @@ function renderManualPlayers() {
     function appendMsg(msg){
       try{
         if (!msg) return;
-        var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
+        var name = (msg && msg.pseudo) ? String(msg.pseudo) : (msg && msg.name) ? String(msg.name) : 'player';
         var text = (msg && msg.text) ? String(msg.text) : '';
         var d = document.createElement('div');
         d.className = 'line';
@@ -4738,7 +4725,6 @@ function renderManualPlayers() {
         d.appendChild(n);
         d.appendChild(document.createTextNode(text));
         els.list.appendChild(d);
-        // clamp
         while (els.list.childElementCount > 200) els.list.removeChild(els.list.firstElementChild);
       }catch(_){}
     }
@@ -4762,18 +4748,15 @@ function renderManualPlayers() {
     if (els.send) els.send.addEventListener('click', function(ev){ ev.preventDefault(); send(); }, { passive: false });
     if (els.input) els.input.addEventListener('keydown', function(ev){ if (ev.key === 'Enter'){ ev.preventDefault(); send(); } }, { passive: false });
 
-    // Socket bindings for receiving messages (decoupled from legacy chat UI)
+    // Dedicated receiver guarded by state; do not unbind global handlers used by legacy chat.
     function bindSocket(){
       try{
-        if (!window.socket) return;
-        if (window.socket.__mchatBound) return;
-        window.socket.__mchatBound = true;
-        if (window.socket.off){
-          window.socket.off('chat:msg__m');
-        }
-        window.socket.on('chat:msg', function(msg){
+        var s = window.socket;
+        if (!s) return false;
+        if (s.__mchatBound) return true;
+        s.__mchatBound = true;
+        s.on('chat:msg', function(msg){
           try{
-            // Only care about in-game lobby messages on mobile
             if (!IS_MOBILE || !IN_GAME) return;
             if (!msg || msg.channel !== 'lobby') return;
             appendMsg(msg);
@@ -4783,41 +4766,58 @@ function renderManualPlayers() {
             }
           }catch(_){}
         });
-      }catch(_){}
+        // rebind on reconnect
+        s.on('reconnect', function(){ try { s.__mchatBound = false; bindSocket(); } catch(_){ } });
+        return true;
+      }catch(_){ return false; }
     }
-    bindSocket();
 
-    // Toggle visibility with game state
-    function setInGame(on){
-      IN_GAME = !!on;
+    function forceHideLegacy(on){
       try {
-        var legacyPanel = document.getElementById('chatPanel');
-        var legacyBtn = document.getElementById('chatCollapsedBtn');
-        if (legacyPanel) legacyPanel.style.display = on ? 'none' : '';
-        if (legacyBtn) legacyBtn.style.display = on ? 'none' : '';
-        if (els.btn) els.btn.style.display = (IS_MOBILE && on) ? 'flex' : 'none';
-        // additionally, unbind legacy chat listeners to avoid any DOM churn/crash
-        try {
-          if (window.socket && window.socket.off && IS_MOBILE) {
-            window.socket.off('chat:history');
-            window.socket.off('chat:msg');
-          }
-        } catch(_){}
+        // Prefer the exposed helper if present (keeps legacy from re-showing itself)
+        if (typeof window.__forceHideChatSolo === 'function') {
+          window.__forceHideChatSolo(!!on);
+        } else {
+          var legacyPanel = document.getElementById('chatPanel');
+          var legacyBtn = document.getElementById('chatCollapsedBtn');
+          if (legacyPanel) legacyPanel.style.display = on ? 'none' : '';
+          if (legacyBtn) legacyBtn.style.display = on ? 'none' : '';
+        }
       } catch(_){}
     }
 
-    // game start / back to lobby hooks
-    try {
-      if (window.socket) {
-        window.socket.on('gameStarted', function(){ setInGame(true); });
-        window.socket.on('lobbyUpdate', function(data){
-          try {
-            if (!data || !data.started) { setInGame(false); }
-          }catch(_){}
+    function setInGame(on){
+      IN_GAME = !!on;
+      // Show our minimal UI in-game on mobile only; hide legacy chat completely
+      try {
+        forceHideLegacy(IS_MOBILE && IN_GAME);
+        if (els.btn) els.btn.style.display = (IS_MOBILE && IN_GAME) ? 'flex' : 'none';
+        if (!IN_GAME) { UNREAD = 0; if (els.badge){ els.badge.textContent='0'; els.badge.style.display='none'; } close(); }
+      } catch(_){}
+    }
+
+    // Attach AFTER socket exists; retry until available
+    bindSocket();
+    var waitSock = setInterval(function(){ try{ if (bindSocket()){ clearInterval(waitSock); } }catch(_){} }, 300);
+
+    // game start / back to lobby hooks (bind when socket available too)
+    function attachGameListeners(){
+      try{
+        var s = window.socket; if (!s) return false;
+        if (s.__mchatGameBound) return true;
+        s.__mchatGameBound = true;
+        s.on('gameStarted', function(){ setInGame(true); });
+        s.on('lobbyUpdate', function(data){
+          try { if (!data || !data.started) { setInGame(false); } } catch(_){}
         });
-      }
-    } catch(_){}
-    // First render
+        s.on('reconnect', function(){ try { /* retain state */ setInGame(IN_GAME); } catch(_){} });
+        return true;
+      }catch(_){ return false; }
+    }
+    attachGameListeners();
+    var waitGame = setInterval(function(){ try{ if (attachGameListeners()){ clearInterval(waitGame); } }catch(_){} }, 300);
+
+    // initial state: not in game
     setInGame(false);
 
     // Re-apply i18n on language changes
@@ -4831,6 +4831,7 @@ function renderManualPlayers() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { passive:true }); else setup();
 })();
 </script>
+
 <!-- === /MOBILE IN-GAME CHAT (replacement) === -->
 
 
