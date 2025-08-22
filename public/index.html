@@ -897,7 +897,7 @@ setInterval(()=>{
       const rem = Math.max(0, blockCooldownUntil - Date.now());
       cd.textContent = rem > 0 ? (Math.ceil(rem/1000)+'s') : '';
     } else {
-      cd.textContent = '';
+      cd.textContent = (window.trLoc ? trLoc('rotateToPortrait', 'Rotate your device to portrait.') : 'Rotate your device to portrait.');
     }
   });
 }, 500);
@@ -2831,15 +2831,8 @@ canvas.addEventListener('touchmove', (e) => {
 }, { passive: true });
 
 // ---- Placement sur mobile (touch) ----
-canvas.addEventListener('touchstart', (e) => {
-  if (!buildMode) return;
-  const t = e.changedTouches && e.changedTouches[0];
-  if (!t) return;
-  e.preventDefault();
-  e.stopPropagation();
-  tryPlaceStructureAtCursor(t.clientX, t.clientY);
-  mouseDown = false;
-}, { passive: false });
+// [patched] mobile touchstart immediate placement removed (replaced by drag-to-drop setup)
+
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!buildMode) return;
@@ -2848,6 +2841,62 @@ canvas.addEventListener('pointerdown', (e) => {
   tryPlaceStructureAtCursor(e.clientX, e.clientY);
   mouseDown = false;
 });
+
+// ---- Mobile drag-to-drop placement (touch) ----
+(function(){
+  try {
+    if (!canvas || canvas.__dragPlaceSetup) return;
+    canvas.__dragPlaceSetup = true;
+
+    var TAP_THRESHOLD_PX = 8;
+    var touchPlacing = false;
+    var touchMoved = false;
+    var startX = 0, startY = 0, lastX = 0, lastY = 0;
+    var startTx = -1, startTy = -1;
+
+    function onTouchStartPlace(e){
+      if (!buildMode) return;
+      if (!(e.touches && e.touches.length === 1)) return; // ignore multi-touch (pinch, joystick)
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      e.preventDefault(); e.stopPropagation();
+      touchPlacing = true; touchMoved = false;
+      startX = lastX = t.clientX; startY = lastY = t.clientY;
+      var st = screenToWorldTile(t.clientX, t.clientY);
+      startTx = st.tx; startTy = st.ty;
+      // show ghost immediately
+      buildHover.tx = st.tx; buildHover.ty = st.ty;
+    }
+    function onTouchMovePlace(e){
+      if (!buildMode || !touchPlacing) return;
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      lastX = t.clientX; lastY = t.clientY;
+      var dx = lastX - startX, dy = lastY - startY;
+      if (!touchMoved && Math.hypot(dx, dy) >= TAP_THRESHOLD_PX) touchMoved = true;
+      var st = screenToWorldTile(lastX, lastY);
+      if (st.tx !== startTx || st.ty !== startTy) touchMoved = true;
+      buildHover.tx = st.tx; buildHover.ty = st.ty;
+      // do not preventDefault here to avoid fighting with pinch/scroll outside canvas, but canvas has touch-action:none
+    }
+    function onTouchEndPlace(e){
+      if (!buildMode || !touchPlacing) return;
+      var t = e.changedTouches && e.changedTouches[0];
+      // Place only if the user actually dragged (moved) to a location
+      if (touchMoved) {
+        tryPlaceStructureAtCursor(lastX, lastY);
+      }
+      touchPlacing = false; touchMoved = false;
+      e.preventDefault(); e.stopPropagation();
+    }
+
+    canvas.addEventListener('touchstart', onTouchStartPlace, { passive: false });
+    canvas.addEventListener('touchmove',  onTouchMovePlace,  { passive: false });
+    canvas.addEventListener('touchend',   onTouchEndPlace,   { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEndPlace,  { passive: false });
+  } catch(_e) { /* no-op */ }
+})();
+// ---- /Mobile drag-to-drop placement ----
 
 function drawBuildPreview() {
   if (!buildMode || buildHover.tx < 0 || buildHover.ty < 0) return;
@@ -5987,7 +6036,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       const d = document.createElement('div');
       d.id = 'rotateOverlay';
       d.setAttribute('aria-hidden', 'true');
-      d.textContent = 'Tournez votre appareil en mode portrait';
+      d.textContent = (window.trLoc ? trLoc('rotateToPortrait', 'Rotate your device to portrait.') : 'Rotate your device to portrait.');
       document.body.appendChild(d);
     }
   }

@@ -802,35 +802,35 @@ const TRANSLATIONS = {
 ;(function(){
   function merge(base, ext){ if (!base) return ext; for (var k in ext){ if (ext.hasOwnProperty(k)) { if (typeof ext[k]==='object' && ext[k] && !Array.isArray(ext[k])) base[k] = Object.assign({}, base[k]||{}, ext[k]); else base[k]=ext[k]; } } return base; }
 TRANSLATIONS.en = merge(TRANSLATIONS.en||{}, {
-  hpShort:'HP', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'HP', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Rotate your device to portrait.", });
 TRANSLATIONS.fr = merge(TRANSLATIONS.fr||{}, {
-  hpShort:'PV', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'PV', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Tournez votre appareil en mode portrait.", });
 TRANSLATIONS.es = merge(TRANSLATIONS.es||{}, {
-  hpShort:'PS', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'PS', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Gira tu dispositivo a modo vertical.", });
 TRANSLATIONS.pt = merge(TRANSLATIONS.pt||{}, {
-  hpShort:'PV', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'PV', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Gire seu dispositivo para o modo retrato.", });
 TRANSLATIONS.de = merge(TRANSLATIONS.de||{}, {
-  hpShort:'LP', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'LP', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Drehen Sie Ihr Gerät ins Hochformat.", });
 TRANSLATIONS.ru = merge(TRANSLATIONS.ru||{}, {
-  hpShort:'HP', perSec:'/с', pxPerSec:'px/с', 
-});
+  hpShort:'HP', perSec:'/с', pxPerSec:'px/с',
+  rotateToPortrait: "Поверните устройство в портретный режим.", });
 TRANSLATIONS.cn = merge(TRANSLATIONS.cn||{}, {
-  hpShort:'生命', perSec:'/秒', pxPerSec:'px/秒', 
-});
+  hpShort:'生命', perSec:'/秒', pxPerSec:'px/秒',
+  rotateToPortrait: "请将设备旋转到竖屏模式。", });
 TRANSLATIONS.jp = merge(TRANSLATIONS.jp||{}, {
-  hpShort:'HP', perSec:'/秒', pxPerSec:'px/秒', 
-});
+  hpShort:'HP', perSec:'/秒', pxPerSec:'px/秒',
+  rotateToPortrait: "端末を縦向きに回転してください。", });
 TRANSLATIONS.pl = merge(TRANSLATIONS.pl||{}, {
-  hpShort:'HP', perSec:'/s', pxPerSec:'px/s', 
-});
+  hpShort:'HP', perSec:'/s', pxPerSec:'px/s',
+  rotateToPortrait: "Obróć urządzenie do trybu pionowego.", });
 TRANSLATIONS.kr = merge(TRANSLATIONS.kr||{}, {
-  hpShort:'HP', perSec:'/초', pxPerSec:'px/초', 
-});
+  hpShort:'HP', perSec:'/초', pxPerSec:'px/초',
+  rotateToPortrait: "기기를 세로 모드로 전환하세요.", });
 
 // Ensure availability on window for legacy code paths
 try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; } } catch(_) {}
