@@ -1459,6 +1459,75 @@ socket.on('stateUpdate', (payload) => {
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
 
+// --- Pinch-to-zoom (mobile) ---
+(function(){
+  let pinchActive = false;
+  let startDist = 0;
+  let startPinchScale = 1;
+
+  function touchInRect(t, rect){
+    if (!rect) return false;
+    const x = t.clientX, y = t.clientY;
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+  function touchInAnyJoystick(t){
+    try{
+      const r1 = (moveJoy && moveJoy.joyDiv) ? moveJoy.joyDiv.getBoundingClientRect() : null;
+      const r2 = (aimJoy  && aimJoy.joyDiv)  ? aimJoy.joyDiv.getBoundingClientRect()  : null;
+      return touchInRect(t, r1) || touchInRect(t, r2);
+    }catch(_){ return false; }
+  }
+  function computeDistance(t0, t1){
+    const dx = t0.clientX - t1.clientX;
+    const dy = t0.clientY - t1.clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  function onTouchStart(e){
+    if (!isMobileDevice) return;
+    if (e.touches && e.touches.length === 2){
+      const t0 = e.touches[0], t1 = e.touches[1];
+      // Do not start pinch if any finger is on a joystick
+      if (touchInAnyJoystick(t0) || touchInAnyJoystick(t1)) return;
+      pinchActive = true;
+      startDist = computeDistance(t0, t1);
+      startPinchScale = pinchScale;
+      e.preventDefault();
+    }
+  }
+  function onTouchMove(e){
+    if (!pinchActive) return;
+    if (!(e.touches && e.touches.length >= 2)) { pinchActive = false; return; }
+    const t0 = e.touches[0], t1 = e.touches[1];
+    // Cancel pinch if user moves into joystick
+    if (touchInAnyJoystick(t0) || touchInAnyJoystick(t1)) { pinchActive = false; return; }
+    const d = computeDistance(t0, t1);
+    if (d > 0 && startDist > 0){
+      const raw = startPinchScale * (d / startDist);
+      pinchScale = Math.max(MIN_PINCH, Math.min(MAX_PINCH, raw));
+      // Apply new scale and recentre
+      updateRenderScale();
+      try { updateCamera && updateCamera(); } catch(_){}
+      e.preventDefault();
+    }
+  }
+  function onTouchEnd(e){
+    if (!pinchActive) return;
+    if (!(e.touches && e.touches.length >= 2)) {
+      pinchActive = false;
+    }
+  }
+
+  // Attach on the canvas to avoid global interference
+  try{
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+  }catch(_){}
+})();
+
+
 // --- Debug/robust helpers ---
 let __centeredOnPlayerOnce = false;
 let __lastValidMyPos = {x:0, y:0};
@@ -1585,23 +1654,30 @@ function resetWaveCounters(total = 0) {
 
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
+// --- Mobile zoom management ---
+let baseRenderScale = 1;   // auto-computed scale so halo touches screen edges
+let pinchScale = 1;        // user pinch multiplier
+const MIN_PINCH = 0.6;
+const MAX_PINCH = 1.8;
+
 	function updateRenderScale() {
   try {
+    // Compute the 'base' scale that fits the visibility halo to screen edges
     if (!isMobileDevice) {
-      renderScale = 1;
+      baseRenderScale = 1;
+      renderScale = baseRenderScale * pinchScale;
       return;
     }
-    // Fit the visibility halo to the smallest screen dimension:
-    // halo screen radius r_screen = CLIENT_VIEW_RADIUS * renderScale
-    // We want r_screen ~= min(canvas.width, canvas.height) / 2
-    // Use a safe fallback for CLIENT_VIEW_RADIUS if not yet defined.
     const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 420;
     const cw = (canvas && canvas.width) || window.innerWidth || 0;
     const ch = (canvas && canvas.height) || window.innerHeight || 0;
     const minDim = Math.min(cw, ch);
     if (minDim > 0 && VR > 0) {
-      renderScale = minDim / (2 * VR);
+      baseRenderScale = minDim / (2 * VR);
+    } else {
+      baseRenderScale = 1;
     }
+    renderScale = baseRenderScale * pinchScale;
   } catch(e) {
     try { console.warn('[updateRenderScale] error', e && (e.message||e)); } catch(_){}
   }
@@ -1609,8 +1685,12 @@ function resetWaveCounters(total = 0) {
 
 // Keep mobile zoom correct when the screen size/orientation changes
 try {
-  window.addEventListener('resize', function(){ try{ updateRenderScale(); }catch(_){ } }, { passive: true });
-  window.addEventListener('orientationchange', function(){ try{ setTimeout(updateRenderScale, 0); }catch(_){ } }, { passive: true });
+  window.addEventListener('resize', function(){
+    try { updateRenderScale(); updateCamera && updateCamera(); } catch(_){}
+  }, { passive: true });
+  window.addEventListener('orientationchange', function(){
+    try { setTimeout(function(){ updateRenderScale(); updateCamera && updateCamera(); }, 0); } catch(_){}
+  }, { passive: true });
 } catch(_){}
 
 updateRenderScale();
