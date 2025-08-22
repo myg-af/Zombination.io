@@ -5790,16 +5790,10 @@ function __alertPseudoTaken(){
     } catch(e){ try{ debugWarn('ensureCanvasSize error', e && (e.message||e)); }catch(_){ } }
   }
   function drawMarker(canvas){
-      try { var __ua = (navigator.userAgent||''); if (/Android|iPhone|iPad|iPod|Mobile/i.test(__ua)) { return false; } } catch(_){ }
-
-    try {
-      if (!canvas) { debugWarn('drawMarker: no canvas'); return false; }
-      var ctx = canvas.getContext && canvas.getContext('2d');
-      if (!ctx) { debugWarn('drawMarker: 2d ctx unavailable (maybe WebGL-only canvas)'); return false; }
-      try { var __ua=(navigator.userAgent||''); var __m=/Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(__ua); if (!__m) { ctx.save(); ctx.globalAlpha = 1; ctx.fillStyle = '#00ff88'; ctx.fillRect(2,2,8,8); } } catch(_){ /* ignore */ }
-      try { var __ua=(navigator.userAgent||''); var __m=/Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(__ua); if (!__m) { ctx.fillStyle = '#ffffff'; ctx.font = '10px ui-monospace,monospace'; ctx.fillText('tick', 14, 10); } } catch(_){ /* ignore */ }
-      ctx.restore(); return true;
-    } catch(e){ try{ debugError('drawMarker error', e && (e.message||e)); }catch(_){ } return false; }
+    // Disabled: avoid drawing the small green square + 'tick' text on desktop.
+    // Return false so any probing logic that depends on this simply no-ops.
+    try { return false; } catch(_) { return false; }
+  } catch(e){ try{ debugError('drawMarker error', e && (e.message||e)); }catch(_){ } return false; }
   }
   function readOnePixel(canvas){
     try {

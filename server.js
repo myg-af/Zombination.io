@@ -1751,6 +1751,23 @@ socket.on('renamePseudo', (data, cb) => {
       game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
     }
 
+
+    // Immediate cleanup for NON-HOST players who are sitting in any lobby (not started)
+    // This prevents a refreshed page from leaving a ghost seat.
+    try {
+      // Find the lobby that currently contains this socket as a player
+      let _lobbyGame = activeGames.find(g => g && g.lobby && !g.lobby.started && g.lobby.players && g.lobby.players[socket.id]);
+      if (_lobbyGame) {
+        const _isHost = !!(_lobbyGame.lobby.manual && _lobbyGame.lobby.hostId === socket.id);
+        if (!_isHost) {
+          try { delete _lobbyGame.lobby.players[socket.id]; } catch(_) {}
+          try { socket.leave('lobby' + _lobbyGame.id); } catch(_) {}
+          try { broadcastLobby(_lobbyGame); } catch(_) {}
+          try { delete socketToGame[socket.id]; } catch(_) {}
+          try { cleanupEmptyManualLobbies(); } catch(_) {}
+        }
+      }
+    } catch (e) { try { console.warn('[disconnect] early non-host cleanup failed', e && (e.message||e)); } catch(_) {} }
     // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> **do not close immediately**.
     // Set a grace timer; if the host doesn't reconnect in time, then close the lobby.
     if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
@@ -1779,6 +1796,32 @@ socket.on('renamePseudo', (data, cb) => {
                 try { delete socketToGame[cid]; } catch (_){}
               } catch(_){}
             }
+
+    // For NON-HOST players or non-manual lobbies: immediately remove the player from the lobby on disconnect
+    // (treat as if they pressed "Back"). This prevents ghost seats when a page is refreshed.
+    try {
+      // Re-evaluate the game mapping in case previous block mutated it
+      const __gid = socketToGame[socket.id];
+      let __game = activeGames.find(g => g && g.id === __gid) || null;
+      if (!__game) {
+        // attempt to find by presence in lobby roster
+        __game = activeGames.find(g => g && g.lobby && g.lobby.players && g.lobby.players[socket.id]) || null;
+      }
+      if (__game && __game.lobby && !__game.lobby.started) {
+        // If this is a manual lobby AND the disconnecting socket is the host, we already handled grace above;
+        // skip the immediate kick here in that special case.
+        const isHost = !!(__game.lobby.manual && __game.lobby.hostId === socket.id);
+        if (!isHost) {
+          try { if (__game.lobby.players && __game.lobby.players[socket.id]) delete __game.lobby.players[socket.id]; } catch(_){}
+          try { broadcastLobby(__game); } catch(_){}
+          try { delete socketToGame[socket.id]; } catch(_){}
+          try { cleanupEmptyManualLobbies(); } catch(_){}
+        }
+      } else {
+        // If the game was already started or not found, ensure the mapping is cleared.
+        try { delete socketToGame[socket.id]; } catch(_){}
+      }
+    } catch (e) { try { console.warn('[disconnect] cleanup error', e && (e.message || e)); } catch(_){ } }
             try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
             // Remove game entirely
             activeGames = activeGames.filter(g => g !== game);
