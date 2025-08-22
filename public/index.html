@@ -3763,39 +3763,8 @@ function updateBuildTilesState() {
     // maj de l’étiquette sous la tuile (2e div)
     const priceLabel = btn.querySelector('div:nth-child(2)');
     if (priceLabel) {
-      let label = `$${price}
-
-// === Mobile-only selection highlight (safe hook) ===
-(function(){
-  if (window.__mobileBuildHighlightHooked) return;
-  window.__mobileBuildHighlightHooked = true;
-  function __updateMobileBuildSelection(){
-    try {
-      var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
-      var list = document.querySelectorAll('#buildTiles .build-tile');
-      list.forEach(function(btn){
-        try{
-          if (!isMobile) { btn.classList.remove('mb-selected'); return; }
-          var type = btn.getAttribute('data-type');
-          if (window.buildMode && window.buildMode === type) btn.classList.add('mb-selected');
-          else btn.classList.remove('mb-selected');
-        }catch(_){}
-      });
-    } catch(_){}
-  }
-  // Monkey-patch updateBuildTilesState to also refresh selection border on mobile
-  try {
-    var __origUpdate = window.updateBuildTilesState;
-    window.updateBuildTilesState = function(){
-      try { if (typeof __origUpdate === 'function') __origUpdate.apply(this, arguments); } catch(_){}
-      __updateMobileBuildSelection();
-    };
-  } catch(_){}
-  // Also run once on load
-  try { __updateMobileBuildSelection(); } catch(_){}
-})();
-
-`;
+      let label = `$${price}`;
+      
       if (type==='t'||type==='T'||type==='G') {
         const limits = { t:2, T:2, G:1 };
         let count=0;
@@ -3828,6 +3797,17 @@ function updateBuildTilesState() {
       if (count>=limits[type]) { btn.disabled=true; btn.style.opacity='0.5'; btn.style.cursor='not-allowed'; }
     }
 
+
+  // === Mobile-only: green square around selected build tile ===
+  try {
+    var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+    if (isMobile) {
+      if (window.buildMode && window.buildMode === type) btn.classList.add('mb-selected');
+      else btn.classList.remove('mb-selected');
+    } else {
+      btn.classList.remove('mb-selected');
+    }
+  } catch(_) {}
   });
 }
 
