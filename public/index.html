@@ -3103,22 +3103,11 @@ function gameLoop(timestamp = 0) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
-        try {
-          // Anti-flip burst: keep lobby overlays hidden a few seconds after start
-          (function rehideBurst(round){
-            try {
-              var ids = ['lobbyScreen','manualLobbyPanel','joinLobbyPanel'];
-              for (var i=0;i<ids.length;i++){ var el = document.getElementById(ids[i]); if (el) { el.style.display = 'none'; } }
-            } catch(_){}
-            if (typeof round !== 'number') round = 0;
-            if (round < 24) { setTimeout(function(){ rehideBurst(round+1); }, 200); }
-          })();
-        } catch(_){}
-    
         lobbyStarted = true;
         return;
       }
-      lobbyScreen.style.display = 'flex'; updateLobbyTexts();
+      lobbyScreen.style.display = 'flex';
+      updateLobbyTexts();
       lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.readOnly = lobbyJoined;
       lobbyJoin.textContent = tr.join;
