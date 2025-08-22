@@ -1,6 +1,12 @@
 {
   "ladder": [
     {
+      "player": "Myg",
+      "wave": 14,
+      "kills": 0,
+      "ts": 1755866907716
+    },
+    {
       "player": "Driga50",
       "wave": 8,
       "kills": 264,
@@ -29,12 +35,6 @@
       "wave": 7,
       "kills": 9,
       "ts": 1755861008647
-    },
-    {
-      "player": "Myg",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1755845578566
     },
     {
       "player": "Quur",

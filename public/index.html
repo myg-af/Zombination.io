@@ -846,6 +846,16 @@ document.addEventListener('DOMContentLoaded', function(){
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <script>
+// Unified UI language getter: always honor menu selection (window.currentLang), fallback 'en'.
+function __uiLang(){
+  try {
+    var raw = (typeof window.currentLang === 'string' && window.currentLang) || (navigator.language||'en');
+    raw = String(raw).slice(0,2);
+    var alias = { ja:'jp', zh:'cn', ko:'kr' };
+    return alias[raw] || raw || 'en';
+  } catch(_){ return 'en'; }
+}
+
 /* TURRET_UPGRADE_CLIENT */
 let myTurretUp = { t:0, T:0, G:0 };
 function turretUpgradeBaseAdd(type){ return type==='t'?5: (type==='T'?10:25); }
@@ -880,7 +890,7 @@ if (buildTilesCont){
       const type = btn.getAttribute('data-type');
       const tip0 = btn.getAttribute('data-tip') || '';
       if (['t','T','G','B','D'].includes(type)){
-      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+      const tr = (TRANSLATIONS[__uiLang()] || TRANSLATIONS['en']) || {};
       const names = (tr.turretType || {});
       const hpLabel = tr.hpShort || 'HP';
       const dmgLabel = tr.damage || 'Damage';
@@ -893,7 +903,7 @@ if (buildTilesCont){
       } else {
         const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
         const dmg = computeTurretDamageDisplay(type);
-        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).perSec||'/s') + ')';
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[__uiLang()]||TRANSLATIONS['en']).perSec||'/s') + ')';
       }
       const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
     }
@@ -2770,7 +2780,7 @@ if (isSpectator) {
   if (AUTO_FIRE_ENABLED && !buildMode) {
     const sm = document.getElementById('shopModal');
     const shopOpen = sm && sm.style.display === 'block';
-    if (!shopOpen && myId && playersHealth[myId] && playersHealth[myId].alive) {
+    if (myId && playersHealth[myId] && playersHealth[myId].alive) {
       const p = playersHealth[myId];
       let best = null, bestD2 = Infinity;
       const ZSRC = (typeof ZOMBIES_FRAME !== 'undefined' && Array.isArray(ZOMBIES_FRAME) && ZOMBIES_FRAME.length)
@@ -3515,7 +3525,7 @@ let STRUCTURE_PRICES = { T: 1000, t: 250, G: 5000, B: 100, D: 200 };
 // Hover → tooltip (localized, hard method)
 buildTiles.forEach(btn => {
   function computeTip(type) {
-    const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+    const tr = (TRANSLATIONS[(typeof window!=='undefined' && typeof window.currentLang==='string' && window.currentLang) || 'en'] || TRANSLATIONS['en']) || {};
     const names = (tr.turretType || {});
     const hpLabel = tr.hpShort || 'HP';
     const dmgLabel = tr.damage || 'Damage';
@@ -3530,16 +3540,18 @@ buildTiles.forEach(btn => {
     } else {
       const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
       const dmg = (typeof computeTurretDamageDisplay==='function') ? computeTurretDamageDisplay(type) : 0;
-      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).perSec||'/s') + ')';
+      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[(typeof window!=='undefined' && typeof window.currentLang==='string' && window.currentLang) || 'en']||TRANSLATIONS['en']).perSec||'/s') + ')';
     }
   }
   btn.addEventListener('mouseenter', () => {
+    if (buildTooltip && buildTooltip.dataset && buildTooltip.dataset.disabled==='1') return;
     const type = btn.getAttribute('data-type');
     const tip = computeTip(type);
     buildTooltip.textContent = tip;
     buildTooltip.style.display = 'block';
   }, { passive: true });
   btn.addEventListener('mouseleave', () => {
+    if (buildTooltip && buildTooltip.dataset && buildTooltip.dataset.disabled==='1') return;
     buildTooltip.style.display = 'none';
   }, { passive: true });
 });
@@ -6674,3 +6686,119 @@ e.preventDefault(); e.stopPropagation();
 })();
 </script>
 <!-- /[PATCH] turret-skins-swap v1 - periodic shop patch -->
+
+<!-- [PATCH] build-tiles locale sync (ensure names follow menu language) -->
+<script id="build-tiles-locale-sync">
+(function(){ "use strict";
+  if (window.__buildTilesLocaleSyncInstalled) return;
+  window.__buildTilesLocaleSyncInstalled = true;
+
+  function uiLang(){
+    try {
+      var raw = (typeof window.currentLang === 'string' && window.currentLang) || (navigator.language||'en');
+      raw = String(raw).slice(0,2);
+      var alias = { ja:'jp', zh:'cn', ko:'kr' };
+      return alias[raw] || raw || 'en';
+    } catch(_){ return 'en'; }
+  }
+
+  function upperFirstLocalizedSafe(s){
+    try { return (typeof window.upperFirstLocalized==='function') ? window.upperFirstLocalized(s) : (s ? s.charAt(0).toUpperCase()+s.slice(1) : s); }
+    catch(_){ return s; }
+  }
+
+  function computeTipForType(type){
+    try {
+      var T = window.TRANSLATIONS || {};
+      var L = uiLang();
+      var tr = (T[L] || T['en']) || {};
+      var names = tr.turretType || {};
+      var hpLabel = tr.hpShort || 'HP';
+      var dmgLabel = tr.damage || 'Damage';
+      var rateLabel = tr.fireRate || 'Fire rate';
+      var perSec  = tr.perSec || '/s';
+      var baseHP = { T:500, t:200, G:2500, B:500, D:500 };
+      var name = (type==='B') ? (tr.buildWall || 'Wall')
+               : (type==='D') ? (tr.buildDoor || 'Door')
+               : (names[type] || 'Turret');
+      name = upperFirstLocalizedSafe(name);
+      if (type==='B' || type==='D') {
+        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
+      } else {
+        var rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
+        var baseDmg = {t:5,T:10,G:25}[type] || 0;
+        var dmg = (typeof window.computeTurretDamageDisplay==='function') ? window.computeTurretDamageDisplay(type) : baseDmg;
+        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + perSec + ')';
+      }
+    } catch(_){ return ''; }
+  }
+
+  function syncBuildTileLocale(){
+    try{
+      var cont = document.getElementById('buildTiles'); if (!cont) return;
+      var T = window.TRANSLATIONS || {}; var L = uiLang(); var tr = (T[L]||T['en'])||{};
+      cont.querySelectorAll('.build-tile').forEach(function(btn){
+        try{
+          var type = btn.getAttribute('data-type'); if (!type) return;
+          // 1) Update tooltip source so every handler (legacy/new) uses the right language
+          var tip = computeTipForType(type);
+          if (tip) btn.setAttribute('data-tip', tip);
+
+          // 2) Accessibility label for screen-readers
+          var baseName = (type==='B') ? (tr.buildWall || 'Wall')
+                        : (type==='D') ? (tr.buildDoor || 'Door')
+                        : ((tr.turretType||{})[type] || 'Turret');
+          baseName = upperFirstLocalizedSafe(baseName);
+          btn.setAttribute('aria-label', baseName);
+        }catch(_){}
+      });
+
+      // Also update mobile build button labels (idempotent)
+      try{
+        document.querySelectorAll('.mobile-build .mb-btn').forEach(function(b){
+          var t = b.getAttribute('data-type'); if (!t) return;
+          if (t==='B') { b.textContent = tr.buildWall || b.textContent; b.setAttribute('aria-label', (tr.buildWall||b.textContent) + ' (B)'); }
+          else if (t==='D') { b.textContent = tr.buildDoor || b.textContent; b.setAttribute('aria-label', (tr.buildDoor||b.textContent) + ' (D)'); }
+          else if (t==='t') { b.textContent = tr.buildMiniTurret || b.textContent; b.setAttribute('aria-label', (tr.buildMiniTurret||b.textContent) + ' (t)'); }
+          else if (t==='T') { b.textContent = tr.buildTurret || b.textContent; b.setAttribute('aria-label', (tr.buildTurret||b.textContent) + ' (T)'); }
+        });
+      }catch(_){}
+
+      // If tooltip is currently visible, refresh its text to the new language
+      try{
+        var visibleTip = document.getElementById('buildTooltipStable') || document.getElementById('buildTooltip');
+        if (visibleTip && visibleTip.style && visibleTip.style.display==='block'){
+          // Try to find the currently hovered tile
+          var e = document.querySelector('#buildTiles .build-tile:hover');
+          if (e){
+            var t = e.getAttribute('data-type');
+            var txt = computeTipForType(t);
+            if (txt) visibleTip.textContent = txt;
+          }
+        }
+      }catch(_){}
+    }catch(_){}
+  }
+
+  // Expose
+  try { window.syncBuildTileLocale = syncBuildTileLocale; } catch(_){}
+
+  // Patch updateUITexts once to also sync tiles after any language change
+  try {
+    var _orig = window.updateUITexts;
+    if (typeof _orig === 'function'){
+      window.updateUITexts = function(){
+        try { _orig.apply(this, arguments); } finally { try { syncBuildTileLocale(); } catch(_e){} }
+      };
+    }
+  } catch(_){}
+
+  // Initial run (post-DOM)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', syncBuildTileLocale, {passive:true});
+  } else {
+    syncBuildTileLocale();
+  }
+})(); 
+</script>
+
