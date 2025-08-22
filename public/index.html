@@ -5849,94 +5849,38 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 </script>
 
 <script>
-// === In-game persistent anti-lobby flip (only while actually in game) ===
-(function(){
-  try{
-    var STYLE_ID = 'ingameHideLobbyStyle';
-    function dlog(){ try{ if (window.debugWarn) debugWarn.apply(null, arguments); }catch(_){ } }
-    function isInGame(){ try { return (window.__isInGameFast && window.__isInGameFast()); } catch(_){ return false; } }
-    function allowLobby(){ return !!window.__allowLobbyExit; }
-    function ensureStyle(on){
-      try{
-        var el = document.getElementById(STYLE_ID);
-        if (on){
-          if (!el){
-            el = document.createElement('style');
-            el.id = STYLE_ID;
-            el.textContent = "#lobbyScreen, #lobbyBox, #manualLobbyPanel, #joinLobbyPanel { display: none !important; visibility: hidden !important; }";
-            (document.head || document.documentElement).appendChild(el);
-            dlog('INGAME CSS on');
-          }
-        } else {
-          if (el && el.parentNode){ el.parentNode.removeChild(el); dlog('INGAME CSS off'); }
-        }
-      } catch(_){}
-    }
-
-    function tick(){
-      try {
-        var on = isInGame() && !allowLobby();
-        ensureStyle(on);
-      } catch(_){}
-    }
-    setInterval(tick, 250);
-    tick();
-
-    function bind(){
-      try {
-        if (!window.socket || !window.socket.on || window.__ingameAntiFlipBound) return false;
-        window.socket.on('gameStarted', function(){ try { window.__allowLobbyExit = false; dlog('INGAME allowLobby=false (gameStarted)'); } catch(_){ } });
-        window.socket.on('lobbyUpdate', function(d){ try { if (d && d.started === false) { window.__allowLobbyExit = true; dlog('INGAME allowLobby=true (lobbyUpdate started=false)'); } } catch(_){ } });
-        window.socket.on('kicked', function(){ try { window.__allowLobbyExit = true; dlog('INGAME allowLobby=true (kicked)'); } catch(_){ } });
-        window.socket.on('lobbyClosed', function(){ try { window.__allowLobbyExit = true; dlog('INGAME allowLobby=true (lobbyClosed)'); } catch(_){ } });
-        window.__ingameAntiFlipBound = true;
-        return true;
-      } catch(_){ return false; }
-    }
-    bind();
-    var _bi = setInterval(bind, 400);
-    setTimeout(function(){ try{ clearInterval(_bi); }catch(_){} }, 8000);
-
-  } catch(_){}
-})();
-</script>
-
+<script>
 
 <script>
-// Toggle a simple body class to lock UI in-game (safer than high z-index).
+// Toggle a simple body class to lock UI in-game (event-driven, no heuristic).
 (function(){
   try {
     function addLock(){ try { document.body.classList.add('ig-lock'); if (window.debugLog) debugLog('IG-LOCK on'); } catch(_){ } }
     function removeLock(){ try { document.body.classList.remove('ig-lock'); if (window.debugLog) debugLog('IG-LOCK off'); } catch(_){ } }
-    function isMobile(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
-    function isGameCanvasVisible(){
-      try{
-        var gc = document.getElementById('gameCanvas');
-        if (!gc) return false;
-        var cs = (getComputedStyle ? getComputedStyle(gc) : gc.style) || {};
-        return (cs.display !== 'none') && (gc.offsetWidth>0) && (gc.offsetHeight>0);
-      } catch(_){ return false; }
-    }
-    // Lock on game start; unlock on explicit returns to lobby
+    // explicit in-game flag (starts false)
+    if (typeof window.__inGameFlag === 'undefined') window.__inGameFlag = false;
+
+    function applyByFlag(){ try { if (window.__inGameFlag) addLock(); else removeLock(); } catch(_){ } }
+
+    // Bind socket events to flip the flag
     if (window.socket){
       try {
-        window.socket.on('gameStarted', function(){ addLock(); });
-        window.socket.on('lobbyUpdate', function(d){ try { if (d && d.started === false) removeLock(); } catch(_){ } });
-        window.socket.on('kicked', function(){ removeLock(); });
-        window.socket.on('lobbyClosed', function(){ removeLock(); });
-        window.socket.on('disconnect', function(){ removeLock(); });
+        window.socket.on('gameStarted', function(){ window.__inGameFlag = true; applyByFlag(); });
+        window.socket.on('lobbyUpdate', function(d){ try { if (d && d.started === false) { window.__inGameFlag = false; applyByFlag(); } } catch(_){ } });
+        window.socket.on('kicked', function(){ window.__inGameFlag = false; applyByFlag(); });
+        window.socket.on('lobbyClosed', function(){ window.__inGameFlag = false; applyByFlag(); });
+        window.socket.on('disconnect', function(){ window.__inGameFlag = false; applyByFlag(); });
       } catch(_){}
     }
-    // Fallback watchdog: if game canvas visible, ensure lock; if not, ensure unlock.
-    setInterval(function(){
-      try {
-        if (isGameCanvasVisible()) { document.body.classList.add('ig-lock'); }
-        else { document.body.classList.remove('ig-lock'); }
-      } catch(_){}
-    }, 500);
+
+    // Watchdog only mirrors the flag (no canvas heuristic)
+    setInterval(applyByFlag, 800);
+    // Ensure initial state unlocked
+    removeLock();
   } catch(_){}
 })();
 </script>
+
 
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
