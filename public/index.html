@@ -6403,5 +6403,88 @@ function bindChatGuard(){
 })();
 </script>
 
+
+<script>
+// === Common helpers for chat freeze ===
+(function(){
+  try {
+    window.__isInGameFast = function(){
+      try {
+        var canvas = document.getElementById('gameCanvas');
+        if (!canvas) return false;
+        var cs = (window.getComputedStyle ? getComputedStyle(canvas) : canvas.style) || {};
+        var disp = cs.display || canvas.style.display || '';
+        var w = canvas.offsetWidth || 0, h = canvas.offsetHeight || 0;
+        return disp !== 'none' && w > 0 && h > 0;
+      } catch(_){ return false; }
+    };
+    window.__freezeActive = function(){
+      try {
+        var until = (window.__antiFlipUntil || window.__guardUntil || 0);
+        return (Date.now ? Date.now() : (new Date()).getTime()) < until && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') && window.__isInGameFast();
+      } catch(_){ return false; }
+    };
+  } catch(_){}
+})();
+</script>
+
+
+<script>
+// === Freeze-aware wrappers for updateTabs/refreshLobbyMode ===
+(function(){
+  try {
+    function dlog(){ try{ if (window.debugWarn) debugWarn.apply(null, arguments); }catch(_){ } }
+    // updateTabs
+    try {
+      if (typeof window.updateTabs === 'function' && !window.updateTabs.__freezeWrapped){
+        var __origUpdateTabs = window.updateTabs;
+        window.updateTabs = function(){
+          if (typeof window.__freezeActive === 'function' && window.__freezeActive()){
+            dlog('CHAT-MODE freeze updateTabs');
+            return; // do nothing during freeze
+          }
+          return __origUpdateTabs.apply(this, arguments);
+        };
+        window.updateTabs.__freezeWrapped = true;
+      }
+    } catch(_){}
+    // refreshLobbyMode
+    try {
+      if (typeof window.refreshLobbyMode === 'function' && !window.refreshLobbyMode.__freezeWrapped){
+        var __origRefreshLobbyMode = window.refreshLobbyMode;
+        window.refreshLobbyMode = function(){
+          if (typeof window.__freezeActive === 'function' && window.__freezeActive()){
+            dlog('CHAT-MODE freeze refreshLobbyMode');
+            return;
+          }
+          return __origRefreshLobbyMode.apply(this, arguments);
+        };
+        window.refreshLobbyMode.__freezeWrapped = true;
+      }
+    } catch(_){}
+  } catch(_){}
+})();
+</script>
+
+
+<script>
+(function(){
+  try {
+    function arm(){ try { if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') && (window.__isInGameFast && window.__isInGameFast())) { window.__antiFlipUntil = (Date.now?Date.now():+new Date()) + 8000; if (window.debugLog) debugLog('ANTI-FLIP arm (on msg)'); } } catch(_){ } }
+    function bind(){
+      try {
+        if (!window.socket || !window.socket.on || window.__armOnMsgBound) return false;
+        window.socket.on('chat:msg', function(m){ try { if (m && m.sid === (window.socket && window.socket.id)) arm(); } catch(_){ } });
+        window.__armOnMsgBound = true;
+        return true;
+      } catch(_){ return false; }
+    }
+    bind();
+    var _int = setInterval(bind, 400);
+    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 8000);
+  } catch(_){}
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
