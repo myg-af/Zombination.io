@@ -3531,17 +3531,13 @@ buildTiles.forEach(btn => {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
       
-      
-      try { updateMobileBuildSelectionHighlight(); } catch(_){ }
       return;
     }
 
     // Sinon, on entre en mode placement pour ce type
     buildMode = type;
     
-  
-    try { updateMobileBuildSelectionHighlight(); } catch(_){ }
-});
+  });
 });
 
 updateBuildTilesState();
@@ -4012,8 +4008,6 @@ el.innerHTML += `
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
-      
-      try { updateMobileBuildSelectionHighlight(); } catch(_){ }
       return;
     }
 
@@ -4025,9 +4019,7 @@ el.innerHTML += `
     }
 
     buildMode = type;
-    
-    try { updateMobileBuildSelectionHighlight(); } catch(_){ }
-// reset survol
+    // reset survol
     buildHover = { tx: -1, ty: -1 };
   }
 
@@ -6147,112 +6139,5 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
 </script>
 
-
-<style id="mobile-build-selection-highlight-css">
-/* Mobile-only highlight for selected build item (robust, non-invasive) */
-@media (hover: none) and (pointer: coarse){
-  /* Build tiles (desktop UI reused on mobile) */
-  #buildTiles .build-tile.is-selected > div:first-child{
-    outline: 3px solid #34e05a;
-    outline-offset: 0;
-    box-shadow: 0 0 0 2px rgba(52,224,90,.35) inset, 0 0 10px rgba(52,224,90,.55);
-    border-radius: 6px;
-  }
-  /* Mobile dedicated buttons */
-  .mobile-build .mb-btn.is-selected{
-    outline: 3px solid #34e05a;
-    box-shadow: 0 0 10px rgba(52,224,90,.55);
-  }
-}
-</style>
-
-<script id="mobile-build-selection-highlight">
-try {
-  // Define a no-op early to avoid undefined calls if anything fails later.
-  window.updateMobileBuildSelectionHighlight = window.updateMobileBuildSelectionHighlight || function(){};
-
-  (function(){
-    if (window.__mobileBuildHighlightPatched) return;
-    window.__mobileBuildHighlightPatched = true;
-
-    function isMobileLike(){
-      try {
-        if (window.matchMedia && typeof window.matchMedia === 'function') {
-          var q = window.matchMedia('(hover: none) and (pointer: coarse)');
-          if (q && typeof q.matches === 'boolean') return q.matches;
-        }
-      } catch(_){}
-      try { return /android|iphone|ipad|ipod|mobile/i.test(String(navigator.userAgent||'')); } catch(__){}
-      return false;
-    }
-
-    function toggleSelectedClass(container, itemSelector, selectedType){
-      if (!container) return;
-      var list = container.querySelectorAll(itemSelector);
-      if (!list) return;
-      for (var i=0;i<list.length;i++){
-        var btn = list[i];
-        var type = (btn && btn.getAttribute) ? (btn.getAttribute('data-type') || '') : '';
-        if (selectedType && type === selectedType) { 
-          try { btn.classList.add('is-selected'); } catch(_){}
-        } else {
-          try { btn.classList.remove('is-selected'); } catch(_){}
-        }
-      }
-    }
-
-    function doUpdate(){
-      try {
-        if (!isMobileLike()) return; // keep PC unchanged
-        var sel = '';
-        try {
-          sel = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
-        } catch(_){ sel = ''; }
-        // Desktop build tiles (also visible on some mobiles)
-        var btCont = document.getElementById('buildTiles');
-        toggleSelectedClass(btCont, '.build-tile', sel);
-        // Mobile dedicated buttons, if present
-        var mCont = document.querySelector('.mobile-build');
-        toggleSelectedClass(mCont, '.mb-btn', sel);
-      } catch(_){ /* swallow */ }
-    }
-
-    // Expose globally for existing code paths
-    window.updateMobileBuildSelectionHighlight = doUpdate;
-
-    // Initial sync
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', function(){ try { doUpdate(); } catch(_){ } }, { once:true });
-    } else {
-      try { doUpdate(); } catch(_){ }
-    }
-
-    // Keep in sync with layout
-    try { window.addEventListener('orientationchange', doUpdate, {passive:true}); } catch(_){}
-    try { window.addEventListener('resize', doUpdate, {passive:true}); } catch(_){}
-
-    // Observe mutations carefully (older mobile may not support MutationObserver)
-    try {
-      if (typeof MutationObserver !== 'undefined') {
-        var obs = new MutationObserver(function(){ doUpdate(); });
-        var bt = document.getElementById('buildTiles');
-        if (bt) obs.observe(bt, { childList:true, subtree:true, attributes:true });
-        var mb = document.querySelector('.mobile-build');
-        if (mb) obs.observe(mb, { childList:true, subtree:true, attributes:true });
-      }
-    } catch(_){}
-
-    // Very light polling only if really on mobile (as a safety net)
-    var lastSel = null;
-    try {
-      setInterval(function(){
-        if (!isMobileLike()) return;
-        var cur = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
-        if (cur !== lastSel) { lastSel = cur; doUpdate(); }
-      }, 400);
-    } catch(_){}
-  })();
-} catch(_){ /* absolute safety */ }
-</script>
-<script>try { window.lobbyData = lobbyData; } catch(_){}</script>
 </body></html>
+      try { window.lobbyData = lobbyData; } catch(_){}
