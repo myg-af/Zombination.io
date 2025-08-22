@@ -615,6 +615,23 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
+
+// === Fail-safe: ensure death overlay & state are reset when entering/lobby ===
+(function(){
+  try {
+    window.resetEndgameUI = function(){
+      try { window.isDead = false; } catch(_) {}
+      try { window.myKills = 0; } catch(_) {}
+      try { window.currentRound = 1; } catch(_) {}
+      try { var ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(_) {}
+      try { var dst = document.getElementById('deathStats'); if (dst) dst.textContent = ''; } catch(_) {}
+      try { var bs = document.getElementById('btnSpectate'); if (bs) bs.style.display = 'none'; } catch(_) {}
+      try { window.__ladderSubmitted = false; } catch(_) {}
+    };
+    // Run once on load to clear any cached overlay from prior sessions (e.g. back/forward cache)
+    resetEndgameUI();
+  } catch(e) { try { console.warn('resetEndgameUI init error', e); } catch(_){} }
+})();
 const socket = io({ transports: ['polling','websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
@@ -649,7 +666,26 @@ socket.on("connect", () => {
   } catch(_) {}
   } catch (_) {}
 });
-socket.on("disconnect", (reason) => {
+
+// === Join button fail-safe unlock ===
+setInterval(function(){
+  try {
+    var btn = document.getElementById('lobbyJoin');
+    if (!btn) return;
+    var lobby = (window.lobbyData || {});
+    if (btn.disabled && !window.__ingame && !lobby.started) {
+      var last = (typeof window.__joinLockTs==='number') ? window.__joinLockTs : 0;
+      if (!last || (Date.now() - last) > 10000) {
+        btn.disabled = false;
+        btn.dataset.clicked = '';
+        try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
+        try { console.warn('🔓 Re-enabled join button by fail-safe'); } catch(_){}
+      }
+    }
+  } catch(_){}
+}, 2000);
+
+socket.on("disconnect", (reason) => { try { var btn=document.getElementById("lobbyJoin"); if (btn){ btn.disabled=false; btn.dataset.clicked=""; } } catch(_){}
   console.warn("❌ Déconnecté du serveur. Raison:", reason);
 });
 socket.on("connect_error", (err) => {
@@ -693,159 +729,22 @@ console.log("📤 [SOCKET] Emit requestLobbyState");
 
 // JOIN BUTTON
 if (lobbyJoin) {
-  lobbyJoin.addEventListener("click", () => {
-    const pseudo = pseudoInput.value;
-    console.log("👤 Bouton JOIN cliqué. Pseudo saisi:", pseudo);
-    try{ var now=Date.now(); if (typeof window.__joinLockTs==='number' && (now-window.__joinLockTs)<1200){ debugWarn('⛔ join re-entry blocked (A)', (now-window.__joinLockTs),'ms'); return; } window.__joinLockTs=now; var btn=document.getElementById('lobbyJoin'); if(btn){ btn.disabled=true; btn.dataset.clicked='1'; setTimeout(function(){ try{btn.disabled=false;}catch(_){}} , 3000);} }catch(_){}
-if (!pseudo) return;
-  });
-}
-
-// TIMER & UI DEBUG
-setInterval(() => {
-  if (typeof lobbyData !== "undefined") {
-    console.log("⏳ Lobby Timer:", lobbyData.timeLeft, " | Players:", lobbyData.count);
-  }
-}, 5000);
-
-window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
-</script>
-<script src="/translations.js">
-window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
-</script>
-<script>
-// Safe translation accessor and singleton helper.
-// Avoids "Identifier 'trLoc' has already been declared" if scripts reload.
-(function(){
-  if (!window.trLoc) {
-    window.trLoc = function(key, fallback){
-      try {
-        var lang = (typeof window.currentLang === 'string' && window.currentLang) || (navigator.language||'en').slice(0,2);
-        var pack = (window.TRANSLATIONS && window.TRANSLATIONS[lang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
-        return (pack && pack[key]) || (fallback || key);
-      } catch(e){ return fallback || key; }
-    };
-  }
-})();
-</script>
-
-<script>
-  if (typeof TRANSLATIONS === "undefined") { window.TRANSLATIONS = { fr: {}, en: {} }; }
-
-window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
-</script>
-<!-- === Mobile Build Buttons === -->
-<div class="mobile-build" id="mobile-build">
-<button aria-label="Construire Mur (B)" class="mb-btn" data-type="B">Mur</button>
-<button aria-label="Construire Porte (D)" class="mb-btn" data-type="D">Porte</button>
-<button aria-label="Construire Mini-Tourelle (t)" class="mb-btn" data-type="t">Mini-T</button>
-<button aria-label="Construire Grande Tourelle (T)" class="mb-btn" data-type="T">Tourelle</button>
-</div>
-<style>
-  /* Mobile only */
   
-	 @media (max-width: 768px) and (orientation: portrait) {
-	  .mobile-build { 
-		display: none !important; 
-	  }
-	}
-  @media (max-width: 768px) {
-	.mobile-build {
-	  position: fixed;
-	  left: 50%;
-	  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); /* marge iOS + au-dessus du Shop */
-	  transform: translateX(-50%);
-	  display: grid;
-	  grid-template-columns: repeat(4, auto);
-	  gap: 10px;
-	  padding: 10px 12px;
-	  background: rgba(0,0,0,0.35);
-	  backdrop-filter: blur(6px);
-	  border-radius: 14px;
-	  z-index: 10007; /* supérieur au Shop */
-	  user-select: none;
-	}
- .mb-btn {
-      padding: 10px 12px;
-      font-size: 14px;
-      font-weight: 600;
-      border: none;
-      border-radius: 10px;
-      background: #222;
-      color: #fff;
-    }
-    .mobile-build .mb-btn:active {
-      transform: translateY(1px);
-    }
-  }
-
-  /* Desktop: hide */
-  @media (min-width: 769px) {
-    .mobile-build { display: none; }
-  }
-</style>
-<!-- === /Mobile Build Buttons === -->
-<script>
-// === Toggle (réduire/afficher) la barre Auto-Fire + 4 constructions ===
-let BUILD_UI_COLLAPSED = (localStorage.getItem('buildUICollapsed') === '1');
-
-function applyBuildUICollapse() {
-  const autoBtn = document.getElementById('autoFireBtn');
-  const tiles = document.getElementById('buildTiles');
-  const tgl = document.getElementById('toggleBuildUI');
-  if (!tgl) return;
-  if (BUILD_UI_COLLAPSED) {
-    if (autoBtn) autoBtn.style.display = 'none';
-    if (tiles) tiles.style.display = 'none';
-    tgl.textContent = '+';
-    tgl.title = 'Afficher les boutons';
-  } else {
-    if (autoBtn) autoBtn.style.display = 'flex';
-    if (tiles) tiles.style.display = 'flex';
-    tgl.textContent = '–';
-    tgl.title = 'Réduire les boutons';
-  }
-  // repositionne si besoin pour mobile
-  if (typeof positionShopUI === 'function') {
-    positionShopUI();
-  }
-}
-
-(function initBuildUIToggle(){
-  const tgl = document.getElementById('toggleBuildUI');
-  if (!tgl) return;
-  tgl.addEventListener('click', () => {
-    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
-    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
-    applyBuildUICollapse();
-  }, {passive:true});
-  tgl.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    BUILD_UI_COLLAPSED = !BUILD_UI_COLLAPSED;
-    localStorage.setItem('buildUICollapsed', BUILD_UI_COLLAPSED ? '1' : '0');
-    applyBuildUICollapse();
-  }, {passive:false});
-  applyBuildUICollapse();
-})();
-// === /Toggle build UI ===
-
-window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
-</script>
-<script>
-/* SWAP_G_T_IN_BUILD */
-document.addEventListener('DOMContentLoaded', function(){
-  const cont = document.getElementById('buildTiles');
-  if (!cont) return;
-  const g = cont.querySelector('.build-tile[data-type="G"]');
-  const t = cont.querySelector('.build-tile[data-type="T"]');
-  if (g && t && g.nextElementSibling !== t) {
-    cont.insertBefore(g, t);
-  }
+lobbyJoin.addEventListener("click", (ev) => {
+  try {
+    // Avoid duplicate handlers causing stuck disabled states; delegate to onclick
+    if (ev && ev.preventDefault) ev.preventDefault();
+    if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+  } catch(_){}
+  try {
+    if (typeof lobbyJoin.onclick === 'function') return lobbyJoin.onclick(ev);
+  } catch(_){}
 });
-
+}
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <script>
+window.TRANSLATIONS = window.TRANSLATIONS || {}; var TRANSLATIONS = window.TRANSLATIONS;
 // Unified UI language getter: always honor menu selection (window.currentLang), fallback 'en'.
 function __uiLang(){
   try {
@@ -903,7 +802,7 @@ if (buildTilesCont){
       } else {
         const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
         const dmg = computeTurretDamageDisplay(type);
-        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[__uiLang()]||TRANSLATIONS['en']).perSec||'/s') + ')';
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((((TRANSLATIONS[__uiLang()]||TRANSLATIONS['en'])||{})||{}).perSec||'/s') + ')';
       }
       const tEl = document.getElementById('buildTooltip'); if (tEl){ tEl.textContent = tip; }
     }
@@ -1114,13 +1013,13 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
     window.currentLang = currentLang; let lobbyData = { started: false, count: 0, max: 6, timeLeft: 30, players: {} };
     let lobbyJoined = false, lobbyStarted = false;
     function initLobbyTexts() {
-      updateLobbyTexts();
-      pseudoInput.placeholder = TRANSLATIONS[currentLang].enterPseudo;
-      lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+      if (typeof pseudoInput !== 'undefined' && pseudoInput) pseudoInput.placeholder = tr.enterPseudo || '';
+      if (typeof lobbyJoin !== 'undefined' && lobbyJoin) lobbyJoin.textContent = tr.join || 'Join';
     }
     function updateLobbyTexts() {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-            const _max = Number((lobbyData && lobbyData.max)) || 6;
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+      const _max = Number((lobbyData && lobbyData.max)) || 6;
       let _count = 0;
       try {
         if (lobbyData && typeof lobbyData.players === 'object' && lobbyData.players) {
@@ -1130,67 +1029,85 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
         } else if (typeof lobbyData.count !== 'undefined') {
           _count = Number(lobbyData.count) || 0;
         }
-      } catch(_){ _count = Number(lobbyData && lobbyData.count) || 0; }
-      lobbyPlayers.textContent = `${tr.playersInGame} : ${_count}/${_max}`;
-      lobbyTimer.textContent = `${tr.timeLeft} : ${lobbyData.timeLeft}s`;
-      const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
-      lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
+      } catch(_) { _count = Number(lobbyData && lobbyData.count) || 0; }
+      const lp = document.getElementById('lobbyPlayers');
+      const lt = document.getElementById('lobbyTimer');
+      const ls = document.getElementById('lobbyStatus');
+      if (lp) lp.textContent = `${(tr && tr.playersInGame) || 'Players'} : ${_count}/${_max}`;
+      if (lt) lt.textContent = `${(tr && tr.timeLeft) || 'Time left'} : ${lobbyData.timeLeft}s`;
+      const readyCount = (lobbyData && lobbyData.players) ? Object.values(lobbyData.players).filter(p=>p && p.ready).length : 0;
+      if (ls) ls.textContent = `${(tr && tr.waitingStart) || 'Waiting to start'} (${readyCount} ${(tr && tr.playersReady) || 'player ready'}${readyCount>1?'s':''})`;
     }
+
     function updateUITexts() {
-  function applyJoinLabel(){
-    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-    const el = document.getElementById('lobbyJoin');
-    if (!el) return;
-    el.textContent = lobbyJoined ? (tr.waiting || 'Waiting') : (tr.join || 'Join');
-  }
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
+      const lobbyTitleEl = document.getElementById('lobbyTitle');
+      if (lobbyTitleEl) lobbyTitleEl.innerHTML = `<b>${tr.zombination || 'Zombination.io'}</b>`;
+      if (typeof pseudoInput !== 'undefined' && pseudoInput) pseudoInput.placeholder = tr.enterPseudo || '';
+      if (typeof lobbyJoin !== 'undefined' && lobbyJoin) lobbyJoin.textContent = (lobbyJoined ? (tr.waiting || 'Waiting') : (tr.join || 'Join'));
 
-  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
 
-  // Title and basics
-  const lobbyTitleEl = document.getElementById('lobbyTitle');
-  if (lobbyTitleEl) lobbyTitleEl.innerHTML = `<b>${tr.zombination}</b>`;
-  if (pseudoInput) pseudoInput.placeholder = tr.enterPseudo || '';
-  if (lobbyJoin) lobbyJoin.textContent = lobbyJoined ? (tr.waiting || 'Waiting') : (tr.join || 'Join'); applyJoinLabel();
+      const deathTitle = document.getElementById('deathTitle');
+      if (deathTitle) deathTitle.textContent = tr.youDied || 'You died!';
+      const btnReplay = document.getElementById('btnReplay');
+      if (btnReplay) btnReplay.textContent = tr.replay || 'Replay';
+      if (typeof updateLobbyTexts === 'function' && !lobbyStarted) { updateLobbyTexts(); }
 
-  // Death screen
-  const deathTitle = document.getElementById('deathTitle');
-  if (deathTitle) deathTitle.textContent = tr.youDied || 'You died!';
-  const btnReplay = document.getElementById('btnReplay');
-  if (btnReplay) btnReplay.textContent = tr.replay || 'Replay';
-  if (typeof updateLobbyTexts === 'function' && !lobbyStarted) { updateLobbyTexts(); }
+      // Main menu & lobby buttons / headers
+      const btnJoinLobbyList = document.getElementById('btnJoinLobbyList');
+      if (btnJoinLobbyList) btnJoinLobbyList.textContent = tr.joinLobby || 'Join lobby';
+      const btnCreateLobby = document.getElementById('btnCreateLobby');
+      if (btnCreateLobby) btnCreateLobby.textContent = tr.createLobby || 'Create lobby';
+      const btnStartManual = document.getElementById('btnStartManual');
+      if (btnStartManual) btnStartManual.textContent = tr.start || 'Start';
+      const btnBackFromManual = document.getElementById('btnBackFromManual');
+      if (btnBackFromManual) btnBackFromManual.textContent = tr.back || 'Back';
+      const btnBackFromList = document.getElementById('btnBackFromList');
+      if (btnBackFromList) btnBackFromList.textContent = tr.back || 'Back';
+      const manualLobbyTitle = document.getElementById('manualLobbyTitle');
+      if (manualLobbyTitle) {
+        const current = manualLobbyTitle.textContent || '';
+        const num = (current.match(/\d+/) || [null])[0];
+        manualLobbyTitle.textContent = (tr.lobby || 'Lobby') + (num ? (' #' + num) : '');
+      }
+      // Shop UI labels
+      try {
+        const shopBtn = document.getElementById('shopBtn');
+        if (shopBtn) {
+          shopBtn.title = tr.shop || 'Shop';
+          // Prefer preserving existing child IMG if present; fallback to text label
+          const img = shopBtn.querySelector('img');
+          if (!img) {
+            shopBtn.textContent = tr.shop || 'Shop';
+          } else {
+            // Keep the icon, ensure the label node exists/updated
+            const afterImg = img.nextSibling;
+            const label = (tr.shop || 'Shop');
+            if (!afterImg) {
+              img.insertAdjacentText('afterend', label);
+            } else {
+              // If it's a text node, replace its content; else insert text
+              try {
+                if (afterImg.nodeType === 3) afterImg.nodeValue = label;
+                else img.insertAdjacentText('afterend', label);
+              } catch(_) {
+                shopBtn.textContent = label;
+              }
+            }
+          }
+        }
+        const shopTitleText = document.getElementById('shopTitleText');
+        if (shopTitleText) shopTitleText.textContent = tr.shop || 'Shop';
+      } catch(_){}
+    }
 
-  // Main menu & lobby buttons / headers
-  const btnJoinLobbyList = document.getElementById('btnJoinLobbyList');
-  if (btnJoinLobbyList) btnJoinLobbyList.textContent = tr.joinLobby || 'Join lobby';
-  const btnCreateLobby = document.getElementById('btnCreateLobby');
-  if (btnCreateLobby) btnCreateLobby.textContent = tr.createLobby || 'Create lobby';
-  const btnStartManual = document.getElementById('btnStartManual');
-  if (btnStartManual) btnStartManual.textContent = tr.start || 'Start';
-  const btnBackFromManual = document.getElementById('btnBackFromManual');
-  if (btnBackFromManual) btnBackFromManual.textContent = tr.back || 'Back';
-  const btnBackFromList = document.getElementById('btnBackFromList');
-  if (btnBackFromList) btnBackFromList.textContent = tr.back || 'Back';
-  const manualLobbyTitle = document.getElementById('manualLobbyTitle');
-  if (manualLobbyTitle) {
-    // Keep number if already set "Lobby #X"
-    const current = manualLobbyTitle.textContent || '';
-    const num = (current.match(/\d+/) || [null])[0];
-    manualLobbyTitle.textContent = (tr.lobby || 'Lobby') + (num ? (' #' + num) : '');
-  }
-  const manualLobbyNote = document.getElementById('manualLobbyNote');
-  if (manualLobbyNote) manualLobbyNote.textContent = tr.onlyCreatorStart || 'Only the creator can start.';
-  const joinLobbyTitle = document.getElementById('joinLobbyTitle');
-  if (joinLobbyTitle) joinLobbyTitle.textContent = tr.availableLobbies || 'Available lobbies';
 
-  // Shop button + modal header
-  const shopBtn = document.getElementById('shopBtn');
-  if (shopBtn) {
-    shopBtn.title = tr.shop || 'Shop';
-    // Recompose inner content with cart icon + label
-    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
-  }
-  const shopTitleText = document.getElementById('shopTitleText');
-  if (shopTitleText) shopTitleText.textContent = tr.shop || 'Shop';
+
+
+
+
+
+
 
   try { if (typeof updateAutoFireBtnUI === 'function') updateAutoFireBtnUI(); } catch(e){}
 
@@ -1238,7 +1155,6 @@ window.translateEmptySlotsInManualLobby = function(){
       }
     });
   } catch(_){}
-};;
 }
 const langSelectRow = document.getElementById('langSelectRow');
     function renderLangFlags() {
@@ -1272,7 +1188,7 @@ const langSelectRow = document.getElementById('langSelectRow');
         if (lobbyJoin) window.lobbyJoin = lobbyJoin;
       }
     } catch(_){}
-renderLangFlags(); initLobbyTexts(); updateUITexts(); try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
+    try { renderLangFlags(); initLobbyTexts(); updateUITexts(); if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){}
 
     // --- JEU ---
     
@@ -3099,7 +3015,7 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 	}
 
 function drawHUD() {
-  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+  const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
   const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
 
   hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
@@ -3125,7 +3041,7 @@ function drawHUD() {
 }
 
     function showDeathScreen(kills = myKills, round = currentRound) {
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
       const deathStats = document.getElementById('deathStats');
       if (deathStats) {
         deathStats.innerHTML = `${tr.zombiesKilled}: <b>${kills}</b><br>${tr.roundReached}: <b>${round}</b>`;
@@ -3163,7 +3079,7 @@ function drawHUD() {
 
 const spectateReplayBtn = document.getElementById('spectateReplayBtn');
 if (btnSpectate) {
-  const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+  const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
   btnSpectate.textContent = (tr.spectate || 'Spectate');
 }
 if (spectateReplayBtn) {
@@ -3241,9 +3157,9 @@ function gameLoop(timestamp = 0) {
       try { lobbyData.id = data && data.id; lobbyData.manual = !!(data && data.manual); } catch(e){}
       try { const t = document.getElementById('manualLobbyTitle'); if (t && data && data.manual) { t.textContent = ( (TRANSLATIONS[currentLang]&&TRANSLATIONS[currentLang].lobby) ? (TRANSLATIONS[currentLang].lobby+' #') : 'Lobby #') + (data.id || '?'); } } catch(e){}
       try { const p = document.getElementById('manualLobbyPanel'); if (p && p.style.display !== 'none') { renderManualPlayers(); } } catch(e){}
-      const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+      const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
       if (data.started) {
-        lobbyScreen.style.display = 'none';
+        lobbyScreen.style.display = 'none'; try { if (typeof resetEndgameUI==='function') resetEndgameUI(); } catch(_){} 
         lobbyStarted = true;
         return;
       }
@@ -3251,7 +3167,7 @@ function gameLoop(timestamp = 0) {
       updateLobbyTexts();
       lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.readOnly = lobbyJoined;
-      lobbyJoin.textContent = tr.join;
+      lobbyJoin.textContent = (tr.join || 'Join');
     });
 
     lobbyJoin.onclick = () => {
@@ -3266,7 +3182,7 @@ function gameLoop(timestamp = 0) {
       lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
       
-          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
+          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = ( (TRANSLATIONS[currentLang]||TRANSLATIONS['en'])||{} ).waiting || 'Waiting';
       try { updateButtonsDisabled(); } catch(_) {}
     };
 
@@ -3274,7 +3190,7 @@ function gameLoop(timestamp = 0) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => {  try { if (typeof resetEndgameUI==='function') resetEndgameUI(); } catch(_){} myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -3298,7 +3214,7 @@ function gameLoop(timestamp = 0) {
         }
       } catch(e) {}
     currentRound = data.round;
-      lobbyScreen.style.display = 'none';
+      lobbyScreen.style.display = 'none'; try { if (typeof resetEndgameUI==='function') resetEndgameUI(); } catch(_){} 
       isDead = false; playerHealth = 100; myKills = 0;
       if (isMobileDevice) setTimeout(setupJoysticks, 300);
       setTimeout(()=>{ gameLoop(); }, 400);
@@ -3472,7 +3388,6 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
     setInterval(drawHUD, 150);
 
 	// --- SHOP BTN LOGIC ---
-	const shopBtn = document.getElementById('shopBtn');
 	const shopModal = document.getElementById('shopModal');
 	const shopClose = document.getElementById('shopClose');
 
@@ -3489,14 +3404,14 @@ function updateAutoFireBtnUI() {
     autoBtn.style.background = '#d1292f';
     autoBtn.style.borderColor = '#7b0e13';
     autoBtn.style.color = '#fff';
-    autoLbl.textContent = ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).autoFireOn || 'Auto fire ON');
-    autoBtn.querySelector('span').style.background = '#ff6066';
+    autoBtn.style.color = '#fff';
+    { const tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang]||TRANSLATIONS['en'])) || {}; autoLbl.textContent = (tr.autoFireOn || 'Auto fire ON'); }
   } else {
     autoBtn.style.background = '#5a2226';
     autoBtn.style.borderColor = '#4a1111';
     autoBtn.style.color = '#f1d6d6';
-    autoLbl.textContent = ((TRANSLATIONS[currentLang]||TRANSLATIONS['en']).autoFireOff || 'Auto fire OFF');
-    autoBtn.querySelector('span').style.background = '#742f36';
+    autoBtn.style.color = '#f1d6d6';
+    { const tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang]||TRANSLATIONS['en'])) || {}; autoLbl.textContent = (tr.autoFireOff || 'Auto fire OFF'); }
   }
 }
 if (autoBtn) {
@@ -3540,7 +3455,7 @@ buildTiles.forEach(btn => {
     } else {
       const rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
       const dmg = (typeof computeTurretDamageDisplay==='function') ? computeTurretDamageDisplay(type) : 0;
-      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((TRANSLATIONS[(typeof window!=='undefined' && typeof window.currentLang==='string' && window.currentLang) || 'en']||TRANSLATIONS['en']).perSec||'/s') + ')';
+      return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + ((((TRANSLATIONS[(typeof window!=='undefined' && typeof window.currentLang==='string' && window.currentLang) || 'en']|| TRANSLATIONS['en']) || {}).perSec) || '/s') + ')';
     }
   }
   btn.addEventListener('mouseenter', () => {
@@ -3916,9 +3831,9 @@ function renderShopUpgrades() {
           <div style="width:18px; height:18px; background:${td.color}; border:2px solid ${td.border}; border-radius:3px;"></div>
         </div>
         <div style="flex:1;">
-          <div style="font-size:18px;"><b>${((TRANSLATIONS[currentLang]||TRANSLATIONS["en"]).turretUpg && (TRANSLATIONS[currentLang]||TRANSLATIONS["en"]).turretUpg[td.type]) || td.name}</b></div>
-          <div style="color:#9ab; font-size:13px;">${(TRANSLATIONS[currentLang]||TRANSLATIONS['en'])[td.type==='t'?'turretDescMini':(td.type==='T'?'turretDescNormal':'turretDescBig')]}<\/div>
-          <div style="margin-top:6px; color:#9f9; font-size:14px;">${(TRANSLATIONS[currentLang]||TRANSLATIONS['en']).damage || 'Damage'} : <b>${dmgNow}</b> → <b>${dmgNext}</b></div>
+          <div style="font-size:18px;"><b>${( (((TRANSLATIONS[currentLang]||TRANSLATIONS["en"])||{}).turretUpg || {})[td.type] ) || td.name}</b></div>
+          <div style="color:#9ab; font-size:13px;">${( ((TRANSLATIONS[currentLang]||TRANSLATIONS['en'])||{})[ td.type==='t' ? 'turretDescMini' : (td.type==='T' ? 'turretDescNormal' : 'turretDescBig') ] ) || ''}</div>
+          <div style="margin-top:6px; color:#9f9; font-size:14px;">${((((TRANSLATIONS[currentLang]||TRANSLATIONS['en'])||{}).damage) || 'Damage')} : <b>${dmgNow}</b> → <b>${dmgNext}</b></div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
           <div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
@@ -4549,7 +4464,7 @@ function renderManualPlayers() {
   const el = document.getElementById('lobbyJoin');
   if (!el) return;
   const ensure = () => {
-    const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+    const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']) || {};
     const expected = (tr.join || 'Join');
     if (el.textContent !== expected) el.textContent = expected;
   };
@@ -5791,7 +5706,7 @@ function __alertPseudoTaken(){
   if (window.__forceGameEnterInstalled) return;
   window.__forceGameEnterInstalled = true;
   window.forceGameEnter = function(){
-    try {
+     try { if (typeof resetEndgameUI==='function') resetEndgameUI(); } catch(_){} try {
       window.__ingame = true;
       var lobby = document.getElementById('lobbyScreen');
       if (lobby) { lobby.style.setProperty('display','none','important'); }
@@ -6801,4 +6716,3 @@ e.preventDefault(); e.stopPropagation();
   }
 })(); 
 </script>
-
