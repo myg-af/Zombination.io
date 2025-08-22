@@ -372,18 +372,6 @@ body.menu-hide-ui #fpsCounter,
   #lobbyBtnRow { gap: 6px !important; }
 }
 </style>
-<!-- FORCE-HIDE LEGACY CHAT ON MOBILE WHEN IN-GAME -->
-<style id="mobile-ingame-chat-hide">
-@media (max-width: 768px) {
-  body.m-in-game #chatPanel,
-  body.m-in-game #chatCollapsedBtn {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-}
-</style>
-
 
 
 
@@ -4636,221 +4624,6 @@ function renderManualPlayers() {
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
-<!-- === MOBILE IN-GAME CHAT (replacement) === -->
-<style>
-  @media (max-width: 768px) {
-    #mChatBtn { position: fixed; left: 14px; bottom: calc(env(safe-area-inset-bottom, 0px) + 68px); z-index: 10020; display: none; align-items: center; gap: 6px; padding: 10px 12px; border-radius: 12px; border: 0; background: #1b1b22; color: #fff; box-shadow: 0 4px 16px #0009; }
-    #mChatBtn .badge { min-width: 18px; height: 18px; line-height: 18px; font-size: 12px; background:#e33; color:#fff; border-radius: 9px; display: none; text-align:center; padding:0 5px; }
-    #mChatModal { position: fixed; inset: 0; z-index: 10021; display: none; align-items: center; justify-content: center; }
-    #mChatOverlay { position:absolute; inset:0; background:#0008; }
-    #mChatBox { position: relative; width: min(92vw, 480px); max-height: min(70vh, 520px); display: flex; flex-direction: column; background:#191a20; border-radius: 16px; box-shadow: 0 10px 40px #000c; overflow: hidden; }
-    #mChatHeader { display:flex; align-items:center; justify-content: space-between; padding: 10px 12px; background:#11131a; }
-    #mChatTitle { font-weight:700; }
-    #mChatClose { background: none; border: 0; color:#fff; font-size: 22px; cursor: pointer; }
-    #mChatList { flex: 1 1 auto; overflow-y: auto; padding: 10px 12px; font-size: 14px; }
-    #mChatList .line { margin: 6px 0; word-break: break-word; }
-    #mChatList .name { color:#9cf; margin-right:6px; }
-    #mChatInputRow { display:flex; gap:8px; padding: 10px 12px; border-top: 1px solid #2b2f3a; }
-    #mChatInput { flex:1 1 auto; font-size: 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid #3a3f4a; background:#101317; color:#fff; }
-    #mChatSend { padding: 10px 14px; border-radius: 10px; border: 0; background:#2a6aff; color:#fff; font-weight:600; }
-  }
-</style>
-<button id="mChatBtn" aria-label="Chat">
-  💬 <span id="mChatBadge" class="badge">0</span>
-</button>
-<div id="mChatModal" role="dialog" aria-modal="true" aria-labelledby="mChatTitle">
-  <div id="mChatOverlay"></div>
-  <div id="mChatBox">
-    <div id="mChatHeader">
-      <div id="mChatTitle">Chat</div>
-      <button id="mChatClose" aria-label="Close">✕</button>
-    </div>
-    <div id="mChatList" aria-live="polite"></div>
-    <div id="mChatInputRow">
-      <input id="mChatInput" type="text" maxlength="50" autocomplete="off" placeholder="Message (max 50)"/>
-      <button id="mChatSend">Send</button>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){
-  var IS_MOBILE = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
-  var IN_GAME = false;
-  var UNREAD = 0;
-  var lastSent = 0;
-  var COOLDOWN = 2000;
-  var MAXLEN = 50;
-  var els = {};
-  function el(id){ return document.getElementById(id); }
-  function trTxt(key, fallback){
-    try {
-      var pack = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-      return pack[key] || fallback;
-    } catch(_){ return fallback; }
-  }
-  function i18n(){
-    try{
-      if (!els.title) return;
-      els.title.textContent = trTxt('chat','Chat');
-      els.send.textContent = trTxt('send','Send');
-      els.input.placeholder = trTxt('chatPlaceholder','Message (max 50)');
-    }catch(_){}
-  }
-  function setup(){
-    els.btn = el('mChatBtn');
-    els.badge = el('mChatBadge');
-    els.modal = el('mChatModal');
-    els.overlay = el('mChatOverlay');
-    els.box = el('mChatBox');
-    els.title = el('mChatTitle');
-    els.close = el('mChatClose');
-    els.list = el('mChatList');
-    els.input = el('mChatInput');
-    els.send = el('mChatSend');
-    i18n();
-    if (!IS_MOBILE) return;
-
-    function open(){
-      try {
-        els.modal.style.display = 'flex';
-        UNREAD = 0;
-        if (els.badge) { els.badge.style.display = 'none'; els.badge.textContent = '0'; }
-        try { els.input.focus(); } catch(_){}
-      } catch(_){}
-    }
-    function close(){
-      try { els.modal.style.display = 'none'; } catch(_){}
-    }
-    function scrollToBottom(){ try { els.list.scrollTop = els.list.scrollHeight + 1000; } catch(_){ } }
-    function appendMsg(msg){
-      try{
-        if (!msg) return;
-        var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
-        var text = (msg && msg.text) ? String(msg.text) : '';
-        var d = document.createElement('div');
-        d.className = 'line';
-        var n = document.createElement('span');
-        n.className = 'name';
-        n.textContent = name + ': ';
-        d.appendChild(n);
-        d.appendChild(document.createTextNode(text));
-        els.list.appendChild(d);
-        while (els.list.childElementCount > 200) els.list.removeChild(els.list.firstElementChild);
-      }catch(_){}
-    }
-    function send(){
-      try{
-        if (!window.socket || !window.socket.connected) return;
-        var now = Date.now();
-        if (now - lastSent < COOLDOWN) return;
-        var t = (els.input.value||'').replace(/[\r\n\t]/g,' ').trim();
-        if (!t) return;
-        if (t.length > MAXLEN) t = t.slice(0, MAXLEN);
-        window.socket.emit('chat:send', { channel: 'lobby', text: t, name: (window.myPseudo || '') });
-        lastSent = now;
-        els.input.value = '';
-      }catch(_){}
-    }
-
-    if (els.btn) els.btn.addEventListener('click', function(ev){ ev.preventDefault(); ev.stopPropagation(); open(); }, { passive: false });
-    if (els.overlay) els.overlay.addEventListener('click', function(ev){ ev.preventDefault(); close(); }, { passive: true });
-    if (els.close) els.close.addEventListener('click', function(){ close(); }, { passive: true });
-    if (els.send) els.send.addEventListener('click', function(ev){ ev.preventDefault(); send(); }, { passive: false });
-    if (els.input) els.input.addEventListener('keydown', function(ev){ if (ev.key === 'Enter'){ ev.preventDefault(); send(); } }, { passive: false });
-
-    // Socket bindings for receiving messages (decoupled from legacy chat UI)
-    function bindSocket(){
-      try{
-        var s = window.socket; if (!s) return false;
-        if (s.__mchatBound) return true;
-        s.__mchatBound = true;
-        s.on('chat:msg', function(msg){
-          try{
-            if (!IS_MOBILE || !IN_GAME) return;
-            if (!msg || msg.channel !== 'lobby') return;
-            appendMsg(msg);
-            scrollToBottom();
-            if (els.modal && els.modal.style.display === 'none') {
-              UNREAD++; if (els.badge){ els.badge.textContent = String(UNREAD); els.badge.style.display = 'inline-block'; }
-            }
-          }catch(_){}
-        });
-        s.on('reconnect', function(){ try { s.__mchatBound = false; bindSocket(); } catch(_){ } });
-        return true;
-      }catch(_){ return false; }
-    }
-
-    function forceHideLegacy(on){
-      try {
-        // Toggle body class so CSS force-hides legacy chat on mobile in-game
-        try { if (document && document.body) { if (on) document.body.classList.add('m-in-game'); else document.body.classList.remove('m-in-game'); } } catch(_) {}
-        // Prefer helper if available
-        if (typeof window.__forceHideChatSolo === 'function') {
-          window.__forceHideChatSolo(!!on);
-        } else {
-          var legacyPanel = document.getElementById('chatPanel');
-          var legacyBtn = document.getElementById('chatCollapsedBtn');
-          if (legacyPanel) legacyPanel.style.display = on ? 'none' : '';
-          if (legacyBtn) legacyBtn.style.display = on ? 'none' : '';
-        }
-      } catch(_){}
-    }
-
-    function setInGame(on){
-      IN_GAME = !!on;
-      try {
-        forceHideLegacy(IS_MOBILE && IN_GAME);
-        if (els.btn) els.btn.style.display = (IS_MOBILE && IN_GAME) ? 'flex' : 'none';
-        if (!IN_GAME) {
-          UNREAD = 0;
-          if (els.badge){ els.badge.textContent='0'; els.badge.style.display='none'; }
-          close();
-        }
-      } catch(_){}
-    }
-
-    // Attach AFTER socket exists; retry until available
-    bindSocket();
-    var waitSock = setInterval(function(){ try{ if (bindSocket()){ clearInterval(waitSock); } }catch(_){} }, 300);
-
-    // game start / back to lobby hooks (bind when socket available too)
-    function attachGameListeners(){
-      try{
-        var s = window.socket; if (!s) return false;
-        if (s.__mchatGameBound) return true;
-        s.__mchatGameBound = true;
-        s.on('gameStarted', function(){ setInGame(true); });
-        s.on('lobbyUpdate', function(data){
-          try { if (!data || !data.started) { setInGame(false); } } catch(_){ }
-        });
-        s.on('lobbyClosed', function(){ try { setInGame(false); } catch(_){ } });
-        s.on('kicked', function(){ try { setInGame(false); } catch(_){ } });
-        s.on('disconnect', function(){ try { setInGame(false); } catch(_){ } });
-        s.on('reconnect', function(){ try { setInGame(IN_GAME); } catch(_){} });
-        return true;
-      }catch(_){ return false; }
-    }
-    attachGameListeners();
-    var waitGame = setInterval(function(){ try{ if (attachGameListeners()){ clearInterval(waitGame); } }catch(_){} }, 300);
-
-    // initial state: not in game
-    setInGame(false);
-
-    // Re-apply i18n on language changes
-    (function watchLang(){
-      try {
-        var last = window.currentLang;
-        setInterval(function(){ if (window.currentLang !== last){ last = window.currentLang; i18n(); } }, 200);
-      } catch(_){}
-    })();
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { passive:true }); else setup();
-})();
-</script>
-<!-- === /MOBILE IN-GAME CHAT (replacement) === -->
-<!-- === /MOBILE IN-GAME CHAT (replacement) === -->
-
 
 <script>(function(){
   const MAX_LEN = 50;
@@ -4866,6 +4639,29 @@ function renderManualPlayers() {
   let inManualLobby = false;
   let __chatBoundTo = null;
   let __chatPrevMode = null;
+  const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+
+  function __chatUnbindAll(){
+    try{
+      if (!window.socket || !window.socket.off) return;
+      window.socket.off('chat:history');
+      window.socket.off('chat:msg');
+      window.socket.off('chat:error');
+    } catch(_){}
+  }
+  function __chatHideUI(){
+    try{
+      if (panel) panel.style.display = 'none';
+      if (collapsedBtn) { collapsedBtn.style.display = 'none'; try{ collapsedBtn.classList.remove('notify'); }catch(_){ } }
+    }catch(_){}
+  }
+  function __chatShowUI(){
+    try{
+      if (panel) panel.style.display = 'flex';
+    }catch(_){}
+  }
+  function __shouldMuteMobileInGame(){ return !!(IS_MOBILE && inGame); }
+
 
   function qs(id){ return document.getElementById(id); }
   const panel = qs('chatPanel');
@@ -5006,6 +4802,7 @@ function renderManualPlayers() {
   // Send
   function send(){
     try {
+      if (typeof IS_MOBILE !== 'undefined' && IS_MOBILE && inGame) { return; }
       if (!window.socket || !window.socket.connected) return;
       const now = Date.now();
       if (now - lastSent < COOLDOWN_MS) return;
@@ -5025,13 +4822,19 @@ function renderManualPlayers() {
   // Socket bindings
   function initSocketBindings(){
     try {
+      if (__shouldMuteMobileInGame()) {
+        __chatUnbindAll();
+        __chatHideUI();
+        __chatBoundTo = '__MUTED__';
+        return true;
+      }
       if (!window.socket) return false;
       if (!panel) return false;
       if (__chatBoundTo === window.socket) return true;
       __chatBoundTo = window.socket;
 
       panel.style.display = 'flex';
-      window.socket.emit('chat:join', { channel: currentChannel });
+      if (!__shouldMuteMobileInGame()) { try { window.socket.emit('chat:join', { channel: currentChannel }); } catch(_){ } }
 
       if (window.socket.off){
         window.socket.off('chat:history');
@@ -5065,7 +4868,9 @@ function renderManualPlayers() {
       });
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
-      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
+      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }
+        try { if (__shouldMuteMobileInGame()) { __chatUnbindAll(); __chatHideUI(); __chatBoundTo = '__MUTED__'; } } catch(_){ }
+      });
       return true;
     } catch(e){ return false; }
   }
@@ -5076,7 +4881,7 @@ function renderManualPlayers() {
   // Periodic history refresh (fallback)
   setInterval(function(){
     try {
-      if (window.socket && window.socket.connected) {
+      if (window.socket && window.socket.connected && !__shouldMuteMobileInGame()) {
         window.socket.emit('chat:join', { channel: currentChannel });
       }
     } catch(_){}
@@ -5084,6 +4889,7 @@ function renderManualPlayers() {
 
   // Modes & tabs
   function updateTabs(){
+    if (__shouldMuteMobileInGame()) { try{ __chatHideUI(); }catch(_){ } return; } else { try{ if (collapsedBtn && panel && panel.style.display === 'none' && collapsedBtn.style.display === 'none') { collapsedBtn.style.display = 'flex'; } }catch(_){ } }
     const modeMain = (!inManualLobby && !inGame);
     const modeLobby = (inManualLobby && !inGame);
     const modeGame = inGame;
@@ -5118,7 +4924,7 @@ function renderManualPlayers() {
   setCollapsed(false);
   setInterval(refreshLobbyMode, 1500);
   window.addEventListener('resize', positionCollapsedBtn);
-})();</script>
+})();</script></script>
 <script>
 /* === SOLO MODE CHAT HIDING (client-only, robust & non-invasive) ===
    Hides both the chat panel and the collapsed chat button whenever a game is started
