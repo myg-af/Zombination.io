@@ -398,18 +398,6 @@ body.menu-hide-ui #fpsCounter,
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }</style>
-
-<style id="ingame-lock-style">
-/* In-game UI lock: keep game visible, hide lobby-only panels */
-body.ig-lock #lobbyScreen,
-body.ig-lock #lobbyBox,
-body.ig-lock #manualLobbyPanel,
-body.ig-lock #joinLobbyPanel { display: none !important; visibility: hidden !important; }
-body.ig-lock #gameCanvas,
-body.ig-lock #hud,
-body.ig-lock #hudStats { display: block !important; visibility: visible !important; }
-</style>
-
 </head>
 <body>
 <script>
@@ -3115,22 +3103,11 @@ function gameLoop(timestamp = 0) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
-        try {
-          // Anti-flip burst: keep lobby overlays hidden a few seconds after start
-          (function rehideBurst(round){
-            try {
-              var ids = ['lobbyScreen','manualLobbyPanel','joinLobbyPanel'];
-              for (var i=0;i<ids.length;i++){ var el = document.getElementById(ids[i]); if (el) { el.style.display = 'none'; } }
-            } catch(_){}
-            if (typeof round !== 'number') round = 0;
-            if (round < 24) { setTimeout(function(){ rehideBurst(round+1); }, 200); }
-          })();
-        } catch(_){}
-    
         lobbyStarted = true;
         return;
       }
-      lobbyScreen.style.display = 'flex'; updateLobbyTexts();
+      lobbyScreen.style.display = 'flex';
+      updateLobbyTexts();
       lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.readOnly = lobbyJoined;
       lobbyJoin.textContent = tr.join;
@@ -5847,40 +5824,5 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
-
-<script>
-<script>
-
-<script>
-// Toggle a simple body class to lock UI in-game (event-driven, no heuristic).
-(function(){
-  try {
-    function addLock(){ try { document.body.classList.add('ig-lock'); if (window.debugLog) debugLog('IG-LOCK on'); } catch(_){ } }
-    function removeLock(){ try { document.body.classList.remove('ig-lock'); if (window.debugLog) debugLog('IG-LOCK off'); } catch(_){ } }
-    // explicit in-game flag (starts false)
-    if (typeof window.__inGameFlag === 'undefined') window.__inGameFlag = false;
-
-    function applyByFlag(){ try { if (window.__inGameFlag) addLock(); else removeLock(); } catch(_){ } }
-
-    // Bind socket events to flip the flag
-    if (window.socket){
-      try {
-        window.socket.on('gameStarted', function(){ window.__inGameFlag = true; applyByFlag(); });
-        window.socket.on('lobbyUpdate', function(d){ try { if (d && d.started === false) { window.__inGameFlag = false; applyByFlag(); } } catch(_){ } });
-        window.socket.on('kicked', function(){ window.__inGameFlag = false; applyByFlag(); });
-        window.socket.on('lobbyClosed', function(){ window.__inGameFlag = false; applyByFlag(); });
-        window.socket.on('disconnect', function(){ window.__inGameFlag = false; applyByFlag(); });
-      } catch(_){}
-    }
-
-    // Watchdog only mirrors the flag (no canvas heuristic)
-    setInterval(applyByFlag, 800);
-    // Ensure initial state unlocked
-    removeLock();
-  } catch(_){}
-})();
-</script>
-
-
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
