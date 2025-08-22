@@ -6299,5 +6299,109 @@ function bindChatGuard(){
 })();
 </script>
 
+
+<script>
+// === Anti-Flip CSS enforcement (mobile, in-game, during freeze) ===
+(function(){
+  try{
+    var FREEZE_MS = 8000;
+    function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
+    function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
+    function inGameHeuristic(){
+      try { if (window.__ingame) return true; } catch(_){}
+      try {
+        var lobby = document.getElementById('lobbyScreen');
+        var canvas = document.getElementById('gameCanvas');
+        var lobbyHidden = lobby && lobby.style.display === 'none';
+        var canvasShown = canvas && canvas.style.display !== 'none';
+        return !!(canvasShown && lobbyHidden);
+      } catch(_){ return false; }
+    }
+    function dlog(){ try{ if (window.debugLog) debugLog.apply(null, arguments); }catch(_){ } }
+    function dwarn(){ try{ if (window.debugWarn) debugWarn.apply(null, arguments); }catch(_){ } }
+
+    var STYLE_ID = 'antiFlipStyle';
+    function ensureStyle(on){
+      try{
+        var el = document.getElementById(STYLE_ID);
+        if (on){
+          if (!el){
+            el = document.createElement('style');
+            el.id = STYLE_ID;
+            el.textContent = "#lobbyBox, #manualLobbyPanel { display: none !important; visibility: hidden !important; }\n#gameCanvas, #hud, #hudStats { display: block !important; visibility: visible !important; }";
+            (document.head || document.documentElement).appendChild(el);
+            dlog('ANTI-FLIP CSS on');
+          }
+        } else {
+          if (el && el.parentNode){ el.parentNode.removeChild(el); dlog('ANTI-FLIP CSS off'); }
+        }
+      } catch(_){}
+    }
+
+    window.__antiFlipUntil = window.__antiFlipUntil || 0;
+    function armFreeze(){
+      try {
+        window.__antiFlipUntil = now() + FREEZE_MS;
+        dlog('ANTI-FLIP arm', { until: window.__antiFlipUntil });
+        ensureStyle(true);
+      } catch(_){}
+    }
+    function freezeActive(){ return isMobileUA() && inGameHeuristic() && (now() < (window.__antiFlipUntil||0)); }
+
+    // Arm via chat UI events
+    try {
+      var btn = document.getElementById('chatSend');
+      var input = document.getElementById('chatInput');
+      var arm = function(){ if (isMobileUA() && inGameHeuristic()) armFreeze(); };
+      if (btn){ btn.addEventListener('click', arm, { capture:true, passive:false }); btn.addEventListener('touchend', arm, { capture:true, passive:false }); }
+      if (input){ var keyArm=function(ev){ var k=ev&&(ev.key||ev.code||''); if(k==='Enter'||(ev&&ev.keyCode===13)){ arm(); } }; input.addEventListener('keydown', keyArm, { capture:true, passive:false }); input.addEventListener('keyup', keyArm, { capture:true, passive:false }); }
+    } catch(_){}
+
+    // Arm via send() wrapper (always)
+    try {
+      if (typeof window.send === 'function' && !window.send.__antiFlipArm){
+        var _orig = window.send;
+        window.send = function(){
+          try { if (isMobileUA() && inGameHeuristic()) armFreeze(); } catch(_){}
+          return _orig.apply(this, arguments);
+        };
+        window.send.__antiFlipArm = true;
+      }
+    } catch(_){}
+
+    // MutationObserver expanded: watch childList + attributes
+    try{
+      var obs = new MutationObserver(function(muts){
+        try{
+          if (!freezeActive()) return;
+          var hit = false;
+          for (var i=0;i<muts.length;i++){
+            var m = muts[i];
+            if (m.type === 'attributes'){
+              var t = m.target, id = t && t.id;
+              if (id === 'lobbyBox' || id === 'manualLobbyPanel' || id === 'gameCanvas'){ hit = true; break; }
+            } else if (m.type === 'childList'){
+              var n = m.target;
+              // if lobby subtree changed, this can flip it visible
+              if (n && (n.id === 'lobbyBox' || n.id === 'manualLobbyPanel')) { hit = true; break; }
+            }
+          }
+          if (hit){ dwarn('ANTI-FLIP detect DOM change'); ensureStyle(true); }
+        }catch(_){}
+      });
+      obs.observe(document.documentElement || document.body, { attributes: true, attributeFilter: ['style','class'], childList: true, subtree: true });
+    }catch(_){}
+
+    // Watcher interval to drop CSS when freeze ends
+    setInterval(function(){
+      try {
+        if (!freezeActive()) ensureStyle(false);
+      } catch(_){}
+    }, 300);
+
+  } catch(_){}
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
