@@ -5852,7 +5852,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   try {
     if (window.__NAV_GUARD_INSTALLED) return;
     window.__NAV_GUARD_INSTALLED = true;
-    var GUARD_DEFAULT_MS = 2500;
+    var GUARD_DEFAULT_MS = 8000;
     var guardUntil = 0;
 
     function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
@@ -5867,7 +5867,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       } catch(_){ return false; }
     }
     function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
-    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
+    function active(){ try{ if (isMobileUA() && inGameHeuristic()) return true; }catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
     // Global capture to swallow interactions during guard
     function swallowIfActive(ev){
       try{
@@ -5948,7 +5948,24 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
     window.__chatNavGuardOff = function(){ guardUntil = 0; log('guard_off'); };
 
     // Bind to chat UI to arm guard just before sending
-    function bindChatGuard(){
+    
+    // Aggressive: block socket.disconnect() while active
+    function wrapSocketDisconnect(){
+      try {
+        if (!window.socket) return;
+        if (window.socket.__disconnectWrapped) return;
+        var _disc = window.socket.disconnect;
+        if (typeof _disc !== 'function') return;
+        window.socket.disconnect = function(){
+          try {
+            if (active()) { log('blocked_disconnect'); return; }
+          } catch(_){}
+          try { return _disc.apply(this, arguments); } catch(e){}
+        };
+        window.socket.__disconnectWrapped = true;
+      } catch(_){}
+    }
+function bindChatGuard(){
       try {
         var input = document.getElementById('chatInput');
         var btn = document.getElementById('chatSend');
@@ -5972,8 +5989,8 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
         }
       } catch(_){}
     }
-    bindChatGuard();
-    var _int = setInterval(bindChatGuard, 500);
+    bindChatGuard(); wrapSocketDisconnect();
+    var _int = setInterval(function(){ bindChatGuard(); wrapSocketDisconnect(); }, 400);
     setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
   } catch(_){}
 })();
