@@ -5867,19 +5867,38 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       } catch(_){ return false; }
     }
     function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
-    function active(){ try{ if (isMobileUA() && inGameHeuristic()) return true; }catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
+    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); }catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
     // Global capture to swallow interactions during guard
+    
     function swallowIfActive(ev){
       try{
-        if (active()){
-          if (ev && ev.cancelable && ev.preventDefault) ev.preventDefault();
-          if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-          if (ev && ev.stopPropagation) ev.stopPropagation();
-          log('swallow_' + (ev && ev.type || 'evt'));
-          return false;
-        }
+        if (!active()) return;
+        var t = ev && ev.target;
+        // allow-list: chat UI elements should still work during guard
+        var allow = false;
+        try {
+          var el = t;
+          var maxDepth = 6;
+          while (el && maxDepth-- > 0){
+            var id = el.id || '';
+            var cls = el.className || '';
+            if (id === 'chatPanel' || id === 'chatCollapsedBtn' || id === 'chatInput' || id === 'chatSend' || id === 'chatInputRow' || id === 'chatTabs' || id === 'tabWorld' || id === 'tabLobby') { allow = true; break; }
+            if (typeof el.closest === 'function'){
+              var hit = el.closest('#chatPanel, #chatCollapsedBtn, #chatInputRow, #chatTabs, #tabWorld, #tabLobby');
+              if (hit) { allow = true; break; }
+            }
+            el = el.parentElement;
+          }
+        } catch(_){}
+        if (allow) return; // let chat UI through
+        if (ev && ev.cancelable && ev.preventDefault) ev.preventDefault();
+        if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        log('swallow_' + (ev && ev.type || 'evt'));
+        return false;
       }catch(_){}
     }
+    
     try {
       ['click','touchstart','touchend','pointerdown','pointerup'].forEach(function(t){
         try { document.addEventListener(t, swallowIfActive, { capture:true, passive:false }); } catch(_){ document.addEventListener(t, swallowIfActive, true); }
