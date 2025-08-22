@@ -216,10 +216,12 @@ body.menu-hide-ui #fpsCounter,
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 12px;
   box-shadow: 0 6px 26px #000c;
-  z-index: 999999;
+  z-index: 2147483647 !important;
   overflow: hidden;
   backdrop-filter: blur(6px);
   color: #fff;
+
+  pointer-events: auto !important;
 }
 #chatHeader {
   display: flex;
@@ -307,8 +309,10 @@ body.menu-hide-ui #fpsCounter,
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 999999;
+  z-index: 2147483647 !important;
   box-shadow: 0 6px 26px #000c;
+
+  pointer-events: auto !important;
 }
 #chatCollapsedBtn.notify::after {
   content: '';
@@ -326,6 +330,12 @@ body.menu-hide-ui #fpsCounter,
   #chatPanel { max-height: 38vh; width: min(92vw, 420px); }
 }
 </style>
+<style>
+/* ensure chat is always clickable above any overlays */
+#chatPanel, #chatPanel * { pointer-events: auto !important; }
+#chatCollapsedBtn { pointer-events: auto !important; }
+</style>
+
 
 <!-- MOBILE LOBBY RESIZE PATCH (ULTRA ROBUST) -->
 <style id="mobile-lobby-resize-patch">
@@ -4639,29 +4649,6 @@ function renderManualPlayers() {
   let inManualLobby = false;
   let __chatBoundTo = null;
   let __chatPrevMode = null;
-  const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-
-  function __chatUnbindAll(){
-    try{
-      if (!window.socket || !window.socket.off) return;
-      window.socket.off('chat:history');
-      window.socket.off('chat:msg');
-      window.socket.off('chat:error');
-    } catch(_){}
-  }
-  function __chatHideUI(){
-    try{
-      if (panel) panel.style.display = 'none';
-      if (collapsedBtn) { collapsedBtn.style.display = 'none'; try{ collapsedBtn.classList.remove('notify'); }catch(_){ } }
-    }catch(_){}
-  }
-  function __chatShowUI(){
-    try{
-      if (panel) panel.style.display = 'flex';
-    }catch(_){}
-  }
-  function __shouldMuteMobileInGame(){ return !!(IS_MOBILE && inGame); }
-
 
   function qs(id){ return document.getElementById(id); }
   const panel = qs('chatPanel');
@@ -4802,7 +4789,6 @@ function renderManualPlayers() {
   // Send
   function send(){
     try {
-      if (typeof IS_MOBILE !== 'undefined' && IS_MOBILE && inGame) { return; }
       if (!window.socket || !window.socket.connected) return;
       const now = Date.now();
       if (now - lastSent < COOLDOWN_MS) return;
@@ -4822,19 +4808,13 @@ function renderManualPlayers() {
   // Socket bindings
   function initSocketBindings(){
     try {
-      if (__shouldMuteMobileInGame()) {
-        __chatUnbindAll();
-        __chatHideUI();
-        __chatBoundTo = '__MUTED__';
-        return true;
-      }
       if (!window.socket) return false;
       if (!panel) return false;
       if (__chatBoundTo === window.socket) return true;
       __chatBoundTo = window.socket;
 
       panel.style.display = 'flex';
-      if (!__shouldMuteMobileInGame()) { try { window.socket.emit('chat:join', { channel: currentChannel }); } catch(_){ } }
+      window.socket.emit('chat:join', { channel: currentChannel });
 
       if (window.socket.off){
         window.socket.off('chat:history');
@@ -4868,9 +4848,7 @@ function renderManualPlayers() {
       });
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
-      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }
-        try { if (__shouldMuteMobileInGame()) { __chatUnbindAll(); __chatHideUI(); __chatBoundTo = '__MUTED__'; } } catch(_){ }
-      });
+      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
       return true;
     } catch(e){ return false; }
   }
@@ -4881,7 +4859,7 @@ function renderManualPlayers() {
   // Periodic history refresh (fallback)
   setInterval(function(){
     try {
-      if (window.socket && window.socket.connected && !__shouldMuteMobileInGame()) {
+      if (window.socket && window.socket.connected) {
         window.socket.emit('chat:join', { channel: currentChannel });
       }
     } catch(_){}
@@ -4889,7 +4867,6 @@ function renderManualPlayers() {
 
   // Modes & tabs
   function updateTabs(){
-    if (__shouldMuteMobileInGame()) { try{ __chatHideUI(); }catch(_){ } return; } else { try{ if (collapsedBtn && panel && panel.style.display === 'none' && collapsedBtn.style.display === 'none') { collapsedBtn.style.display = 'flex'; } }catch(_){ } }
     const modeMain = (!inManualLobby && !inGame);
     const modeLobby = (inManualLobby && !inGame);
     const modeGame = inGame;
@@ -4924,7 +4901,7 @@ function renderManualPlayers() {
   setCollapsed(false);
   setInterval(refreshLobbyMode, 1500);
   window.addEventListener('resize', positionCollapsedBtn);
-})();</script></script>
+})();</script>
 <script>
 /* === SOLO MODE CHAT HIDING (client-only, robust & non-invasive) ===
    Hides both the chat panel and the collapsed chat button whenever a game is started

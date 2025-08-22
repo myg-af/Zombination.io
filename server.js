@@ -1163,6 +1163,11 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
+    // Detect if the client is mobile from User-Agent (used to avoid sending chat to mobile in-game)
+    try {
+      const ua = (socket && socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
+      socket.__isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(String(ua));
+    } catch(_){ socket.__isMobile = false; }
 
   // Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
@@ -1332,43 +1337,30 @@ socket.on('clientPing', () => {});
       }
 
       
-            // nickname uniqueness check (global)
-      try { if (isPseudoTaken(pseudo, socket.id)) { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); return; } } catch(_){ }
-      // After passing uniqueness, **reserve** the nickname immediately so others get 'pseudo_taken'
-      try {
-        // Sanitize to match join/rename rules (alphanumeric only, 15 chars max)
-        let __san = String(pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
-        if (__san) {
-          // Do not reserve generic fallbacks
-          const __lower = __san.toLowerCase();
-          if (__lower !== 'player' && __lower !== 'joueur') {
-            const __gid = socketToGame[socket.id];
-            const __game = activeGames.find(g => g && g.id === __gid);
-            if (__game) {
-              // Ensure lobby roster entry exists for reservation (ready stays false)
-              try {
-                __game.lobby = __game.lobby || { players: {} };
-                __game.lobby.players = __game.lobby.players || {};
-                if (!__game.lobby.players[socket.id]) __game.lobby.players[socket.id] = { pseudo: __san, ready: false };
-                else __game.lobby.players[socket.id].pseudo = __san;
-              } catch(_) {}
-              // If already in active players, mirror the name there
-              try { if (__game.players && __game.players[socket.id]) __game.players[socket.id].pseudo = __san; } catch(_) {}
-              // Broadcast lobby so clients update local caches / myPseudo
-              try { broadcastLobby(__game); } catch(_) {}
-            }
-            // Stick to the sanitized version for the message payload too
-            pseudo = __san;
-          }
-        }
-      } catch(_){}      
-      const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+            const msg = { sid: socket.id, pseudo, text, ts: now, channel };
 
       if (channel === 'world') {
         worldChatHistory.push(msg);
         if (worldChatHistory.length > 500) worldChatHistory.shift();
         // Global broadcast: everyone receives world chat regardless of room state
-        io.emit('chat:msg', msg);
+        // Echo to sender, then send to others in 'world' excluding mobile clients that are in-game
+        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+        try {
+          const nsp = io.of('/');
+          nsp.in('world').fetchSockets().then(clients => {
+            clients.forEach(cl => {
+              try {
+                const gid = socketToGame[cl.id];
+                const g = activeGames.find(gg => gg && gg.id === gid);
+                const inGameNow = !!(g && g.lobby && g.lobby.started);
+                if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow)) {
+                  cl.emit('chat:msg', msg);
+                }
+              } catch(_){}
+            });
+          }).catch(_=>{});
+        } catch(_){}
+
       } else {
         const gid = socketToGame[socket.id];
         const game = activeGames.find(g => g && g.id === gid);
@@ -1377,7 +1369,24 @@ socket.on('clientPing', () => {});
         game.chatHistory.push(msg);
         if (game.chatHistory.length > 200) game.chatHistory.shift();
         // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
-        io.emit('chat:msg', msg);
+        // Echo to sender, then broadcast to other lobby members (excluding mobile clients that are currently in-game)
+        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+        try {
+          const nsp = io.of('/');
+          nsp.in('lobby' + game.id).fetchSockets().then(clients => {
+            clients.forEach(cl => {
+              try {
+                const gid2 = socketToGame[cl.id];
+                const g2 = activeGames.find(gg => gg && gg.id === gid2);
+                const inGameNow2 = !!(g2 && g2.lobby && g2.lobby.started);
+                if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow2)) {
+                  cl.emit('chat:msg', msg);
+                }
+              } catch(_){}
+            });
+          }).catch(_=>{});
+        } catch(_){}
+
       }
     } catch(e){}
   });
