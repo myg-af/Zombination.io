@@ -1379,7 +1379,7 @@ socket.on('clientPing', () => {});
                 const gid2 = socketToGame[cl.id];
                 const g2 = activeGames.find(gg => gg && gg.id === gid2);
                 const inGameNow2 = !!(g2 && g2.lobby && g2.lobby.started);
-                if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow2)) {
+                if (!(cl.id === socket.id) ) {
                   cl.emit('chat:msg', msg);
                 }
               } catch(_){}
