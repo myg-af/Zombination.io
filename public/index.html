@@ -5845,5 +5845,121 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
+
+<!-- NAVIGATION GUARD: prevent accidental reload/back around mobile chat send -->
+<script>
+(function(){
+  try {
+    if (window.__NAV_GUARD_INSTALLED) return;
+    window.__NAV_GUARD_INSTALLED = true;
+    var GUARD_DEFAULT_MS = 1800;
+    var guardUntil = 0;
+
+    function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
+    function inGameHeuristic(){
+      try { if (window.__ingame) return true; } catch(_){}
+      try {
+        var lobby = document.getElementById('lobbyScreen');
+        var canvas = document.getElementById('gameCanvas');
+        var lobbyHidden = lobby && lobby.style.display === 'none';
+        var canvasShown = canvas && canvas.style.display !== 'none';
+        return !!(canvasShown && lobbyHidden);
+      } catch(_){ return false; }
+    }
+    function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
+    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
+
+    function log(type, extra){
+      try {
+        var obj = { t: now(), type: type || 'nav', extra: extra||null };
+        if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data: obj });
+      } catch(_){}
+    }
+
+    // Patch location.reload/replace
+    (function(){
+      try {
+        if (!location) return;
+        if (!location.__origReload){
+          location.__origReload = location.reload;
+          location.reload = function(){
+            if (active()) { log('blocked_reload'); return; }
+            return location.__origReload.apply(location, arguments);
+          };
+        }
+        if (!location.__origReplace){
+          location.__origReplace = location.replace;
+          location.replace = function(){
+            if (active()) { log('blocked_replace'); return; }
+            return location.__origReplace.apply(location, arguments);
+          };
+        }
+      } catch(_){}
+    })();
+
+    // Patch history.back/go
+    (function(){
+      try {
+        if (!history) return;
+        if (!history.__origBack){
+          history.__origBack = history.back;
+          history.back = function(){
+            if (active()) { log('blocked_back'); return; }
+            return history.__origBack.apply(history, arguments);
+          };
+        }
+        if (!history.__origGo){
+          history.__origGo = history.go;
+          history.go = function(){
+            if (active()) { log('blocked_go'); return; }
+            return history.__origGo.apply(history, arguments);
+          };
+        }
+      } catch(_){}
+    })();
+
+    // Public API
+    window.__chatNavGuardOn = function(ms){
+      try {
+        var dur = (typeof ms === 'number' && ms>0) ? ms : GUARD_DEFAULT_MS;
+        var nxt = now() + dur;
+        if (nxt > guardUntil) guardUntil = nxt;
+        log('guard_on', { until: guardUntil });
+      } catch(_){}
+    };
+    window.__chatNavGuardOff = function(){ guardUntil = 0; log('guard_off'); };
+
+    // Bind to chat UI to arm guard just before sending
+    function bindChatGuard(){
+      try {
+        var input = document.getElementById('chatInput');
+        var btn = document.getElementById('chatSend');
+        if (btn && !btn.__guardBound){
+          var arm = function(e){ try{ if(e&&e.preventDefault && e.cancelable) e.preventDefault(); if (e && e.stopPropagation){ if (e.stopImmediatePropagation) e.stopImmediatePropagation(); e.stopPropagation(); } }catch(_){} try{ window.__chatNavGuardOn(1800); }catch(_){} };
+          btn.addEventListener('click', arm, { capture:true, passive:false });
+          btn.addEventListener('touchend', arm, { capture:true, passive:false });
+          btn.__guardBound = true;
+        }
+        if (input && !input.__guardBound){
+          var armKey = function(ev){
+            try {
+              var k = ev && (ev.key || ev.code || '');
+              var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
+              if (isEnter){ if (ev.preventDefault && ev.cancelable) ev.preventDefault(); if (ev.stopPropagation){ if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); ev.stopPropagation(); } window.__chatNavGuardOn(1800); }
+            } catch(_){}
+          };
+          input.addEventListener('keydown', armKey, { capture:true, passive:false });
+          input.addEventListener('keyup', armKey, { capture:true, passive:false });
+          input.__guardBound = true;
+        }
+      } catch(_){}
+    }
+    bindChatGuard();
+    var _int = setInterval(bindChatGuard, 500);
+    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
+  } catch(_){}
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
