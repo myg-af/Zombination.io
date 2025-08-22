@@ -199,31 +199,6 @@ body.menu-hide-ui #fpsCounter,
     background: #181c; /* keep existing lobby feel while covering elements beneath */
   }
 
-/* === Mobile build confirm UI === */
-.mobile-build-confirm {
-  position: fixed;
-  z-index: 10050;
-  pointer-events: none;
-}
-.mobile-build-confirm .btn {
-  position: absolute;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  font-size: 22px;
-  line-height: 44px;
-  text-align: center;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-  pointer-events: auto;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-.mobile-build-confirm .btn-confirm { background: #22c55e; color: #fff; }
-.mobile-build-confirm .btn-cancel  { background: #ef4444; color: #fff; }
-
-
 /* === Ensure build buttons always receive input on mobile === */
 #buildBar, #buildTiles, #buildBar *, #mobile-build, #mobile-build * {
   pointer-events: auto !important;
@@ -6092,100 +6067,75 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
 
 
-// === Mobile: tap-select then confirm/cancel (capture & pointerdown robust) ===
+
+
+
+// ---- Mobile drag-to-place: select block, drag on canvas, auto-place on release ----
 (function(){
-  try{
-    var isTouchCapable = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    if (!isTouchCapable) return;
-    if (window.__tapConfirmSetup2) return;
-    window.__tapConfirmSetup2 = true;
+  try {
+    var touchCap = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (!touchCap) return;
+    if (!canvas || canvas.__dragPlaceV2) return;
+    canvas.__dragPlaceV2 = true;
 
-    var awaitingTap = false;
-    var confirmUI = null, btnOk = null, btnNo = null;
-    var pendingClient = { x: 0, y: 0 };
+    var placing = false;
+    var activeId = null;
+    var lastX = 0, lastY = 0;
 
-    function ensureUI(){
-      if (confirmUI) return;
-      confirmUI = document.createElement('div');
-      confirmUI.className = 'mobile-build-confirm';
-      confirmUI.style.display = 'none';
-      btnOk = document.createElement('button'); btnOk.className = 'btn btn-confirm'; btnOk.textContent = '✓';
-      btnNo = document.createElement('button'); btnNo.className = 'btn btn-cancel';  btnNo.textContent = '✕';
-      confirmUI.appendChild(btnOk); confirmUI.appendChild(btnNo);
-      document.body.appendChild(confirmUI);
-      btnOk.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); try { tryPlaceStructureAtCursor(pendingClient.x, pendingClient.y); } catch(_){ } hideUI(); awaitingTap = true; }, { passive:false });
-      btnNo.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); hideUI(); awaitingTap = true; }, { passive:false });
-    }
-    function showUI(){ ensureUI(); confirmUI.style.display = 'block'; startRAF(); }
-    function hideUI(){ if (!confirmUI) return; confirmUI.style.display='none'; stopRAF(); }
-    var rafId = 0;
-    function startRAF(){ if (rafId) return; var step=function(){ if (!confirmUI || confirmUI.style.display==='none'){ rafId=0; return; } try{ positionUI(); }catch(_){ } rafId = requestAnimationFrame(step); }; rafId = requestAnimationFrame(step); }
-    function stopRAF(){ try{ if (rafId) cancelAnimationFrame(rafId); }catch(_){ } rafId=0; }
-    function positionUI(){
-      var tx = (window.buildHover && buildHover.tx)|0, ty = (window.buildHover && buildHover.ty)|0;
-      if (tx < 0 || ty < 0) return;
-      var rect = canvas.getBoundingClientRect();
-      var cx = rect.left + ((tx * TILE_SIZE - cameraX + TILE_SIZE/2) * renderScale);
-      var cy = rect.top  + ((ty * TILE_SIZE - cameraY + TILE_SIZE/2) * renderScale);
-      var r=44, gap=36;
-      btnOk.style.left = (cx - r - gap) + 'px'; btnOk.style.top = (cy - r/2) + 'px';
-      btnNo.style.left = (cx + gap) + 'px';    btnNo.style.top = (cy - r/2) + 'px';
-    }
-    function setAwaiting(v){ awaitingTap = !!v; if (!awaitingTap) hideUI(); }
-
-    function armType(type){
-      try { if (typeof setBuildMode==='function') setBuildMode(type); else { buildMode = type; buildHover = { tx:-1, ty:-1 }; } } catch(_){ buildMode = type; buildHover = { tx:-1, ty:-1 }; }
-      setAwaiting(true);
+    function findById(e, id){
+      if (!e) return null;
+      var pools = [e.touches, e.changedTouches];
+      for (var p=0; p<pools.length; p++){
+        var list = pools[p] ? Array.prototype.slice.call(pools[p]) : [];
+        for (var i=0;i<list.length;i++){ if (list[i].identifier === id) return list[i]; }
+      }
+      return null;
     }
 
-    // Bind directly on each button (capture phase) for maximum reliability
-    var bound = new WeakSet();
-    function bindBuildButton(btn){
-      if (!btn || bound.has(btn)) return;
-      var type = btn.getAttribute('data-type'); if (!type) return;
-      var handler = function(e){
-        // Only for touch-capable devices
-        e.preventDefault(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); e.stopPropagation();
-        armType(type);
-      };
-      // Attach on pointerdown, touchstart, and click, in capture phase
-      btn.addEventListener('pointerdown', handler, { capture:true, passive:false });
-      btn.addEventListener('touchstart',  handler, { capture:true, passive:false });
-      btn.addEventListener('click',       handler, { capture:true, passive:false });
-      bound.add(btn);
-    }
-
-    function scanAndBind(){
-      var list = document.querySelectorAll('.build-tile, .mb-btn');
-      for (var i=0;i<list.length;i++) bindBuildButton(list[i]);
-    }
-
-    // Keep binding newly added buttons
-    try{
-      var mo = new MutationObserver(function(){ scanAndBind(); });
-      mo.observe(document.body, { childList:true, subtree:true });
-    }catch(_){}
-
-    // Canvas selection logic
-    function chooseTile(clientX, clientY){
-      pendingClient.x = clientX; pendingClient.y = clientY;
-      var st = screenToWorldTile(clientX, clientY);
+    function ts(e){
+      if (!buildMode) return;
+      if (!(e.touches && e.touches.length === 1)) return; // ignore multi-touch (pinch/joysticks)
+      var t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      // ignore if touch starts on joystick
+      try{
+        var el = document.elementFromPoint(t.clientX, t.clientY);
+        if (el && el.classList && (el.classList.contains('joystick-base') || el.classList.contains('joystick-stick'))) return;
+      }catch(_){}
+      placing = true; activeId = t.identifier;
+      lastX = t.clientX; lastY = t.clientY;
+      var st = screenToWorldTile(lastX, lastY);
       buildHover.tx = st.tx; buildHover.ty = st.ty;
-      showUI(); positionUI();
-      awaitingTap = false;
+      e.preventDefault(); e.stopPropagation();
     }
-    canvas.addEventListener('click', function(e){ if (!awaitingTap || !buildMode) return; e.preventDefault(); e.stopPropagation(); chooseTile(e.clientX, e.clientY); }, { capture:true, passive:false });
-    canvas.addEventListener('touchend', function(e){ if (!awaitingTap || !buildMode) return; var t=(e.changedTouches&&e.changedTouches[0])||null; if(!t)return; e.preventDefault(); e.stopPropagation(); chooseTile(t.clientX, t.clientY); }, { capture:true, passive:false });
+    function tm(e){
+      if (!placing || !buildMode) return;
+      var t = findById(e, activeId) || (e.changedTouches && e.changedTouches[0]);
+      if (!t) return;
+      lastX = t.clientX; lastY = t.clientY;
+      var st = screenToWorldTile(lastX, lastY);
+      buildHover.tx = st.tx; buildHover.ty = st.ty;
+      e.preventDefault(); e.stopPropagation();
+    }
+    function te(e){
+      if (!placing) return;
+      // Use last coords
+      try {
+        tryPlaceStructureAtCursor(lastX, lastY);
+      } catch(_){}
+      placing = false; activeId = null;
+      // Exit build mode so auto-fire & other controls are usable immediately
+      try { buildMode = null; buildHover = { tx:-1, ty:-1 }; } catch(_){}
+      e.preventDefault(); e.stopPropagation();
+    }
 
-    // Reposition on changes
-    window.addEventListener('resize', function(){ if (confirmUI && confirmUI.style.display!=='none') positionUI(); });
-    window.addEventListener('orientationchange', function(){ if (confirmUI && confirmUI.style.display!=='none') positionUI(); });
-
-    // Init
-    scanAndBind();
-  }catch(_e){ /* ignore */ }
+    canvas.addEventListener('touchstart', ts,   { passive: false });
+    canvas.addEventListener('touchmove',  tm,   { passive: false });
+    canvas.addEventListener('touchend',   te,   { passive: false });
+    canvas.addEventListener('touchcancel',te,   { passive: false });
+  } catch(_e) { /* ignore */ }
 })();
-// === /Mobile: tap-select then confirm/cancel (capture & pointerdown robust) ===
+// ---- /Mobile drag-to-place ----
 
 </script>
 
