@@ -1243,8 +1243,6 @@ renderLangFlags(); initLobbyTexts(); updateUITexts(); try { if (typeof translate
 window.socket = socket;
 window.__reloading = window.__reloading || false;
 function hardReload(){
-  try { if (window.debugWarn) debugWarn('HARDR ▶ hardReload() called'); } catch(_){ }
-
   if (window.__reloading) return;
   window.__reloading = true;
   try { if (socket && socket.connected) socket.disconnect(); } catch(e){}
@@ -3105,10 +3103,23 @@ function gameLoop(timestamp = 0) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
       if (data.started) {
         lobbyScreen.style.display = 'none';
+        try {
+          // Anti-flip burst: keep lobby overlays hidden a few seconds after start
+          (function rehideBurst(round){
+            try {
+              var ids = ['lobbyScreen','manualLobbyPanel','joinLobbyPanel'];
+              for (var i=0;i<ids.length;i++){ var el = document.getElementById(ids[i]); if (el) { el.style.display = 'none'; } }
+            } catch(_){}
+            if (typeof round !== 'number') round = 0;
+            if (round < 24) { setTimeout(function(){ rehideBurst(round+1); }, 200); }
+          })();
+        } catch(_){}
+    
         lobbyStarted = true;
         return;
       }
       lobbyScreen.style.display = 'flex';
+      try { var gc=document.getElementById('gameCanvas'); if(gc){ gc.style.zIndex=''; } } catch(_){ }
       updateLobbyTexts();
       lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.readOnly = lobbyJoined;
@@ -3135,7 +3146,8 @@ function gameLoop(timestamp = 0) {
       if (e.key === "Enter") lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => { try { var gc = document.getElementById('gameCanvas'); if (gc){ gc.style.position='relative'; gc.style.zIndex='1000000'; } } catch(_){}
+      myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -4622,7 +4634,7 @@ function renderManualPlayers() {
   <div id="chatMessages" aria-live="polite"></div>
   <div id="chatInputRow">
     <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" />
-    <button id="chatSend" type="button">Send</button>
+    <button id="chatSend">Send</button>
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
@@ -4780,47 +4792,22 @@ function renderManualPlayers() {
 
   // Send
   function send(){
-      try { if (window.debugLog) debugLog('CHAT ▶ send()'); } catch(_){ }
-try {
+    try {
       if (!window.socket || !window.socket.connected) return;
       const now = Date.now();
       if (now - lastSent < COOLDOWN_MS) return;
       let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
-        try { if (window.debugLog) debugLog('CHAT ✎ text', { len: (t||'').length, preview: String(t||'').slice(0,120), ch: currentChannel }); } catch(_){ }
-if (!t) return;
+      if (!t) return;
       if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
-      try { if (window.debugLog) debugLog('CHAT ▶ emit chat:send'); } catch(_){ }
-window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
-try { if (window.debugLog) debugLog('CHAT ✔ emit returned'); } catch(_){ }
+      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
       lastSent = now;
       input.value = '';
     } catch(e){}
   }
-  if (sendBtn) { var _sendClick = function(e){ try{ if(e){ e.preventDefault(); if(e.stopImmediatePropagation) e.stopImmediatePropagation(); e.stopPropagation(); } }catch(_){} send(); }; try { sendBtn.addEventListener('click', _sendClick, { passive: false, capture: true }); } catch(_){ sendBtn.addEventListener('click', _sendClick); } try { sendBtn.addEventListener('touchend', _sendClick, { passive: false, capture: true }); } catch(_){ sendBtn.addEventListener('touchend', _sendClick); } }
+  if (sendBtn) sendBtn.addEventListener('click', send);
   if (input) input.addEventListener('keydown', function(ev){
-  try {
-    var k = ev && (ev.key || ev.code || '');
-    var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
-    if (isEnter) { if (ev.preventDefault) ev.preventDefault(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); if (ev.stopPropagation) ev.stopPropagation(); }
-  } catch(_){}
-
     if (ev.key === 'Enter'){ ev.preventDefault(); send(); }
-  
-}, { capture: true });
-  // Keyup fallback for mobile IME Enter
-  try {
-    if (input && !input.__keyupBound) {
-      input.addEventListener('keyup', function(ev){
-        try {
-          var k = ev && (ev.key || ev.code || '');
-          var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
-          if (isEnter) { if (ev.preventDefault) ev.preventDefault(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); if (ev.stopPropagation) ev.stopPropagation(); send(); }
-        } catch(_){}
-      }, { capture: true });
-      input.__keyupBound = true;
-    }
-  } catch(_){ }
-
+  });
 
   // Socket bindings
   function initSocketBindings(){
@@ -4848,7 +4835,7 @@ try { if (window.debugLog) debugLog('CHAT ✔ emit returned'); } catch(_){ }
           if (pendingHistoryFor === __chan) pendingHistoryFor = null;
         }catch(_){}
       });
-      window.socket.on('chat:msg', function(msg){ try { if (window.debugLog) debugLog('CHAT ◀ chat:msg (chat block)'); } catch(_){ } 
+      window.socket.on('chat:msg', function(msg){
         try {
           var isCollapsed = panel && panel.style && panel.style.display === 'none';
           if (isCollapsed && msg && msg.channel === 'lobby' && collapsedBtn) collapsedBtn.classList.add('notify');
@@ -4859,7 +4846,7 @@ try { if (window.debugLog) debugLog('CHAT ✔ emit returned'); } catch(_){ }
         } catch(_){ }
         pushMsg(msg);
       });
-      window.socket.on('chat:error', function(e){ try { if (window.debugLog) debugLog('CHAT ◀ chat:error (chat block)'); } catch(_){ } 
+      window.socket.on('chat:error', function(e){
         if (!e || e.type !== 'cooldown') return;
         try { sendBtn.disabled = true; setTimeout(function(){ sendBtn.disabled = false; }, Math.min(1200, e.waitMs || 1000)); } catch(_){}
       });
@@ -5851,356 +5838,5 @@ function __alertPseudoTaken(){
 // GAMESTARTED_CANVASREADY_HELPER
 try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try { if (window.ensureCanvasReady) ensureCanvasReady(); } catch(_){ } }); } } catch(_){}
 </script>
-
-<!-- NAVIGATION GUARD: prevent accidental reload/back around mobile chat send -->
-<script>
-(function(){
-  try {
-    if (window.__NAV_GUARD_INSTALLED) return;
-    window.__NAV_GUARD_INSTALLED = true;
-    var GUARD_DEFAULT_MS = 8000;
-    var guardUntil = 0; try { window.__guardUntil = guardUntil; } catch(_){ }
-
-    function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
-    function inGameHeuristic(){
-      try { if (window.__ingame) return true; } catch(_){}
-      try {
-        var lobby = document.getElementById('lobbyScreen');
-        var canvas = document.getElementById('gameCanvas');
-        var lobbyHidden = lobby && lobby.style.display === 'none';
-        var canvasShown = canvas && canvas.style.display !== 'none';
-        return !!(canvasShown && lobbyHidden);
-      } catch(_){ return false; }
-    }
-    function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
-    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); } window.__nav_guard_isActive = active; window.__nav_guard_active = active;catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
-    // Global capture to swallow interactions during guard
-    
-    function swallowIfActive(ev){
-      try{
-        if (!active()) return;
-        var t = ev && ev.target;
-        // allow-list: chat UI elements should still work during guard
-        var allow = false;
-        try {
-          var el = t;
-          var maxDepth = 6;
-          while (el && maxDepth-- > 0){
-            var id = el.id || '';
-            var cls = el.className || '';
-            if (id === 'chatPanel' || id === 'chatCollapsedBtn' || id === 'chatInput' || id === 'chatSend' || id === 'chatInputRow' || id === 'chatTabs' || id === 'tabWorld' || id === 'tabLobby') { allow = true; break; }
-            if (typeof el.closest === 'function'){
-              var hit = el.closest('#chatPanel, #chatCollapsedBtn, #chatInputRow, #chatTabs, #tabWorld, #tabLobby');
-              if (hit) { allow = true; break; }
-            }
-            el = el.parentElement;
-          }
-        } catch(_){}
-        if (allow) return; // let chat UI through
-        if (ev && ev.cancelable && ev.preventDefault) ev.preventDefault();
-        if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-        if (ev && ev.stopPropagation) ev.stopPropagation();
-        dlog('GUARD swallow', ev && ev.type); log('swallow_' + (ev && ev.type || 'evt'));
-        return false;
-      }catch(_){}
-    }
-    
-    try {
-      ['click','touchstart','touchend','pointerdown','pointerup'].forEach(function(t){
-        try { document.addEventListener(t, swallowIfActive, { capture:true, passive:false }); } catch(_){ document.addEventListener(t, swallowIfActive, true); }
-      });
-    } catch(_){}
-    
-
-    function log(type, extra){
-      try {
-        var obj = { t: now(), type: type || 'nav', extra: extra||null };
-        if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data: obj });
-      } catch(_){}
-    }
-
-    // Patch location.reload/replace
-    (function(){
-      try {
-        if (!location) return;
-        if (!location.__origReload){
-          location.__origReload = location.reload;
-          location.reload = function(){
-            if (active()) { dlog('GUARD blocked_reload'); log('blocked_reload'); return; }
-            return location.__origReload.apply(location, arguments);
-          };
-        }
-        if (!location.__origReplace){
-          location.__origReplace = location.replace;
-          location.replace = function(){
-            if (active()) { dlog('GUARD blocked_replace'); log('blocked_replace'); return; }
-            return location.__origReplace.apply(location, arguments);
-          };
-        }
-      } catch(_){}
-    })();
-
-    // Patch history.back/go
-    (function(){
-      try {
-        if (!history) return;
-        if (!history.__origBack){
-          history.__origBack = history.back;
-          history.back = function(){
-            if (active()) { dlog('GUARD blocked_back'); log('blocked_back'); return; }
-            return history.__origBack.apply(history, arguments);
-          };
-        }
-        if (!history.__origGo){
-          history.__origGo = history.go;
-          history.go = function(){
-            if (active()) { dlog('GUARD blocked_go'); log('blocked_go'); return; }
-            return history.__origGo.apply(history, arguments);
-          };
-        }
-      } catch(_){}
-    })();
-
-    // Public API
-    window.__chatNavGuardOn = function(ms){
-      try {
-        var dur = (typeof ms === 'number' && ms>0) ? ms : GUARD_DEFAULT_MS;
-        var nxt = now() + dur;
-        if (nxt > guardUntil) guardUntil = nxt; try { window.__guardUntil = guardUntil; } catch(_){ }
-        dlog('GUARD guard_on'); log('guard_on', { until: guardUntil });
-      } catch(_){}
-    };
-    window.__chatNavGuardOff = function(){ guardUntil = 0; dlog('GUARD guard_off'); log('guard_off'); };
-
-    // Bind to chat UI to arm guard just before sending
-    
-    // Aggressive: block socket.disconnect() while active
-    function wrapSocketDisconnect(){
-      try {
-        if (!window.socket) return;
-        if (window.socket.__disconnectWrapped) return;
-        var _disc = window.socket.disconnect;
-        if (typeof _disc !== 'function') return;
-        window.socket.disconnect = function(){
-          try {
-            if (active()) { log('blocked_disconnect'); return; }
-          } catch(_){}
-          try { return _disc.apply(this, arguments); } catch(e){}
-        };
-        window.socket.__disconnectWrapped = true;
-      } catch(_){}
-    }
-function bindChatGuard(){
-      try {
-        var input = document.getElementById('chatInput');
-        var btn = document.getElementById('chatSend');
-        if (btn && !btn.__guardBound){
-          var arm = function(e){ try{ if(e&&e.preventDefault && e.cancelable) e.preventDefault(); if (e && e.stopPropagation){ if (e.stopImmediatePropagation) e.stopImmediatePropagation(); e.stopPropagation(); } }catch(_){} try{ window.__chatNavGuardOn(1800); }catch(_){} };
-          btn.addEventListener('click', arm, { capture:true, passive:false });
-          btn.addEventListener('touchend', arm, { capture:true, passive:false });
-          btn.__guardBound = true;
-        }
-        if (input && !input.__guardBound){
-          var armKey = function(ev){
-            try {
-              var k = ev && (ev.key || ev.code || '');
-              var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
-              if (isEnter){ if (ev.preventDefault && ev.cancelable) ev.preventDefault(); if (ev.stopPropagation){ if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); ev.stopPropagation(); } window.__chatNavGuardOn(1800); }
-            } catch(_){}
-          };
-          input.addEventListener('keydown', armKey, { capture:true, passive:false });
-          input.addEventListener('keyup', armKey, { capture:true, passive:false });
-          input.__guardBound = true;
-        }
-      } catch(_){}
-    }
-    bindChatGuard(); wrapSocketDisconnect();
-    var _int = setInterval(function(){ bindChatGuard(); wrapSocketDisconnect(); }, 400);
-    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
-  } catch(_){}
-})();
-</script>
-
-
-<script>
-(function(){
-  try {
-    function bindSocketDiag(){
-      try {
-        if (!window.socket || !window.socket.on || window.socket.__navDiagBound) return false;
-        window.socket.on('forceReload', function(){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'forceReload' } }); try{ if(window.debugWarn) debugWarn('SOCKET ◀ forceReload'); }catch(_){} } catch(_){}});
-        window.socket.on('disconnect', function(reason){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'disconnect', reason: String(reason||'') } }); try{ if(window.debugError) debugError('SOCKET ✖ disconnect', String(reason||'')); }catch(_){} } catch(_){}});
-        window.socket.__navDiagBound = true;
-        return true;
-      } catch(_){ return false; }
-    }
-    bindSocketDiag();
-    var _int = setInterval(bindSocketDiag, 500);
-    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
-  } catch(_){}
-})();
-</script>
-
-
-<!-- CHAT DEBUG: visible logs to the 🐛 Log console -->
-<script>
-(function(){
-  try {
-    // Short helper that prints to on-page debug console if available
-    function dlog(){ try{ if (window.debugLog) debugLog.apply(null, arguments); }catch(_){ } }
-    function dwarn(){ try{ if (window.debugWarn) debugWarn.apply(null, arguments); }catch(_){ } }
-    function derr(){ try{ if (window.debugError) debugError.apply(null, arguments); }catch(_){ } }
-
-    // Track last send timestamp to correlate following taps
-    window.__lastChatSendAt = 0;
-
-    // Wrap existing send() to log pre/post
-    try {
-      if (typeof send === 'function' && !send.__wrappedForDebug){
-        var __origSend = send;
-        window.send = function(){
-          try {
-            var input = document.getElementById('chatInput');
-            var t = (input && input.value) ? String(input.value) : '';
-            dlog('CHAT ▶ send() attempt', { len: t.length, preview: t.slice(0, 120), ch: (window.currentChannel || 'world') });
-            window.__lastChatSendAt = Date.now();
-          } catch(_){}
-          try {
-            var r = __origSend.apply(this, arguments);
-            dlog('CHAT ✔ send() returned');
-            return r;
-          } catch(e){
-            derr('CHAT ✖ send() threw', e && (e.message||e), e && e.stack);
-            throw e;
-          }
-        };
-        window.send.__wrappedForDebug = true;
-      }
-    } catch(_){}
-
-    // Ensure socket debug listeners
-    function bindSocketDebug(){
-      try {
-        if (!window.socket || !window.socket.on || window.socket.__chatDbgBound) return false;
-        dlog('CHAT DBG: binding socket listeners');
-        var sid = window.socket.id;
-        window.socket.on('chat:msg', function(m){
-          try {
-            var mine = (m && m.sid === (window.socket && window.socket.id));
-            dlog('CHAT ◀ chat:msg', {mine: !!mine, ch: m && m.channel, len: (m && m.text && m.text.length) || 0, ts: m && m.ts});
-          } catch(_){}
-        });
-        window.socket.on('chat:error', function(e){
-          try { dlog('CHAT ◀ chat:error', e); } catch(_){}
-        });
-        window.socket.on('disconnect', function(reason){
-          try { derr('SOCKET ✖ disconnect', { reason: String(reason||'') }); } catch(_){}
-        });
-        window.socket.on('reconnect_attempt', function(at){ try { dwarn('SOCKET … reconnect_attempt', at); } catch(_){}});
-        window.socket.on('reconnect', function(n){ try { dlog('SOCKET ✔ reconnect', n); } catch(_){}});
-        window.socket.on('connect_error', function(err){ try { derr('SOCKET ✖ connect_error', err && (err.message||err)); } catch(_){}});
-        window.socket.on('error', function(err){ try { derr('SOCKET ✖ error', err && (err.message||err)); } catch(_){}});
-        // From nav-guard diag
-        window.socket.on('forceReload', function(){ try { dwarn('SOCKET ◀ forceReload'); } catch(_){}});
-        window.socket.__chatDbgBound = true;
-        return true;
-      } catch(_){ return false; }
-    }
-    bindSocketDebug();
-    var _dbgInt = setInterval(bindSocketDebug, 400);
-    setTimeout(function(){ try { clearInterval(_dbgInt); } catch(_){ } }, 8000);
-
-    // Event tracer for the first few seconds after a send
-    function tracerActive(){ try { return Date.now() - (window.__lastChatSendAt||0) < 4000; } catch(_){ return false; } }
-    function tapTracer(ev){
-      try {
-        if (!tracerActive()) return;
-        var t = ev && ev.target;
-        var path = [];
-        var el = t, hops = 0;
-        while (el && hops++ < 6){
-          path.push((el.id ? '#' + el.id : el.tagName || 'node') + (el.className ? '.' + String(el.className).split(' ').join('.') : ''));
-          el = el.parentElement;
-        }
-        dlog('TRACE tap', { type: ev && ev.type, path: path.join(' > '), key: ev && (ev.key||ev.code||''), cancelable: !!(ev && ev.cancelable) });
-      } catch(_){}
-    }
-    try {
-      ['click','touchstart','touchend','pointerdown','pointerup','keydown','keyup'].forEach(function(t){
-        try { document.addEventListener(t, tapTracer, { capture:true, passive:false }); } catch(_){ document.addEventListener(t, tapTracer, true); }
-      });
-    } catch(_){}
-
-    // Log lifecycle signals that often precede reload/kick
-    window.addEventListener('beforeunload', function(){ dwarn('LIFECYCLE beforeunload'); });
-    window.addEventListener('unload', function(){ dwarn('LIFECYCLE unload'); });
-    document.addEventListener('visibilitychange', function(){ dlog('LIFECYCLE visibility', { hidden: document.hidden }); }, {passive:true});
-
-  } catch(_){}
-})();
-</script>
-
-
-<script>
-// === Guarded showMain override (mobile, during post-chat window) ===
-(function(){
-  try {
-    var origShowMain = window.showMain;
-    if (typeof origShowMain === 'function' && !origShowMain.__guardWrapped){
-      function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
-      function inGameHeuristic(){
-        try { if (window.__ingame) return true; } catch(_){}
-        try {
-          var lobby = document.getElementById('lobbyScreen');
-          var canvas = document.getElementById('gameCanvas');
-          var lobbyHidden = lobby && lobby.style.display === 'none';
-          var canvasShown = canvas && canvas.style.display !== 'none';
-          return !!(canvasShown && lobbyHidden);
-        } catch(_){ return false; }
-      }
-      function navGuardActive(){
-        try {
-          if (typeof window.__nav_guard_active === 'function') return window.__nav_guard_active();
-          if (typeof window.__nav_guard_isActive === 'function') return window.__nav_guard_isActive();
-          // fallback: re-evaluate like in nav guard
-          var g = (typeof window.__guardUntil==='number') ? (Date.now() < window.__guardUntil) : false;
-          return g && isMobileUA() && inGameHeuristic();
-        } catch(_){ return false; }
-      }
-      window.showMain = function(){
-        try {
-          if (isMobileUA() && inGameHeuristic() && navGuardActive()){
-            try { if (window.debugWarn) debugWarn('BLOCK showMain during guard (mobile+inGame)'); } catch(_){}
-            return; // block only in the temporary guard window
-          }
-          try { if (window.debugLog) debugLog('CALL showMain'); } catch(_){}
-        } catch(_){}
-        return origShowMain.apply(this, arguments);
-      };
-      window.showMain.__guardWrapped = true;
-    }
-  } catch(_){}
-})();
-</script>
-
-
-<script>
-(function(){
-  try {
-    function bindLobbyClosedLog(){
-      try {
-        if (!window.socket || !window.socket.on || window.socket.__lobbyClosedLogBound) return false;
-        window.socket.on('lobbyClosed', function(){ try { if (window.debugWarn) debugWarn('SOCKET ◀ lobbyClosed'); } catch(_){ } });
-        window.socket.__lobbyClosedLogBound = true;
-        return true;
-      } catch(_){ return false; }
-    }
-    bindLobbyClosedLog();
-    var _int = setInterval(bindLobbyClosedLog, 400);
-    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 6000);
-  } catch(_){}
-})();
-</script>
-
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
