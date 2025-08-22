@@ -413,6 +413,17 @@ body.menu-hide-ui #fpsCounter,
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }</style>
+
+<style id="build-tile-selected-style">
+/* Selected build tile (PC & Mobile) */
+#buildTiles .build-tile.mb-selected{
+  outline: 3px solid #34e05a !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 3px #34e05a !important;
+  border-radius: 8px !important;
+}
+</style>
+
 </head>
 <body>
 <script>
@@ -3030,15 +3041,13 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
         // succès confirmé → sortir du mode placement
         buildMode = null;
         buildHover = { tx: -1, ty: -1 };
-        try { updateBuildTilesState(); } catch(_) {}
       } else {
         // refus: on reste en mode placement pour réessayer ailleurs
         const reason = ack && ack.reason ? ack.reason : 'unknown';
         console.warn('[build] Refusé par le serveur:', reason);
       }
     });
-  }
-  catch (err) {
+  } catch (err) {
     console.error('[emit] buyStructure error:', err);
   }
 }
@@ -3539,7 +3548,14 @@ buildTiles.forEach(btn => {
 
     // Sinon, on entre en mode placement pour ce type
     buildMode = type;
-    try { updateBuildTilesState(); } catch(_) {}
+    
+    
+    
+    try { document.body.dataset.buildMode = String(type||''); } catch(_) {};
+try { document.body.dataset.buildMode = String(type||''); } catch(_) {};
+    try { updateBuildTilesState(); } catch(_) {};
+try { updateBuildTilesState(); } catch(_) {};
+try { updateBuildTilesState(); } catch(_) {}
     
   });
 });
@@ -3764,7 +3780,6 @@ function updateBuildTilesState() {
     const priceLabel = btn.querySelector('div:nth-child(2)');
     if (priceLabel) {
       let label = `$${price}`;
-      
       if (type==='t'||type==='T'||type==='G') {
         const limits = { t:2, T:2, G:1 };
         let count=0;
@@ -3797,17 +3812,6 @@ function updateBuildTilesState() {
       if (count>=limits[type]) { btn.disabled=true; btn.style.opacity='0.5'; btn.style.cursor='not-allowed'; }
     }
 
-
-  // === Mobile-only: green square around selected build tile ===
-  try {
-    var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
-    if (isMobile) {
-      if (window.buildMode && window.buildMode === type) btn.classList.add('mb-selected');
-      else btn.classList.remove('mb-selected');
-    } else {
-      btn.classList.remove('mb-selected');
-    }
-  } catch(_) {}
   });
 }
 
@@ -4024,6 +4028,9 @@ el.innerHTML += `
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
+      try { document.body.dataset.buildMode = ''; } catch(_) {};
+      try { document.body.dataset.buildMode = ''; } catch(_) {};
+      try { updateBuildTilesState(); } catch(_) {};
       try { updateBuildTilesState(); } catch(_) {};
       return;
     }
@@ -4036,8 +4043,7 @@ el.innerHTML += `
     }
 
     buildMode = type;
-    try { updateBuildTilesState(); } catch(_) {}
-// reset survol
+    // reset survol
     buildHover = { tx: -1, ty: -1 };
   }
 
@@ -5996,13 +6002,6 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
   /* Keep the bar tight to the right/bottom on mobile */
   #buildBar{ right: 12px !important; bottom: 112px !important; gap: 8px !important; }
-  /* Mobile-only selected highlight for construction tiles */
-  #buildTiles .build-tile.mb-selected{
-    outline: 3px solid #34e05a;       /* green like preview stroke */
-    outline-offset: 3px;
-    border-radius: 8px;
-  }
-
 }
 </style>
 
@@ -6163,6 +6162,68 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 // ---- /Mobile drag-to-place ----
 
 </script>
+
+
+
+<script id="buildtile-highlight">
+(function(){
+  if (window.__buildTileHighlightSetup) return;
+  window.__buildTileHighlightSetup = true;
+
+  function currentBuildMode() {
+    try {
+      if (typeof buildMode !== 'undefined' && buildMode !== null) return buildMode;
+    } catch(_){}
+    try {
+      if (typeof window.buildMode !== 'undefined' && window.buildMode !== null) return window.buildMode;
+    } catch(_){}
+    try {
+      if (document.body && document.body.dataset && document.body.dataset.buildMode) return document.body.dataset.buildMode;
+    } catch(_){}
+    return null;
+  }
+
+  function applyBuildTileHighlight(){
+    try{
+      var mode = currentBuildMode();
+      var tiles = document.querySelectorAll('#buildTiles .build-tile');
+      tiles.forEach(function(btn){
+        try{
+          var type = btn.getAttribute('data-type');
+          if (mode && mode === type) { btn.classList.add('mb-selected'); }
+          else { btn.classList.remove('mb-selected'); }
+        }catch(_){}
+      });
+    }catch(_){}
+  }
+
+  // filet de sécurité périodique
+  try { setInterval(applyBuildTileHighlight, 200); } catch(_){}
+
+  // clics dans le conteneur
+  try {
+    var cont = document.getElementById('buildTiles');
+    if (cont) cont.addEventListener('click', function(){ setTimeout(applyBuildTileHighlight, 0); }, true);
+  } catch(_){}
+
+  // patch non intrusif
+  try {
+    var orig = window.updateBuildTilesState;
+    if (typeof orig === 'function'){
+      window.updateBuildTilesState = function(){
+        try { orig.apply(this, arguments); } catch(_){}
+        applyBuildTileHighlight();
+      };
+    }
+  } catch(_){}
+
+  // expose pour débogage
+  try { window.__applyBuildTileHighlight = applyBuildTileHighlight; } catch(_){}
+
+  applyBuildTileHighlight();
+})();
+</script>
+
 
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
