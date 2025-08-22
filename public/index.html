@@ -2836,7 +2836,8 @@ canvas.addEventListener('touchmove', (e) => {
 
 canvas.addEventListener('pointerdown', (e) => {
   if (!buildMode) return;
-  e.preventDefault();
+  if (e.pointerType && e.pointerType !== 'mouse') return; // ignore touch/pen to let mobile drag handle
+e.preventDefault();
   e.stopPropagation();
   tryPlaceStructureAtCursor(e.clientX, e.clientY);
   mouseDown = false;
