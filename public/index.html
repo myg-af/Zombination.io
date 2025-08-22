@@ -417,11 +417,15 @@ body.menu-hide-ui #fpsCounter,
 <style id="build-tile-selected-style">
 /* Selected build tile (PC & Mobile) */
 #buildTiles .build-tile.mb-selected{
-  outline: 2px solid #2fe06a !important;
-  outline-offset: 2px !important;
-  box-shadow: 0 0 6px rgba(52,224,90,.45) !important;
+  /* Contour fin et visible, sans double carré */
+  outline: 2px solid #34e05a !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 8px rgba(52,224,90,0.55);
   border-radius: 10px !important;
+  transition: box-shadow .12s ease-out;
 }
+
+
 </style>
 
 </head>
@@ -3541,16 +3545,24 @@ buildTiles.forEach(btn => {
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
-      try { document.body.dataset.buildMode = ''; } catch(_) {}
       try { updateBuildTilesState(); } catch(_) {}
-      return;
+      
+      try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
+try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+return;
     }
 
     // Sinon, on entre en mode placement pour ce type
     buildMode = type;
-    try { document.body.dataset.buildMode = String(type||''); } catch(_) {}
-    try { updateBuildTilesState(); } catch(_) {}
-
+    
+    
+    
+    try { document.body.dataset.buildMode = String(type||''); } catch(_) {};
+try { document.body.dataset.buildMode = String(type||''); } catch(_) {};
+    try { updateBuildTilesState(); } catch(_) {};
+try { updateBuildTilesState(); } catch(_) {};
+try { updateBuildTilesState(); } catch(_) {}
+    
   });
 });
 
@@ -3754,6 +3766,10 @@ if (structHPGrid) {
   // Sort du mode placement
   buildMode = null;
   buildHover = { tx: -1, ty: -1 };
+  // Clear any visual selection highlight immediately
+  try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
+  try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+
 });
 
 	function closeShopIfOutside(evt) {
@@ -4023,6 +4039,8 @@ el.innerHTML += `
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
       try { document.body.dataset.buildMode = ''; } catch(_) {};
+      try { document.body.dataset.buildMode = ''; } catch(_) {};
+      try { updateBuildTilesState(); } catch(_) {};
       try { updateBuildTilesState(); } catch(_) {};
       return;
     }
@@ -6142,7 +6160,9 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       placing = false; activeId = null;
       // Exit build mode so auto-fire & other controls are usable immediately
       try { buildMode = null; buildHover = { tx:-1, ty:-1 }; } catch(_){}
-      e.preventDefault(); e.stopPropagation();
+      try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
+try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+e.preventDefault(); e.stopPropagation();
     }
 
     canvas.addEventListener('touchstart', ts,   { passive: false });
