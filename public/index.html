@@ -2849,45 +2849,69 @@ e.preventDefault();
     if (!canvas || canvas.__dragPlaceSetup) return;
     canvas.__dragPlaceSetup = true;
 
-    var TAP_THRESHOLD_PX = 8;
+    var TAP_THRESHOLD_PX = 2;
     var touchPlacing = false;
     var touchMoved = false;
+    var activeTouchId = null;
     var startX = 0, startY = 0, lastX = 0, lastY = 0;
     var startTx = -1, startTy = -1;
 
     function onTouchStartPlace(e){
       if (!buildMode) return;
-      if (!(e.touches && e.touches.length === 1)) return; // ignore multi-touch (pinch, joystick)
-      var t = e.changedTouches && e.changedTouches[0];
+      var t = (e.targetTouches && e.targetTouches[0]) || (e.changedTouches && e.changedTouches[0]);
       if (!t) return;
+      // Ignore touches that start over joysticks (if any)
+      try {
+        var el = document.elementFromPoint(t.clientX, t.clientY);
+        if (el && (el.classList && (el.classList.contains('joystick-base') || el.classList.contains('joystick-stick')))) return;
+      } catch(_){}
       e.preventDefault(); e.stopPropagation();
       touchPlacing = true; touchMoved = false;
+      activeTouchId = t.identifier;
       startX = lastX = t.clientX; startY = lastY = t.clientY;
       var st = screenToWorldTile(t.clientX, t.clientY);
       startTx = st.tx; startTy = st.ty;
-      // show ghost immediately
       buildHover.tx = st.tx; buildHover.ty = st.ty;
     }
+
     function onTouchMovePlace(e){
       if (!buildMode || !touchPlacing) return;
-      var t = e.changedTouches && e.changedTouches[0];
+      // find active touch by id
+      var t = null; 
+      if (activeTouchId !== null) {
+        var list = (e.touches && Array.from(e.touches)) || [];
+        for (var i=0;i<list.length;i++){ if (list[i].identifier === activeTouchId) { t = list[i]; break; } }
+        if (!t && e.changedTouches){ var list2 = Array.from(e.changedTouches); for (var j=0;j<list2.length;j++){ if (list2[j].identifier === activeTouchId) { t = list2[j]; break; } } }
+      }
+      if (!t) t = (e.changedTouches && e.changedTouches[0]) || null;
       if (!t) return;
+      e.preventDefault(); e.stopPropagation();
       lastX = t.clientX; lastY = t.clientY;
       var dx = lastX - startX, dy = lastY - startY;
       if (!touchMoved && Math.hypot(dx, dy) >= TAP_THRESHOLD_PX) touchMoved = true;
       var st = screenToWorldTile(lastX, lastY);
       if (st.tx !== startTx || st.ty !== startTy) touchMoved = true;
       buildHover.tx = st.tx; buildHover.ty = st.ty;
-      // do not preventDefault here to avoid fighting with pinch/scroll outside canvas, but canvas has touch-action:none
     }
+
     function onTouchEndPlace(e){
       if (!buildMode || !touchPlacing) return;
-      var t = e.changedTouches && e.changedTouches[0];
-      // Place only if the user actually dragged (moved) to a location
-      if (touchMoved) {
-        tryPlaceStructureAtCursor(lastX, lastY);
+      var t = null;
+      if (activeTouchId !== null && e.changedTouches){
+        var arr = Array.from(e.changedTouches);
+        for (var i=0;i<arr.length;i++){ if (arr[i].identifier === activeTouchId) { t = arr[i]; break; } }
       }
-      touchPlacing = false; touchMoved = false;
+      if (!t) t = (e.changedTouches && e.changedTouches[0]) || null;
+      var moved = !!touchMoved;
+      if (t){
+        var dx = (t.clientX - startX), dy = (t.clientY - startY);
+        if (Math.hypot(dx, dy) >= TAP_THRESHOLD_PX) moved = true;
+      }
+      if (moved) {
+        var px = (t ? t.clientX : lastX), py = (t ? t.clientY : lastY);
+        tryPlaceStructureAtCursor(px, py);
+      }
+      touchPlacing = false; touchMoved = false; activeTouchId = null;
       e.preventDefault(); e.stopPropagation();
     }
 
