@@ -5894,7 +5894,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
         if (ev && ev.cancelable && ev.preventDefault) ev.preventDefault();
         if (ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
         if (ev && ev.stopPropagation) ev.stopPropagation();
-        log('swallow_' + (ev && ev.type || 'evt'));
+        dlog('GUARD swallow', ev && ev.type); log('swallow_' + (ev && ev.type || 'evt'));
         return false;
       }catch(_){}
     }
@@ -5920,14 +5920,14 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
         if (!location.__origReload){
           location.__origReload = location.reload;
           location.reload = function(){
-            if (active()) { log('blocked_reload'); return; }
+            if (active()) { dlog('GUARD blocked_reload'); log('blocked_reload'); return; }
             return location.__origReload.apply(location, arguments);
           };
         }
         if (!location.__origReplace){
           location.__origReplace = location.replace;
           location.replace = function(){
-            if (active()) { log('blocked_replace'); return; }
+            if (active()) { dlog('GUARD blocked_replace'); log('blocked_replace'); return; }
             return location.__origReplace.apply(location, arguments);
           };
         }
@@ -5941,14 +5941,14 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
         if (!history.__origBack){
           history.__origBack = history.back;
           history.back = function(){
-            if (active()) { log('blocked_back'); return; }
+            if (active()) { dlog('GUARD blocked_back'); log('blocked_back'); return; }
             return history.__origBack.apply(history, arguments);
           };
         }
         if (!history.__origGo){
           history.__origGo = history.go;
           history.go = function(){
-            if (active()) { log('blocked_go'); return; }
+            if (active()) { dlog('GUARD blocked_go'); log('blocked_go'); return; }
             return history.__origGo.apply(history, arguments);
           };
         }
@@ -5961,10 +5961,10 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
         var dur = (typeof ms === 'number' && ms>0) ? ms : GUARD_DEFAULT_MS;
         var nxt = now() + dur;
         if (nxt > guardUntil) guardUntil = nxt;
-        log('guard_on', { until: guardUntil });
+        dlog('GUARD guard_on'); log('guard_on', { until: guardUntil });
       } catch(_){}
     };
-    window.__chatNavGuardOff = function(){ guardUntil = 0; log('guard_off'); };
+    window.__chatNavGuardOff = function(){ guardUntil = 0; dlog('GUARD guard_off'); log('guard_off'); };
 
     // Bind to chat UI to arm guard just before sending
     
@@ -6022,8 +6022,8 @@ function bindChatGuard(){
     function bindSocketDiag(){
       try {
         if (!window.socket || !window.socket.on || window.socket.__navDiagBound) return false;
-        window.socket.on('forceReload', function(){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'forceReload' } }); } catch(_){}});
-        window.socket.on('disconnect', function(reason){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'disconnect', reason: String(reason||'') } }); } catch(_){}});
+        window.socket.on('forceReload', function(){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'forceReload' } }); try{ if(window.debugWarn) debugWarn('SOCKET ◀ forceReload'); }catch(_){} } catch(_){}});
+        window.socket.on('disconnect', function(reason){ try { if (window.socket && window.socket.emit) window.socket.emit('client:log', { type:'nav_guard', data:{ evt:'disconnect', reason: String(reason||'') } }); try{ if(window.debugError) debugError('SOCKET ✖ disconnect', String(reason||'')); }catch(_){} } catch(_){}});
         window.socket.__navDiagBound = true;
         return true;
       } catch(_){ return false; }
@@ -6031,6 +6031,105 @@ function bindChatGuard(){
     bindSocketDiag();
     var _int = setInterval(bindSocketDiag, 500);
     setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 5000);
+  } catch(_){}
+})();
+</script>
+
+
+<!-- CHAT DEBUG: visible logs to the 🐛 Log console -->
+<script>
+(function(){
+  try {
+    // Short helper that prints to on-page debug console if available
+    function dlog(){ try{ if (window.debugLog) debugLog.apply(null, arguments); }catch(_){ } }
+    function dwarn(){ try{ if (window.debugWarn) debugWarn.apply(null, arguments); }catch(_){ } }
+    function derr(){ try{ if (window.debugError) debugError.apply(null, arguments); }catch(_){ } }
+
+    // Track last send timestamp to correlate following taps
+    window.__lastChatSendAt = 0;
+
+    // Wrap existing send() to log pre/post
+    try {
+      if (typeof send === 'function' && !send.__wrappedForDebug){
+        var __origSend = send;
+        window.send = function(){
+          try {
+            var input = document.getElementById('chatInput');
+            var t = (input && input.value) ? String(input.value) : '';
+            dlog('CHAT ▶ send() attempt', { len: t.length, preview: t.slice(0, 120), ch: (window.currentChannel || 'world') });
+            window.__lastChatSendAt = Date.now();
+          } catch(_){}
+          try {
+            var r = __origSend.apply(this, arguments);
+            dlog('CHAT ✔ send() returned');
+            return r;
+          } catch(e){
+            derr('CHAT ✖ send() threw', e && (e.message||e), e && e.stack);
+            throw e;
+          }
+        };
+        window.send.__wrappedForDebug = true;
+      }
+    } catch(_){}
+
+    // Ensure socket debug listeners
+    function bindSocketDebug(){
+      try {
+        if (!window.socket || !window.socket.on || window.socket.__chatDbgBound) return false;
+        dlog('CHAT DBG: binding socket listeners');
+        var sid = window.socket.id;
+        window.socket.on('chat:msg', function(m){
+          try {
+            var mine = (m && m.sid === (window.socket && window.socket.id));
+            dlog('CHAT ◀ chat:msg', {mine: !!mine, ch: m && m.channel, len: (m && m.text && m.text.length) || 0, ts: m && m.ts});
+          } catch(_){}
+        });
+        window.socket.on('chat:error', function(e){
+          try { dlog('CHAT ◀ chat:error', e); } catch(_){}
+        });
+        window.socket.on('disconnect', function(reason){
+          try { derr('SOCKET ✖ disconnect', { reason: String(reason||'') }); } catch(_){}
+        });
+        window.socket.on('reconnect_attempt', function(at){ try { dwarn('SOCKET … reconnect_attempt', at); } catch(_){}});
+        window.socket.on('reconnect', function(n){ try { dlog('SOCKET ✔ reconnect', n); } catch(_){}});
+        window.socket.on('connect_error', function(err){ try { derr('SOCKET ✖ connect_error', err && (err.message||err)); } catch(_){}});
+        window.socket.on('error', function(err){ try { derr('SOCKET ✖ error', err && (err.message||err)); } catch(_){}});
+        // From nav-guard diag
+        window.socket.on('forceReload', function(){ try { dwarn('SOCKET ◀ forceReload'); } catch(_){}});
+        window.socket.__chatDbgBound = true;
+        return true;
+      } catch(_){ return false; }
+    }
+    bindSocketDebug();
+    var _dbgInt = setInterval(bindSocketDebug, 400);
+    setTimeout(function(){ try { clearInterval(_dbgInt); } catch(_){ } }, 8000);
+
+    // Event tracer for the first few seconds after a send
+    function tracerActive(){ try { return Date.now() - (window.__lastChatSendAt||0) < 4000; } catch(_){ return false; } }
+    function tapTracer(ev){
+      try {
+        if (!tracerActive()) return;
+        var t = ev && ev.target;
+        var path = [];
+        var el = t, hops = 0;
+        while (el && hops++ < 6){
+          path.push((el.id ? '#' + el.id : el.tagName || 'node') + (el.className ? '.' + String(el.className).split(' ').join('.') : ''));
+          el = el.parentElement;
+        }
+        dlog('TRACE tap', { type: ev && ev.type, path: path.join(' > '), key: ev && (ev.key||ev.code||''), cancelable: !!(ev && ev.cancelable) });
+      } catch(_){}
+    }
+    try {
+      ['click','touchstart','touchend','pointerdown','pointerup','keydown','keyup'].forEach(function(t){
+        try { document.addEventListener(t, tapTracer, { capture:true, passive:false }); } catch(_){ document.addEventListener(t, tapTracer, true); }
+      });
+    } catch(_){}
+
+    // Log lifecycle signals that often precede reload/kick
+    window.addEventListener('beforeunload', function(){ dwarn('LIFECYCLE beforeunload'); });
+    window.addEventListener('unload', function(){ dwarn('LIFECYCLE unload'); });
+    document.addEventListener('visibilitychange', function(){ dlog('LIFECYCLE visibility', { hidden: document.hidden }); }, {passive:true});
+
   } catch(_){}
 })();
 </script>
