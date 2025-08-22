@@ -372,6 +372,18 @@ body.menu-hide-ui #fpsCounter,
   #lobbyBtnRow { gap: 6px !important; }
 }
 </style>
+<!-- FORCE-HIDE LEGACY CHAT ON MOBILE WHEN IN-GAME -->
+<style id="mobile-ingame-chat-hide">
+@media (max-width: 768px) {
+  body.m-in-game #chatPanel,
+  body.m-in-game #chatCollapsedBtn {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+}
+</style>
+
 
 
 
@@ -4661,7 +4673,6 @@ function renderManualPlayers() {
   </div>
 </div>
 
-
 <script>
 (function(){
   var IS_MOBILE = (window.matchMedia && window.matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
@@ -4715,7 +4726,7 @@ function renderManualPlayers() {
     function appendMsg(msg){
       try{
         if (!msg) return;
-        var name = (msg && msg.pseudo) ? String(msg.pseudo) : (msg && msg.name) ? String(msg.name) : 'player';
+        var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
         var text = (msg && msg.text) ? String(msg.text) : '';
         var d = document.createElement('div');
         d.className = 'line';
@@ -4748,11 +4759,10 @@ function renderManualPlayers() {
     if (els.send) els.send.addEventListener('click', function(ev){ ev.preventDefault(); send(); }, { passive: false });
     if (els.input) els.input.addEventListener('keydown', function(ev){ if (ev.key === 'Enter'){ ev.preventDefault(); send(); } }, { passive: false });
 
-    // Dedicated receiver guarded by state; do not unbind global handlers used by legacy chat.
+    // Socket bindings for receiving messages (decoupled from legacy chat UI)
     function bindSocket(){
       try{
-        var s = window.socket;
-        if (!s) return false;
+        var s = window.socket; if (!s) return false;
         if (s.__mchatBound) return true;
         s.__mchatBound = true;
         s.on('chat:msg', function(msg){
@@ -4766,7 +4776,6 @@ function renderManualPlayers() {
             }
           }catch(_){}
         });
-        // rebind on reconnect
         s.on('reconnect', function(){ try { s.__mchatBound = false; bindSocket(); } catch(_){ } });
         return true;
       }catch(_){ return false; }
@@ -4774,7 +4783,9 @@ function renderManualPlayers() {
 
     function forceHideLegacy(on){
       try {
-        // Prefer the exposed helper if present (keeps legacy from re-showing itself)
+        // Toggle body class so CSS force-hides legacy chat on mobile in-game
+        try { if (document && document.body) { if (on) document.body.classList.add('m-in-game'); else document.body.classList.remove('m-in-game'); } } catch(_) {}
+        // Prefer helper if available
         if (typeof window.__forceHideChatSolo === 'function') {
           window.__forceHideChatSolo(!!on);
         } else {
@@ -4788,11 +4799,14 @@ function renderManualPlayers() {
 
     function setInGame(on){
       IN_GAME = !!on;
-      // Show our minimal UI in-game on mobile only; hide legacy chat completely
       try {
         forceHideLegacy(IS_MOBILE && IN_GAME);
         if (els.btn) els.btn.style.display = (IS_MOBILE && IN_GAME) ? 'flex' : 'none';
-        if (!IN_GAME) { UNREAD = 0; if (els.badge){ els.badge.textContent='0'; els.badge.style.display='none'; } close(); }
+        if (!IN_GAME) {
+          UNREAD = 0;
+          if (els.badge){ els.badge.textContent='0'; els.badge.style.display='none'; }
+          close();
+        }
       } catch(_){}
     }
 
@@ -4808,9 +4822,12 @@ function renderManualPlayers() {
         s.__mchatGameBound = true;
         s.on('gameStarted', function(){ setInGame(true); });
         s.on('lobbyUpdate', function(data){
-          try { if (!data || !data.started) { setInGame(false); } } catch(_){}
+          try { if (!data || !data.started) { setInGame(false); } } catch(_){ }
         });
-        s.on('reconnect', function(){ try { /* retain state */ setInGame(IN_GAME); } catch(_){} });
+        s.on('lobbyClosed', function(){ try { setInGame(false); } catch(_){ } });
+        s.on('kicked', function(){ try { setInGame(false); } catch(_){ } });
+        s.on('disconnect', function(){ try { setInGame(false); } catch(_){ } });
+        s.on('reconnect', function(){ try { setInGame(IN_GAME); } catch(_){} });
         return true;
       }catch(_){ return false; }
     }
@@ -4831,7 +4848,7 @@ function renderManualPlayers() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup, { passive:true }); else setup();
 })();
 </script>
-
+<!-- === /MOBILE IN-GAME CHAT (replacement) === -->
 <!-- === /MOBILE IN-GAME CHAT (replacement) === -->
 
 
