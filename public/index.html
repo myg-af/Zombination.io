@@ -5859,7 +5859,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
     if (window.__NAV_GUARD_INSTALLED) return;
     window.__NAV_GUARD_INSTALLED = true;
     var GUARD_DEFAULT_MS = 8000;
-    var guardUntil = 0;
+    var guardUntil = 0; try { window.__guardUntil = guardUntil; } catch(_){ }
 
     function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
     function inGameHeuristic(){
@@ -5873,7 +5873,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       } catch(_){ return false; }
     }
     function now(){ return Date.now ? Date.now() : (new Date()).getTime(); }
-    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); }catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
+    function active(){ return now() < guardUntil && isMobileUA() && inGameHeuristic(); } window.__nav_guard_isActive = active; window.__nav_guard_active = active;catch(_){} return now() < guardUntil && isMobileUA() && inGameHeuristic(); }
     // Global capture to swallow interactions during guard
     
     function swallowIfActive(ev){
@@ -5966,7 +5966,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       try {
         var dur = (typeof ms === 'number' && ms>0) ? ms : GUARD_DEFAULT_MS;
         var nxt = now() + dur;
-        if (nxt > guardUntil) guardUntil = nxt;
+        if (nxt > guardUntil) guardUntil = nxt; try { window.__guardUntil = guardUntil; } catch(_){ }
         dlog('GUARD guard_on'); log('guard_on', { until: guardUntil });
       } catch(_){}
     };
@@ -6136,6 +6136,68 @@ function bindChatGuard(){
     window.addEventListener('unload', function(){ dwarn('LIFECYCLE unload'); });
     document.addEventListener('visibilitychange', function(){ dlog('LIFECYCLE visibility', { hidden: document.hidden }); }, {passive:true});
 
+  } catch(_){}
+})();
+</script>
+
+
+<script>
+// === Guarded showMain override (mobile, during post-chat window) ===
+(function(){
+  try {
+    var origShowMain = window.showMain;
+    if (typeof origShowMain === 'function' && !origShowMain.__guardWrapped){
+      function isMobileUA(){ try { return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||''); } catch(_){ return false; } }
+      function inGameHeuristic(){
+        try { if (window.__ingame) return true; } catch(_){}
+        try {
+          var lobby = document.getElementById('lobbyScreen');
+          var canvas = document.getElementById('gameCanvas');
+          var lobbyHidden = lobby && lobby.style.display === 'none';
+          var canvasShown = canvas && canvas.style.display !== 'none';
+          return !!(canvasShown && lobbyHidden);
+        } catch(_){ return false; }
+      }
+      function navGuardActive(){
+        try {
+          if (typeof window.__nav_guard_active === 'function') return window.__nav_guard_active();
+          if (typeof window.__nav_guard_isActive === 'function') return window.__nav_guard_isActive();
+          // fallback: re-evaluate like in nav guard
+          var g = (typeof window.__guardUntil==='number') ? (Date.now() < window.__guardUntil) : false;
+          return g && isMobileUA() && inGameHeuristic();
+        } catch(_){ return false; }
+      }
+      window.showMain = function(){
+        try {
+          if (isMobileUA() && inGameHeuristic() && navGuardActive()){
+            try { if (window.debugWarn) debugWarn('BLOCK showMain during guard (mobile+inGame)'); } catch(_){}
+            return; // block only in the temporary guard window
+          }
+          try { if (window.debugLog) debugLog('CALL showMain'); } catch(_){}
+        } catch(_){}
+        return origShowMain.apply(this, arguments);
+      };
+      window.showMain.__guardWrapped = true;
+    }
+  } catch(_){}
+})();
+</script>
+
+
+<script>
+(function(){
+  try {
+    function bindLobbyClosedLog(){
+      try {
+        if (!window.socket || !window.socket.on || window.socket.__lobbyClosedLogBound) return false;
+        window.socket.on('lobbyClosed', function(){ try { if (window.debugWarn) debugWarn('SOCKET ◀ lobbyClosed'); } catch(_){ } });
+        window.socket.__lobbyClosedLogBound = true;
+        return true;
+      } catch(_){ return false; }
+    }
+    bindLobbyClosedLog();
+    var _int = setInterval(bindLobbyClosedLog, 400);
+    setTimeout(function(){ try { clearInterval(_int); } catch(_){ } }, 6000);
   } catch(_){}
 })();
 </script>
