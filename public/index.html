@@ -6278,5 +6278,102 @@ e.preventDefault(); e.stopPropagation();
 </script>
 
 
+
+<script>
+// --- ULTRA-AGGRESSIVE mobile ghost placement enforcement ---
+(function(){
+  let __mobileGhostWatcherStarted = false;
+
+  function __isMobileEnv(){
+    try {
+      if (typeof isMobileDevice !== 'undefined' && isMobileDevice) return true;
+      if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return true;
+    } catch(_){}
+    return false;
+  }
+
+  function __playerTile(){
+    try {
+      if (!window.playersHealth || !window.myId || !playersHealth[myId]) return null;
+      const me = playersHealth[myId];
+      if (typeof me.x !== 'number' || typeof me.y !== 'number') return null;
+      let tx = Math.floor(me.x / TILE_SIZE);
+      let ty = Math.floor(me.y / TILE_SIZE);
+      if (tx < 0) tx = 0; else if (tx >= MAP_COLS) tx = MAP_COLS - 1;
+      if (ty < 0) ty = 0; else if (ty >= MAP_ROWS) ty = MAP_ROWS - 1;
+      return { tx, ty };
+    } catch(_){ return null; }
+  }
+
+  function __forceGhostAtPlayerMobile(reason){
+    try {
+      if (!__isMobileEnv()) return;
+      if (!window.buildMode) return;
+      const pt = __playerTile();
+      if (!pt) return;
+      if (!window.buildHover) window.buildHover = { tx: -1, ty: -1 };
+      // Set only if not already valid
+      const force = (reason === 'mode-change');
+      if (force || typeof buildHover.tx !== 'number' || typeof buildHover.ty !== 'number' || buildHover.tx < 0 || buildHover.ty < 0){
+        buildHover.tx = pt.tx;
+        buildHover.ty = pt.ty;
+        try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = String(buildMode || ''); } catch(_){}
+        try { if (typeof updateBuildTilesState === 'function') updateBuildTilesState(); } catch(_){}
+        try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
+      }
+    } catch(_){}
+  }
+
+  function __startWatcher(){
+    if (__mobileGhostWatcherStarted) return;
+    __mobileGhostWatcherStarted = true;
+    let lastMode = null;
+    function tick(){
+      try {
+        if (__isMobileEnv()){
+          const mode = window.buildMode;
+          if (mode && mode !== lastMode){
+            lastMode = mode;
+            __forceGhostAtPlayerMobile('mode-change');
+          } else if (!mode){
+            lastMode = null;
+          }
+        }
+      } catch(_){}
+      window.requestAnimationFrame(tick);
+    }
+    window.requestAnimationFrame(tick);
+  }
+
+  // Capture clicks on build tiles (desktop UI) and mobile buttons; enforce ghost right away.
+  document.addEventListener('click', function(e){
+    try {
+      const t = e.target && (e.target.closest && e.target.closest('.build-tile, .mb-btn'));
+      if (!t) return;
+      // Defer to let buildMode be set by original handlers, then enforce.
+      setTimeout(() => __forceGhostAtPlayerMobile('click'), 0);
+    } catch(_){}
+  }, true);
+
+  // Extra safety: also on pointerup/touchend
+  ['pointerup','touchend'].forEach(evName => {
+    document.addEventListener(evName, function(e){
+      try {
+        const t = e.target && (e.target.closest && e.target.closest('.build-tile, .mb-btn'));
+        if (!t) return;
+        setTimeout(() => __forceGhostAtPlayerMobile(evName), 0);
+      } catch(_){}}
+    , true);
+  });
+
+  // Start watcher once DOM is ready
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', __startWatcher, { once: true });
+  } else {
+    __startWatcher();
+  }
+})();
+// --- END ultra-aggressive enforcement ---
+</script>
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
