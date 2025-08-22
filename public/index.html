@@ -1679,6 +1679,20 @@ function resetWaveCounters(total = 0) {
 
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
+// === Helper: convert client (CSS) coordinates to world coordinates ===
+function clientToWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  // CSS pixels -> canvas pixels
+  const cssX = clientX - rect.left;
+  const cssY = clientY - rect.top;
+  const ratioX = (canvas.width  / (rect.width  || 1)) || 1;
+  const ratioY = (canvas.height / (rect.height || 1)) || 1;
+  const px = cssX * ratioX;
+  const py = cssY * ratioY;
+  // canvas pixels -> world (remove renderScale, add camera offset)
+  return { x: cameraX + (px / (renderScale || 1)), y: cameraY + (py / (renderScale || 1)) };
+}
+
 // --- Mobile zoom management ---
 let baseRenderScale = 1;   // auto-computed scale so halo touches screen edges
 let pinchScale = 1;        // user pinch multiplier
@@ -1857,15 +1871,10 @@ window.addEventListener('mousedown', e => {
       mousePos = { x: e.clientX, y: e.clientY };
       if (!isMobileDevice && myId && playersHealth[myId]) {
         const player = playersHealth[myId];
-		aimDir = {
-		  x: (cameraX + mousePos.x / renderScale) - player.x,
-		  y: (cameraY + mousePos.y / renderScale) - player.y
-		};
-        let len = Math.hypot(aimDir.x, aimDir.y);
-        if (len > 0) {
-          aimDir.x /= len;
-          aimDir.y /= len;
-        }
+        const w = clientToWorld(e.clientX, e.clientY);
+        aimDir = { x: w.x - player.x, y: w.y - player.y };
+        const len = Math.hypot(aimDir.x, aimDir.y) || 1;
+        aimDir.x /= len; aimDir.y /= len;
       }
     });
     function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
@@ -2293,10 +2302,14 @@ let previousHP = (prevRowArr && typeof prevRowArr[col] === 'number') ? prevRowAr
       if (maxHp > 0) {
         const ratio = Math.max(0, Math.min(1, hp / maxHp));
         const bw = TILE_SIZE - 8, bh = 5;
+        const __allowOverflow = Math.round(0.18 * TILE_SIZE);
+        const __extraLift = 6 + Math.max(2, Math.round(0.03 * TILE_SIZE));
+        const yBar = (cell && (cell.type === 'T' || cell.type === 't' || cell.type === 'G')) ? (y - __allowOverflow - __extraLift) : (y - 8);
+
         ctx.fillStyle = '#000a';
-        ctx.fillRect(x + 4, y - 8, bw, bh);
+        ctx.fillRect(x + 4, yBar, bw, bh);
         ctx.fillStyle = ratio > 0.6 ? '#3f3' : (ratio > 0.3 ? '#fc3' : '#f33');
-        ctx.fillRect(x + 4, y - 8, bw * ratio, bh);
+        ctx.fillRect(x + 4, yBar, bw * ratio, bh);
       }
 }
   }
@@ -2566,8 +2579,8 @@ function drawAimLine() {
     }
   } else {
     if (mouseDown) {
-      let dx = (cameraX + mousePos.x / renderScale) - player.x;
-      let dy = (cameraY + mousePos.y / renderScale) - player.y;
+      const w = clientToWorld(mousePos.x, mousePos.y); let dx = w.x - player.x;
+      let dy = w.y - player.y;
       let dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > 3) {
         dir = { x: dx / dist, y: dy / dist };
@@ -2731,8 +2744,8 @@ if (isSpectator) {
 
   if (!isMobileDevice) {
     // ✅ corrige avec / renderScale
-    let dx = (cameraX + mousePos.x / renderScale) - player.x;
-    let dy = (cameraY + mousePos.y / renderScale) - player.y;
+      const w = clientToWorld(mousePos.x, mousePos.y); let dx = w.x - player.x;
+      let dy = w.y - player.y;
     let len = Math.hypot(dx, dy);
     if (len > 3) shootDir = { x: dx / len, y: dy / len };
     shooting = mouseDown;
@@ -2816,11 +2829,10 @@ if (isMobileDevice) {
 
 // ---- Aide : écran -> monde -> tuile ----
 function screenToWorldTile(clientX, clientY) {
-  const wx = cameraX + clientX / renderScale;
-  const wy = cameraY + clientY / renderScale;
+  const w = clientToWorld(clientX, clientY);
   return {
-    tx: Math.floor(wx / TILE_SIZE),
-    ty: Math.floor(wy / TILE_SIZE)
+    tx: Math.floor(w.x / TILE_SIZE),
+    ty: Math.floor(w.y / TILE_SIZE)
   };
 }
 
@@ -2870,21 +2882,6 @@ e.preventDefault();
 
 
 function drawBuildPreview() {
-  // ULTRA-AGGRESSIF (mobile) : si buildHover est invalide, forcer sur la position du joueur
-try {
-  const __isMobileAgg = (typeof isMobileDevice !== 'undefined' && isMobileDevice) || 
-                        (typeof isMobile !== 'undefined' && isMobile) ||
-                        (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
-  if (__isMobileAgg && buildMode && (buildHover.tx < 0 || buildHover.ty < 0) && window.playersHealth && window.myId && playersHealth[myId]) {
-    const me = playersHealth[myId];
-    if (me && typeof me.x === 'number' && typeof me.y === 'number') {
-      const tx0 = Math.max(0, Math.min(MAP_COLS - 1, Math.floor(me.x / TILE_SIZE)));
-      const ty0 = Math.max(0, Math.min(MAP_ROWS - 1, Math.floor(me.y / TILE_SIZE)));
-      buildHover.tx = tx0;
-      buildHover.ty = ty0;
-    }
-  }
-} catch(__e) {}
   if (!buildMode || buildHover.tx < 0 || buildHover.ty < 0) return;
 
   const tx = buildHover.tx, ty = buildHover.ty;
@@ -3560,48 +3557,7 @@ buildTiles.forEach(btn => {
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
-      try { updateBuildTilesState();
-
-// Mobile build buttons: trigger same build mode behavior + preview at player position
-(function setupMobileBuildButtons(){
-  try {
-    const cont = document.getElementById('mobile-build');
-    if (!cont) return;
-    const buttons = cont.querySelectorAll('.mb-btn');
-    buttons.forEach((btn) => {
-      btn.addEventListener('click', function(e){
-        e.preventDefault();
-        const type = btn.getAttribute('data-type');
-        if (!type) return;
-
-        if (buildMode === type) {
-          buildMode = null;
-          buildHover = { tx: -1, ty: -1 };
-          try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
-          try { updateBuildTilesState(); } catch(_){}
-          try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
-          return;
-        }
-
-        buildMode = type;
-        try {
-          if (window.playersHealth && window.myId && playersHealth[myId]) {
-            const me = playersHealth[myId];
-            const tx0 = Math.max(0, Math.min(MAP_COLS - 1, Math.floor(me.x / TILE_SIZE)));
-            const ty0 = Math.max(0, Math.min(MAP_ROWS - 1, Math.floor(me.y / TILE_SIZE)));
-            buildHover.tx = tx0; 
-            buildHover.ty = ty0;
-          }
-        } catch(_){}
-
-        try { document.body.dataset.buildMode = String(type || ''); } catch(_){}
-        try { updateBuildTilesState(); } catch(_){}
-        try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
-      }, { passive: false });
-    });
-  } catch(_){}
-})();
- } catch(_) {}
+      try { updateBuildTilesState(); } catch(_) {}
       
       try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
 try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
@@ -6294,163 +6250,427 @@ e.preventDefault(); e.stopPropagation();
 
 
 
-<script>
-// --- ULTRA-AGGRESSIVE mobile ghost placement enforcement ---
+<script id="build-tooltip-stabilizer">
 (function(){
-  let __mobileGhostWatcherStarted = false;
-
-  function __isMobileEnv(){
-    try {
-      if (typeof isMobileDevice !== 'undefined' && isMobileDevice) return true;
-      if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return true;
-    } catch(_){}
-    return false;
-  }
-
-  function __playerTile(){
-    try {
-      if (!window.playersHealth || !window.myId || !playersHealth[myId]) return null;
-      const me = playersHealth[myId];
-      if (typeof me.x !== 'number' || typeof me.y !== 'number') return null;
-      let tx = Math.floor(me.x / TILE_SIZE);
-      let ty = Math.floor(me.y / TILE_SIZE);
-      if (tx < 0) tx = 0; else if (tx >= MAP_COLS) tx = MAP_COLS - 1;
-      if (ty < 0) ty = 0; else if (ty >= MAP_ROWS) ty = MAP_ROWS - 1;
-      return { tx, ty };
-    } catch(_){ return null; }
-  }
-
-  function __forceGhostAtPlayerMobile(reason){
-    try {
-      if (!__isMobileEnv()) return;
-      if (!window.buildMode) return;
-      const pt = __playerTile();
-      if (!pt) return;
-      if (!window.buildHover) window.buildHover = { tx: -1, ty: -1 };
-      // Set only if not already valid
-      const force = (reason === 'mode-change');
-      if (force || typeof buildHover.tx !== 'number' || typeof buildHover.ty !== 'number' || buildHover.tx < 0 || buildHover.ty < 0){
-        buildHover.tx = pt.tx;
-        buildHover.ty = pt.ty;
-        try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = String(buildMode || ''); } catch(_){}
-        try { if (typeof updateBuildTilesState === 'function') updateBuildTilesState(); } catch(_){}
-        try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
-      }
-    } catch(_){}
-  }
-
-  function __startWatcher(){
-    if (__mobileGhostWatcherStarted) return;
-    __mobileGhostWatcherStarted = true;
-    let lastMode = null;
-    function tick(){
-      try {
-        if (__isMobileEnv()){
-          const mode = window.buildMode;
-          if (mode && mode !== lastMode){
-            lastMode = mode;
-            __forceGhostAtPlayerMobile('mode-change');
-          } else if (!mode){
-            lastMode = null;
-          }
-        }
-      } catch(_){}
-      window.requestAnimationFrame(tick);
-    }
-    window.requestAnimationFrame(tick);
-  }
-
-  // Capture clicks on build tiles (desktop UI) and mobile buttons; enforce ghost right away.
-  document.addEventListener('click', function(e){
-    try {
-      const t = e.target && (e.target.closest && e.target.closest('.build-tile, .mb-btn'));
-      if (!t) return;
-      // Defer to let buildMode be set by original handlers, then enforce.
-      setTimeout(() => __forceGhostAtPlayerMobile('click'), 0);
-    } catch(_){}
-  }, true);
-
-  // Extra safety: also on pointerup/touchend
-  ['pointerup','touchend'].forEach(evName => {
-    document.addEventListener(evName, function(e){
-      try {
-        const t = e.target && (e.target.closest && e.target.closest('.build-tile, .mb-btn'));
-        if (!t) return;
-        setTimeout(() => __forceGhostAtPlayerMobile(evName), 0);
-      } catch(_){}}
-    , true);
-  });
-
-  // Start watcher once DOM is ready
-  if (document.readyState === 'loading'){
-    document.addEventListener('DOMContentLoaded', __startWatcher, { once: true });
-  } else {
-    __startWatcher();
-  }
-})();
-// --- END ultra-aggressive enforcement ---
-</script>
-
-<script>
-// ===== Ultra Ultra Aggressive Mobile Preview Enforcer =====
-(function __MOBILE_FORCE_PREVIEW_AT_PLAYER__(){
-  function isMobileAgg() {
-    try {
-      if (typeof isMobileDevice !== 'undefined' && isMobileDevice) return true;
-      if (typeof isMobile !== 'undefined' && isMobile) return true;
-      if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return true;
-    } catch(_) {}
-    return false;
-  }
-  function forceAtPlayer() {
-    try {
-      if (!isMobileAgg() || !window.playersHealth || !window.myId || !playersHealth[myId]) return false;
-      if (!buildMode) return false;
-      const me = playersHealth[myId];
-      if (!me) return false;
-      const tx0 = Math.max(0, Math.min(MAP_COLS - 1, Math.floor(me.x / TILE_SIZE)));
-      const ty0 = Math.max(0, Math.min(MAP_ROWS - 1, Math.floor(me.y / TILE_SIZE)));
-      buildHover.tx = tx0; buildHover.ty = ty0;
-      try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = String(buildMode||''); } catch(_){}
-      try { if (typeof updateBuildTilesState === 'function') updateBuildTilesState(); } catch(_){}
-      try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
-      return true;
-    } catch(_){ return false; }
-  }
-  function startBurst(ms=700, step=40) {
-    const deadline = Date.now() + ms;
-    (function burst(){
-      forceAtPlayer();
-      if (Date.now() < deadline && buildMode) setTimeout(burst, step);
-    })();
-  }
-  function onSelect(e){
-    // Déclenché très tôt (capture) et rejoué en "fin" d'interaction pour contrer d'autres handlers
-    if (!isMobileAgg()) return;
-    // microtask + raf pour passer après le toggle du buildMode
-    Promise.resolve().then(()=>{ requestAnimationFrame(()=>{ forceAtPlayer(); startBurst(); }); });
-  }
-  // Capture sur toute l’UI de build (boutons desktop & mobile)
-  document.addEventListener('click', function(e){
-    const t = e.target;
-    if (t && (t.closest('.build-tile') || t.closest('.mb-btn') || t.closest('#mobile-build'))) onSelect(e);
-  }, true);
-  document.addEventListener('pointerup', onSelect, true);
-  document.addEventListener('touchend', onSelect, { capture: true, passive: true });
-
-  // Observez les changements UI (ex: changement de buildMode via DOM)
   try {
-    const mo = new MutationObserver(()=>{ if (isMobileAgg() && buildMode) { forceAtPlayer(); startBurst(400, 50); } });
-    mo.observe(document.body, { attributes: true, subtree: true, childList: true });
-  } catch(_){}
-  // Sécurité: si buildMode actif sans hover valide pendant le jeu -> forcer
-  setInterval(function(){
-    try {
-      if (!isMobileAgg() || !buildMode) return;
-      if (buildHover.tx < 0 || buildHover.ty < 0) forceAtPlayer();
-    } catch(_){}
-  }, 300);
+    if (window.__buildTooltipStabilizer) return;
+    window.__buildTooltipStabilizer = true;
+
+    // Helper: safe query all '#buildTooltip' (duplicates exist in file) and disable them
+    function disableLegacyTooltips(){
+      try {
+        var olds = document.querySelectorAll('#buildTooltip');
+        if (!olds || !olds.length) return null;
+        olds.forEach(function(el, idx){
+          try {
+            el.style.display = 'none';
+            el.setAttribute('aria-hidden','true');
+            el.dataset.disabled = '1';
+          } catch(_){}
+        });
+      } catch(_){}
+    }
+
+    function ensureStableTooltip(){
+      // Create a single, stable tooltip element once
+      var stable = document.getElementById('buildTooltipStable');
+      if (stable) return stable;
+      // Prefer to attach inside the first #buildBar if present so it's positioned correctly
+      var bar = document.getElementById('buildBar') || document.body;
+      stable = document.createElement('div');
+      stable.id = 'buildTooltipStable';
+      // Copy the original style but make sure it can't capture pointer events
+      stable.style.display = 'none';
+      stable.style.position = 'absolute';
+      stable.style.right = '0';
+      stable.style.bottom = '70px';
+      stable.style.maxWidth = '260px';
+      stable.style.background = '#111c';
+      stable.style.color = '#fff';
+      stable.style.fontSize = '13px';
+      stable.style.padding = '8px 10px';
+      stable.style.borderRadius = '8px';
+      stable.style.boxShadow = '0 4px 18px #000a';
+      stable.style.pointerEvents = 'none';
+      stable.style.whiteSpace = 'nowrap';
+      // Extra: avoid layout jumps during text updates
+      stable.style.willChange = 'contents, opacity';
+      bar.appendChild(stable);
+      return stable;
+    }
+
+    function currentLang(){
+      try { return (window.currentLang || (navigator.language||'en')).slice(0,2); } catch(_){ return 'en'; }
+    }
+
+    function upperFirstLocalized(s){
+      if (!s) return s;
+      try{
+        var i = s.search(/[A-Za-zÀ-ÖØ-öø-ÿĀ-žА-Яа-яЁё]/u);
+        if (i < 0) return s;
+        return s.slice(0, i) + s.charAt(i).toUpperCase() + s.slice(i + 1);
+      } catch(e){
+        try { return s.charAt(0).toUpperCase() + s.slice(1); } catch(_) { return s; }
+      }
+    }
+
+    function computeTurretDamageDisplay(type){
+      try {
+        if (typeof window.computeTurretDamageDisplay === 'function') {
+          return window.computeTurretDamageDisplay(type);
+        }
+        // Fallback: base only
+        return (type==='t')?5: (type==='T')?10:25;
+      } catch(_){ return (type==='t')?5: (type==='T')?10:25; }
+    }
+
+    function computeTipFor(btn){
+      if (!btn) return '';
+      var type = btn.getAttribute('data-type') || '';
+      // If some other code already computed a localized tip, prefer it
+      var attrTip = btn.getAttribute('data-tip');
+      // Build a dynamic tip in case we need it
+      var tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang()] || TRANSLATIONS['en'])) || {};
+      var names = (tr.turretType || {});
+      var hpLabel = tr.hpShort || 'HP';
+      var dmgLabel = tr.damage || 'Damage';
+      var rateLabel = tr.fireRate || 'Fire rate';
+      var perSec = (tr.perSec || '/s');
+      var baseHP = { T:500, t:200, G:2500, B:500, D:500 };
+      var name = (type==='B') ? (tr.buildWall || 'Wall')
+                : (type==='D') ? (tr.buildDoor || 'Door')
+                : (names[type] || 'Turret');
+      name = upperFirstLocalized(name);
+      var tip;
+      if (type==='B' || type==='D') {
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
+      } else if (type==='t' || type==='T' || type==='G') {
+        var rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
+        var dmg = computeTurretDamageDisplay(type);
+        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + perSec + ')';
+      } else {
+        tip = attrTip || name;
+      }
+      // Prefer dynamic, but if attrTip exists and looks more specific (e.g. localized), use it
+      try {
+        if (attrTip && attrTip.length >= tip.length - 4) tip = attrTip;
+      } catch(_){}
+      return tip;
+    }
+
+    disableLegacyTooltips();
+    var tooltip = ensureStableTooltip();
+
+    var showTimer = null, hideTimer = null, lastBtn = null;
+
+    function showFor(btn){
+      try {
+        if (!btn) return;
+        var txt = computeTipFor(btn);
+        if (tooltip.textContent !== txt) tooltip.textContent = txt;
+        tooltip.style.display = 'block';
+      } catch(_){}
+    }
+    function scheduleShow(btn){
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+      if (showTimer) clearTimeout(showTimer);
+      showTimer = setTimeout(function(){ showFor(btn); }, 30);
+    }
+    function scheduleHide(){
+      if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(function(){ tooltip.style.display = 'none'; lastBtn = null; }, 90);
+    }
+
+    function isInsideAnyBuildTile(el){
+      return !!(el && el.closest && el.closest('#buildTiles .build-tile'));
+    }
+
+    // Single delegated handlers (works even if DOM is duplicated)
+    document.addEventListener('pointerover', function(e){
+      try {
+        var btn = e.target && e.target.closest && e.target.closest('#buildTiles .build-tile');
+        if (!btn) return;
+        lastBtn = btn;
+        scheduleShow(btn);
+      } catch(_){}
+    }, {passive:true, capture:true});
+
+    document.addEventListener('pointerout', function(e){
+      try {
+        var fromTile = e.target && e.target.closest && e.target.closest('#buildTiles .build-tile');
+        if (!fromTile) return;
+        var toEl = e.relatedTarget || null;
+        if (isInsideAnyBuildTile(toEl)) {
+          // moving between tiles → keep tooltip, update text shortly after
+          var nextBtn = toEl.closest('#buildTiles .build-tile');
+          if (nextBtn && nextBtn !== lastBtn) { lastBtn = nextBtn; scheduleShow(nextBtn); }
+          return;
+        }
+        scheduleHide();
+      } catch(_){}
+    }, {passive:true, capture:true});
+
+    // Safety net: hide tooltip if the whole build bar is hidden/collapsed
+    var bar = document.getElementById('buildBar');
+    if (bar) {
+      var obs = new MutationObserver(function(){
+        try{
+          var visible = !!(bar.offsetParent !== null) && getComputedStyle(bar).display !== 'none';
+          if (!visible) { tooltip.style.display = 'none'; }
+        }catch(_){}
+      });
+      try { obs.observe(bar, { attributes:true, childList:false, subtree:false, attributeFilter:['style','class'] }); } catch(_){}
+    }
+
+  } catch(_e){}
 })();
 </script>
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
+<!-- [PATCH] turret-skins-swap v1 -->
+<script>
+(function(){"use strict";
+  const SPRITES = {
+    T: new Image(), t: new Image(), G: new Image(),
+    T_shoot: new Image(), t_shoot: new Image(), G_shoot: new Image(),
+  };
+  SPRITES.T.src = "/sprites/turret.png";
+  SPRITES.t.src = "/sprites/mini_turret.png";
+  SPRITES.G.src = "/sprites/big_turret.png";
+  SPRITES.T_shoot.src = "/sprites/turret_shoot.png";
+  SPRITES.t_shoot.src = "/sprites/mini_turret_shoot.png";
+  SPRITES.G_shoot.src = "/sprites/big_turret_shoot.png";
+  try { window.__TURRET_SPRITES__ = SPRITES; } catch(_){}
+
+  function getSpriteFor(type, shooting){ return shooting ? (SPRITES[type + "_shoot"] || SPRITES[type]) : SPRITES[type]; }
+  function imgReady(img){ return img && img.complete && img.naturalWidth > 0; }
+
+  // Draw an image slightly larger than the tile, clipped to tile bounds (fills the square cleanly).
+  function drawSpriteCover(ctx, img, x, y, size, scale, shiftUpPx, allowTopOverflowPx){
+  // Anisotropic cover: slightly taller than wide so the base touches bottom & top
+  const sBase = (typeof scale === 'number') ? scale : 1.7;
+  const sX = Array.isArray(scale) ? (scale[0] ?? sBase) : sBase;
+  const sY = Array.isArray(scale) ? (scale[1] ?? sBase) : (sBase * 1.15); // ~+15% height
+  const up = (typeof shiftUpPx === 'number') ? shiftUpPx : (0.11 * size + 1);
+  const allow = (typeof allowTopOverflowPx === 'number') ? allowTopOverflowPx : (0.18 * size);
+  const cx = x + size/2, cy = y + size/2 - up;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y - allow, size, size + allow);
+  ctx.clip();
+  ctx.drawImage(img, cx - (size*sX)/2, cy - (size*sY)/2, size*sX, size*sY);
+  ctx.restore();
+}
+
+  // Track firing state to show *_shoot skins while laser is visible
+  const turretFireUntil = new Map(); // key "ty,tx" -> epoch ms
+  const LASER_LIFE_MS = 60;
+
+  function markTurretFiredFromXY(x0, y0){
+    try {
+      const ts = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const TILE = (typeof TILE_SIZE !== 'undefined') ? TILE_SIZE : (window.TILE_SIZE || 40);
+      const tx = Math.floor(x0 / TILE);
+      const ty = Math.floor(y0 / TILE);
+      turretFireUntil.set(ty + "," + tx, ts + LASER_LIFE_MS);
+    } catch(_){}
+  }
+
+  function markFromActiveLasers(){
+    try {
+      const arr = (typeof turretLasers !== 'undefined') ? turretLasers : window.turretLasers;
+      if (!arr || !arr.length) return;
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      for (let i = 0; i < arr.length; i++) {
+        const b = arr[i]; if (!b) continue;
+        if (typeof b.t !== 'number') continue;
+        if (now - b.t > LASER_LIFE_MS) continue;
+        if (typeof b.x0 !== 'number' || typeof b.y0 !== 'number') continue;
+        markTurretFiredFromXY(b.x0, b.y0);
+      }
+    } catch(_){}
+  }
+
+  (function attachLaserListeners(){
+    try {
+      if (!window.socket || attachLaserListeners._bound) return;
+      attachLaserListeners._bound = true;
+      socket.on('laserBeam', function(b){ if (b) markTurretFiredFromXY(b.x0 ?? b.x, b.y0 ?? b.y); });
+      socket.on('laserBeams', function(arr){ try { for (let i=0;i<(arr?.length||0);i++){ const b=arr[i]; if (b) markTurretFiredFromXY(b.x0 ?? b.x, b.y0 ?? b.y); } } catch(_e){} });
+    } catch(_e){}
+  })();
+
+  // --- Build tiles / Shop upgrades (unchanged from previous patch) ---
+  function patchBuildTiles(){
+    try{
+      const cont=document.getElementById('buildTiles'); if(!cont) return;
+      cont.querySelectorAll('.build-tile').forEach(btn=>{
+        const type=btn.getAttribute('data-type'); if(!/^[tTG]$/.test(type||"")) return;
+        const box=btn.querySelector(':scope > div:first-child'); if(!box) return;
+        if(box.querySelector('img[data-skin="1"]')) return;
+        box.innerHTML="";
+        const img=document.createElement('img');
+        img.src=(type==='T')?SPRITES.T.src:(type==='t')?SPRITES.t.src:SPRITES.G.src;
+        img.setAttribute('data-skin','1');
+        img.alt=(type==='T')?'Tourelle rouge':(type==='t')?'Mini-tourelle bleue':'Grande tourelle violette';
+        Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain',imageRendering:'pixelated'});
+        img.decoding='async';
+        box.appendChild(img);
+      });
+    }catch(_){}
+  }
+  try{patchBuildTiles();}catch(_){}
+  try{setInterval(patchBuildTiles,800);}catch(_){}
+
+  (function(){
+    try{
+      const prev=window.renderShopUpgrades;
+      window.renderShopUpgrades=function(){
+        try{ if(typeof prev==='function') prev.apply(this,arguments); }catch(_){}
+        try{
+          const root=document.getElementById('shopUpgrades'); if(!root) return;
+          root.querySelectorAll('.shop-upg-item').forEach(item=>{
+            const btn=item.querySelector('.btn-turret-up[data-type]'); if(!btn) return;
+            const type=btn.getAttribute('data-type'); if(!/^[tTG]$/.test(type||"")) return;
+            const box=item.querySelector(':scope > div:first-child'); if(!box) return;
+            if(box.querySelector('img[data-skin="1"]')) return;
+            box.innerHTML='';
+            const img=document.createElement('img');
+            img.src=(type==='T')?SPRITES.T.src:(type==='t')?SPRITES.t.src:SPRITES.G.src;
+            img.setAttribute('data-skin','1');
+            img.alt=(type==='T')?'Tourelle rouge':(type==='t')?'Mini-tourelle bleue':'Grande tourelle violette';
+            Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain',imageRendering:'pixelated'});
+            img.decoding='async';
+            box.appendChild(img);
+          });
+        }catch(_){}
+      };
+    }catch(_){}
+  })();
+
+  // Override drawStructures: call original, then overlay turret sprites (scaled + clipped)
+  (function(){
+    try {
+      const orig = window.drawStructures;
+      const patched = function(){
+        try {
+          // Draw everything as before
+          try { if (typeof orig === 'function') orig(); } catch(_){}
+
+          // Mark shooting from active lasers to ensure "*_shoot" skins always sync
+          markFromActiveLasers();
+
+          // Overlay sprites
+          const _structures = (typeof structures !== 'undefined') ? structures : window.structures;
+          const _ctx = (typeof ctx !== 'undefined') ? ctx : window.ctx;
+          const TILE=(typeof TILE_SIZE!=='undefined')?TILE_SIZE:(window.TILE_SIZE||40);
+          const camX=(typeof cameraX!=='undefined')?cameraX:(window.cameraX||0);
+          const camY=(typeof cameraY!=='undefined')?cameraY:(window.cameraY||0);
+          const _canvas=(typeof canvas!=='undefined')?canvas:window.canvas;
+          const _renderScale=(typeof renderScale!=='undefined')?renderScale:(window.renderScale||1);
+          if(!_structures||!_ctx) return;
+
+          const rows=_structures.length, cols=rows?(_structures[0]?.length||0):0;
+          const scrW=(_canvas&&_canvas.width)?(_canvas.width/_renderScale):(cols*TILE);
+          const scrH=(_canvas&&_canvas.height)?(_canvas.height/_renderScale):(rows*TILE);
+          const minCol=Math.max(0,Math.floor(camX/TILE)-1);
+          const minRow=Math.max(0,Math.floor(camY/TILE)-1);
+          const maxCol=Math.min(cols-1,Math.floor((camX+scrW)/TILE)+1);
+          const maxRow=Math.min(rows-1,Math.floor((camY+scrH)/TILE)+1);
+
+          for(let r=minRow;r<=maxRow;r++){
+            const row=_structures[r]; if(!row) continue;
+            for(let c=minCol;c<=maxCol;c++){
+              const cell=row[c]; if(!cell) continue;
+              const type=cell.type; if(!(type==='T'||type==='t'||type==='G')) continue;
+              const x=c*TILE-camX, y=r*TILE-camY;
+              const key=r+','+c;
+              const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
+              const shooting=(turretFireUntil.get(key)||0)>now;
+              const img=getSpriteFor(type,shooting)||getSpriteFor(type,false);
+              if(imgReady(img)){ _ctx.clearRect(x, y, TILE, TILE);
+              drawSpriteCover(_ctx,img,x,y,TILE,1.7,0.11*TILE+1,0.18*TILE); }
+            }
+          }
+        } catch(e){ try{ if(typeof orig==='function') orig(); }catch(_){} }
+      };
+      window.drawStructures = patched;
+      try { drawStructures = patched; } catch(_){}
+    } catch(_e){}
+  })();
+
+  // Override drawBuildPreview: use same cover+clip drawing in semi-transparency
+  (function(){
+    try {
+      const orig = window.drawBuildPreview;
+      const patched = function(){
+        try {
+          const _buildMode = (typeof buildMode!=='undefined')?buildMode:window.buildMode;
+          const _hover = (typeof buildHover!=='undefined')?buildHover:window.buildHover;
+          if(!_buildMode || !_hover){ if(typeof orig==='function') orig(); return; }
+          const tx=_hover.tx, ty=_hover.ty;
+          const MAP_COLS=(typeof MAP_COLS!=='undefined')?MAP_COLS:(window.MAP_COLS||0);
+          const MAP_ROWS=(typeof MAP_ROWS!=='undefined')?MAP_ROWS:(window.MAP_ROWS||0);
+          const TILE=(typeof TILE_SIZE!=='undefined')?TILE_SIZE:(window.TILE_SIZE||40);
+          const camX=(typeof cameraX!=='undefined')?cameraX:(window.cameraX||0);
+          const camY=(typeof cameraY!=='undefined')?cameraY:(window.cameraY||0);
+          if(tx<0||ty<0||tx>=MAP_COLS||ty>=MAP_ROWS) return;
+          if(!(_buildMode==='T'||_buildMode==='t'||_buildMode==='G')){ if(typeof orig==='function') return orig(); }
+          const _ctx=(typeof ctx!=='undefined')?ctx:window.ctx;
+          const x=tx*TILE-camX, y=ty*TILE-camY;
+          const img=getSpriteFor(_buildMode,false);
+          _ctx.save(); _ctx.globalAlpha=0.5;
+          if(imgReady(img)) drawSpriteCover(_ctx,img,x,y,TILE,1.7,0.11*TILE+1,0.18*TILE);
+          else{ _ctx.fillStyle=(_buildMode==='T')?'#d33':(_buildMode==='t')?'#3aa6ff':'#b48cff'; _ctx.fillRect(x,y,TILE,TILE); }
+          _ctx.restore();
+        } catch(_){ if(typeof orig==='function') try{orig();}catch(__){} }
+      };
+      window.drawBuildPreview = patched;
+      try { drawBuildPreview = patched; } catch(_){}
+    } catch(_e){}
+  })();
+
+  // Also hook drawTurretLasers to mark shooting tiles directly from the buffer (extra reliability)
+  (function(){
+    try {
+      const orig = window.drawTurretLasers;
+      if (typeof orig === 'function') {
+        window.drawTurretLasers = function(){
+          try { orig(); } catch(_){}
+          try { markFromActiveLasers(); } catch(_){}
+        };
+        try { drawTurretLasers = window.drawTurretLasers; } catch(_){}
+      }
+    } catch(_e){}
+  })();
+
+})();
+</script>
+<!-- /[PATCH] turret-skins-swap v1 -->
+
+<!-- [PATCH] turret-skins-swap v1 - periodic shop patch -->
+<script>
+(function(){
+  function patchShopTurretIcons(){
+    try {
+      const root = document.getElementById('shopUpgrades'); if (!root) return;
+      const items = root.querySelectorAll('.shop-upg-item');
+      items.forEach(item => {
+        const btn = item.querySelector('.btn-turret-up[data-type]'); if (!btn) return;
+        const type = btn.getAttribute('data-type'); if (!/^[tTG]$/.test(type)) return;
+        const box = item.querySelector(':scope > div:first-child'); if (!box) return;
+        if (box.querySelector('img[data-skin="1"]')) return;
+        const src = (type==='T')? "/sprites/turret.png" : (type==='t')? "/sprites/mini_turret.png" : "/sprites/big_turret.png";
+        box.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = src; img.setAttribute('data-skin','1'); img.alt = 'turret';
+        img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain'; img.style.imageRendering='pixelated'; img.decoding='async';
+        box.appendChild(img);
+      });
+    } catch(_) {}
+  }
+  try { setInterval(patchShopTurretIcons, 1000); } catch(_){}
+})();
+</script>
+<!-- /[PATCH] turret-skins-swap v1 - periodic shop patch -->
