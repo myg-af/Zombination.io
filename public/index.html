@@ -413,18 +413,6 @@ body.menu-hide-ui #fpsCounter,
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }</style>
-<!-- MOBILE: Selected build tile green outline -->
-<style id="mobile-build-selected-style">
-@media (hover: none) and (pointer: coarse){
-  #buildTiles .build-tile.mobile-selected{
-    outline: 3px solid #33fc69;
-    outline-offset: 2px;
-    border-radius: 12px;
-    /* subtle glow without repaint storms */
-    box-shadow: 0 0 0 1px rgba(51,252,105,0.25);
-  }
-}
-</style>
 </head>
 <body>
 <script>
@@ -3042,13 +3030,15 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
         // succès confirmé → sortir du mode placement
         buildMode = null;
         buildHover = { tx: -1, ty: -1 };
+        try { updateBuildTilesState(); } catch(_) {}
       } else {
         // refus: on reste en mode placement pour réessayer ailleurs
         const reason = ack && ack.reason ? ack.reason : 'unknown';
         console.warn('[build] Refusé par le serveur:', reason);
       }
     });
-  } catch (err) {
+  }
+  catch (err) {
     console.error('[emit] buyStructure error:', err);
   }
 }
@@ -3542,12 +3532,14 @@ buildTiles.forEach(btn => {
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
+      try { updateBuildTilesState(); } catch(_) {}
       
       return;
     }
 
     // Sinon, on entre en mode placement pour ce type
     buildMode = type;
+    try { updateBuildTilesState(); } catch(_) {}
     
   });
 });
@@ -3771,7 +3763,39 @@ function updateBuildTilesState() {
     // maj de l’étiquette sous la tuile (2e div)
     const priceLabel = btn.querySelector('div:nth-child(2)');
     if (priceLabel) {
-      let label = `$${price}`;
+      let label = `$${price}
+
+// === Mobile-only selection highlight (safe hook) ===
+(function(){
+  if (window.__mobileBuildHighlightHooked) return;
+  window.__mobileBuildHighlightHooked = true;
+  function __updateMobileBuildSelection(){
+    try {
+      var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+      var list = document.querySelectorAll('#buildTiles .build-tile');
+      list.forEach(function(btn){
+        try{
+          if (!isMobile) { btn.classList.remove('mb-selected'); return; }
+          var type = btn.getAttribute('data-type');
+          if (window.buildMode && window.buildMode === type) btn.classList.add('mb-selected');
+          else btn.classList.remove('mb-selected');
+        }catch(_){}
+      });
+    } catch(_){}
+  }
+  // Monkey-patch updateBuildTilesState to also refresh selection border on mobile
+  try {
+    var __origUpdate = window.updateBuildTilesState;
+    window.updateBuildTilesState = function(){
+      try { if (typeof __origUpdate === 'function') __origUpdate.apply(this, arguments); } catch(_){}
+      __updateMobileBuildSelection();
+    };
+  } catch(_){}
+  // Also run once on load
+  try { __updateMobileBuildSelection(); } catch(_){}
+})();
+
+`;
       if (type==='t'||type==='T'||type==='G') {
         const limits = { t:2, T:2, G:1 };
         let count=0;
@@ -4020,6 +4044,7 @@ el.innerHTML += `
     if (buildMode === type) {
       buildMode = null;
       buildHover = { tx: -1, ty: -1 };
+      try { updateBuildTilesState(); } catch(_) {};
       return;
     }
 
@@ -4031,7 +4056,8 @@ el.innerHTML += `
     }
 
     buildMode = type;
-    // reset survol
+    try { updateBuildTilesState(); } catch(_) {}
+// reset survol
     buildHover = { tx: -1, ty: -1 };
   }
 
@@ -5990,6 +6016,13 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
   /* Keep the bar tight to the right/bottom on mobile */
   #buildBar{ right: 12px !important; bottom: 112px !important; gap: 8px !important; }
+  /* Mobile-only selected highlight for construction tiles */
+  #buildTiles .build-tile.mb-selected{
+    outline: 3px solid #34e05a;       /* green like preview stroke */
+    outline-offset: 3px;
+    border-radius: 8px;
+  }
+
 }
 </style>
 
@@ -6151,60 +6184,5 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
 </script>
 
-<!-- MOBILE: Selected build tile outline sync (non-invasive) -->
-<script id="mobile-build-selected-script">
-(function(){
-  try {
-    var isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches)
-                   || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-
-    function applyMobileBuildSelectionUI(){
-      try {
-        var cont = document.getElementById('buildTiles');
-        if (!cont) return;
-        var btns = cont.querySelectorAll('.build-tile');
-        // clear previous
-        btns.forEach(function(b){ b.classList.remove('mobile-selected'); });
-        if (!isMobile) return;
-        var type = (typeof window.buildMode === 'string') ? window.buildMode : null;
-        if (!type) return;
-        var active = cont.querySelector('.build-tile[data-type="' + type + '"]');
-        if (active) active.classList.add('mobile-selected');
-      } catch(_e){ /* no-op on any failure to avoid mobile crashes */ }
-    }
-
-    // Defer click hook on the container so we don't touch existing logic
-    (function attachClickSync(){
-      try {
-        var cont = document.getElementById('buildTiles');
-        if (!cont || cont.__mobileSelectedPatch) return;
-        cont.__mobileSelectedPatch = true;
-        // Use capture + microtask defer to run after original handlers updated buildMode
-        cont.addEventListener('click', function(){ setTimeout(applyMobileBuildSelectionUI, 0); }, { passive: true, capture: true });
-      } catch(_){}
-    })();
-
-    // Poll gently to catch async changes (drag-to-place end, server OK, etc.)
-    var ivId = setInterval(function(){
-      if (document.readyState === 'loading') return;
-      applyMobileBuildSelectionUI();
-    }, 220);
-
-    // Keep media-query based flag up to date
-    window.addEventListener('resize', function(){
-      try { isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches)
-                        || ('ontouchstart' in window) || (navigator.maxTouchPoints > 0); } catch(_){}
-      applyMobileBuildSelectionUI();
-    }, { passive: true });
-    window.addEventListener('orientationchange', function(){ applyMobileBuildSelectionUI(); }, { passive: true });
-
-    // Also sync when page becomes visible again
-    document.addEventListener('visibilitychange', function(){ if (!document.hidden) applyMobileBuildSelectionUI(); }, { passive: true });
-
-    // Expose for any existing code to call if desired (safe no-op on desktop)
-    window.applyMobileBuildSelectionUI = applyMobileBuildSelectionUI;
-  } catch(_err){ /* swallow to ensure zero crash surface */ }
-})();
-</script>
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
