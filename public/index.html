@@ -413,6 +413,26 @@ body.menu-hide-ui #fpsCounter,
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }</style>
+
+<!-- Mobile-only selection highlight for construction tiles/buttons -->
+<style>
+@media (hover: none) and (pointer: coarse) {
+  /* Green square highlight around selected build tile (menu de constructions) */
+  #buildTiles .build-tile.is-selected > div:first-child {
+    outline: 3px solid #33e06a;
+    outline-offset: -2px;
+    box-shadow: 0 0 0 3px rgba(51, 224, 106, 0.30), 0 0 10px rgba(51, 224, 106, 0.35);
+    border-radius: 6px;
+  }
+  /* Highlight for mobile quick buttons (if used) */
+  .mobile-build .mb-btn.is-selected {
+    outline: 3px solid #33e06a;
+    outline-offset: 2px;
+    box-shadow: 0 0 10px rgba(51, 224, 106, 0.35);
+  }
+}
+</style>
+
 </head>
 <body>
 <script>
@@ -6137,6 +6157,66 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 })();
 // ---- /Mobile drag-to-place ----
 
+</script>
+
+
+<!-- Mobile-only selection sync: reflects current buildMode as a green square -->
+<script>
+(function(){
+  // Safely detect mobile (do not affect PC)
+  function isMobilePointer(){
+    try { return window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches; }
+    catch(_){ return false; }
+  }
+
+  function updateBuildSelectionUI(){
+    try {
+      // Clear any previous selection on both UIs
+      document.querySelectorAll('#buildTiles .build-tile.is-selected').forEach(function(el){ el.classList.remove('is-selected'); });
+      document.querySelectorAll('.mobile-build .mb-btn.is-selected').forEach(function(el){ el.classList.remove('is-selected'); });
+      // Desktop: no highlight at all
+      if (!isMobilePointer()) return;
+      // Nothing selected?
+      var mode = (typeof window.buildMode !== 'undefined') ? window.buildMode : null;
+      if (!mode) return;
+      // Highlight the matching construction button(s)
+      var a = document.querySelector('#buildTiles .build-tile[data-type="' + mode + '"]');
+      if (a) a.classList.add('is-selected');
+      var b = document.querySelector('.mobile-build .mb-btn[data-type="' + mode + '"]');
+      if (b) b.classList.add('is-selected');
+    } catch(_){ /* never crash */ }
+  }
+  window.updateBuildSelectionUI = updateBuildSelectionUI;
+
+  // Immediate sync after UI is ready
+  try { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', updateBuildSelectionUI, { once:true }); } else { updateBuildSelectionUI(); } } catch(_){}
+
+  // Gentle polling on mobile to catch any buildMode change (e.g., after drag-to-place or server ACK)
+  try {
+    if (!window.__buildSelSync) {
+      window.__buildSelSync = true;
+      var last = null;
+      setInterval(function(){
+        try {
+          var cur = (typeof window.buildMode !== 'undefined') ? window.buildMode : null;
+          if (cur !== last) { last = cur; updateBuildSelectionUI(); }
+        } catch(_){}
+      }, 120);
+    }
+  } catch(_){}
+
+  // Also refresh right after user taps a build button (without touching placement logic)
+  try {
+    document.querySelectorAll('#buildTiles .build-tile').forEach(function(btn){
+      btn.addEventListener('click', function(){ setTimeout(updateBuildSelectionUI, 0); }, { passive:true });
+    });
+  } catch(_){}
+  try {
+    document.querySelectorAll('.mobile-build .mb-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){ setTimeout(updateBuildSelectionUI, 0); }, { passive:true });
+    });
+  } catch(_){}
+})();
 </script>
 
 </body></html>
