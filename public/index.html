@@ -3793,6 +3793,21 @@ function updateBuildTilesState() {
     }
 
   });
+  // --- Apply mobile selection border based on current buildMode (toggle) ---
+  try {
+    var touchCap = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (touchCap) {
+      // Clear previous
+      document.querySelectorAll('.mobile-build .mb-btn.selected-mobile, #buildTiles .build-tile.selected-mobile').forEach(function(el){ el.classList.remove('selected-mobile'); });
+      if (window.buildMode) {
+        var mb = document.querySelector('.mobile-build .mb-btn[data-type="' + buildMode + '"]');
+        if (mb) mb.classList.add('selected-mobile');
+        var dt = document.querySelector('#buildTiles .build-tile[data-type="' + buildMode + '"]');
+        if (dt) dt.classList.add('selected-mobile');
+      }
+    }
+  } catch(__applyMobileSelection) {}
+
 }
 
 const PRICE_TIERS = [10, 25, 50, 75, 100];
@@ -6137,6 +6152,109 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 })();
 // ---- /Mobile drag-to-place ----
 
+</script>
+
+
+<!-- Mobile selection highlight (added) -->
+<style id="mobile-selection-highlight">
+@media (hover: none) and (pointer: coarse) {
+  .mobile-build .mb-btn.selected-mobile,
+  #buildTiles .build-tile.selected-mobile {
+    outline: 3px solid #34e05a !important;
+    box-shadow: 0 0 0 3px rgba(52,224,90,0.35) inset, 0 0 10px rgba(52,224,90,0.5) !important;
+    border-radius: 10px;
+  }
+}
+</style>
+
+
+<script id="mobile-build-center-ghost">
+(function(){
+  if (window.__mobileCenterGhostInstalled) return; window.__mobileCenterGhostInstalled = true;
+  try {
+    var touchCap = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (!touchCap) return;
+    function centerPreviewIfActive(prevMode){
+      try {
+        if (!window.buildMode) return;
+        if (prevMode === window.buildMode) return;
+        var cx = Math.round(window.innerWidth / 2);
+        var cy = Math.round(window.innerHeight / 2);
+        if (typeof screenToWorldTile === 'function' && window.buildHover) {
+          var st = screenToWorldTile(cx, cy);
+          if (st && typeof st.tx === 'number' && typeof st.ty === 'number') {
+            buildHover.tx = st.tx; buildHover.ty = st.ty;
+          }
+        }
+      } catch(_){}
+    }
+    // Hook clicks on desktop build tiles (if visible on mobile)
+    try {
+      var tiles = document.getElementById('buildTiles');
+      if (tiles) {
+        var last = window.buildMode || null;
+        tiles.addEventListener('click', function(){
+          var lm = last;
+          setTimeout(function(){ centerPreviewIfActive(lm); last = window.buildMode || null; try{ if (typeof updateBuildTilesState==='function') updateBuildTilesState(); }catch(__){} }, 0);
+        }, {passive:true});
+      }
+    } catch(_){}
+    // Hook taps on mobile build buttons
+    try {
+      var mb = document.getElementById('mobile-build');
+      if (mb) {
+        var last2 = window.buildMode || null;
+        mb.addEventListener('click', function(ev){
+          // let the original handler toggle buildMode first, then we center
+          var l2 = last2;
+          setTimeout(function(){ centerPreviewIfActive(l2); last2 = window.buildMode || null; try{ if (typeof updateBuildTilesState==='function') updateBuildTilesState(); }catch(__){} }, 0);
+        }, {passive:true});
+        // Also handle touchstart as some browsers may not fire click immediately
+        mb.addEventListener('touchstart', function(){ var l2 = last2; setTimeout(function(){ centerPreviewIfActive(l2); last2 = window.buildMode || null; try{ if (typeof updateBuildTilesState==='function') updateBuildTilesState(); }catch(__){} }, 0); }, {passive:true});
+      }
+    } catch(_){}
+    // Clear selection styles if buildMode is cleared by game events
+    try {
+      if (window.socket && socket.on) {
+        socket.on('buildResult', function(){
+          setTimeout(function(){
+            try {
+              if (!window.buildMode) {
+                document.querySelectorAll('.mobile-build .mb-btn.selected-mobile, #buildTiles .build-tile.selected-mobile').forEach(function(el){ el.classList.remove('selected-mobile'); });
+              }
+            } catch(e){}
+          }, 0);
+        });
+      }
+    } catch(_){}
+  } catch(_){}
+})();
+</script>
+
+
+<script id="mobile-build-selection-toggle">
+(function(){
+  if (window.__mobileBtnSelInstalled) return; window.__mobileBtnSelInstalled = true;
+  try {
+    var touchCap = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    if (!touchCap) return;
+    var root = document.getElementById('mobile-build');
+    if (!root) return;
+    function refresh(){
+      try {
+        var mode = window.buildMode;
+        root.querySelectorAll('.mb-btn').forEach(function(b){
+          if (mode && b.getAttribute('data-type') === mode) b.classList.add('selected-mobile');
+          else b.classList.remove('selected-mobile');
+        });
+      } catch(_){}
+    }
+    root.addEventListener('click', function(){ setTimeout(refresh, 0); }, {passive:true});
+    root.addEventListener('touchstart', function(){ setTimeout(refresh, 0); }, {passive:true});
+    // initial
+    setTimeout(refresh, 0);
+  } catch(_){}
+})();
 </script>
 
 </body></html>
