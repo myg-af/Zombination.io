@@ -191,8 +191,6 @@ body.menu-hide-ui #fpsCounter,
   body.menu-hide-ui #hudStats,
   body.menu-hide-ui .mobile-build { display: none !important; }
 
-
-
   /* Patch: Keep only the "Zombination.io" panel visible in the main menu
      and place the lobby background above all other UI elements without deleting them. */
   #lobbyScreen {
@@ -336,7 +334,6 @@ body.menu-hide-ui #fpsCounter,
 #chatCollapsedBtn { pointer-events: auto !important; }
 </style>
 
-
 <!-- MOBILE LOBBY RESIZE PATCH (ULTRA ROBUST) -->
 <style id="mobile-lobby-resize-patch">
 /* Use dynamic viewport units and safe scrolling for the lobby on mobile only */
@@ -382,8 +379,6 @@ body.menu-hide-ui #fpsCounter,
   #lobbyBtnRow { gap: 6px !important; }
 }
 </style>
-
-
 
 <!-- MOBILE CENTERING PATCH: lobbyBox width & centering -->
 <style>
@@ -1477,7 +1472,6 @@ function centerCameraOn(x, y){
   }catch(e){}
 }
 
-
 // Shots direction cache (owner -> recent aim)
 // recentShootDir is provided globally earlier
 
@@ -1592,16 +1586,34 @@ function resetWaveCounters(total = 0) {
 	// === [ZOOM MOBILE PAYSAGE] ===
 	let renderScale = 1;
 	function updateRenderScale() {
-	  if (!isMobileDevice) {
-		renderScale = 1;
-		return;
-	  }
-	  const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-	  // x2 en paysage => 0.5 ; x3 en portrait => ~0.333
-	  renderScale = isLandscape ? 0.5 : 1/3;
-	}
+  try {
+    if (!isMobileDevice) {
+      renderScale = 1;
+      return;
+    }
+    // Fit the visibility halo to the smallest screen dimension:
+    // halo screen radius r_screen = CLIENT_VIEW_RADIUS * renderScale
+    // We want r_screen ~= min(canvas.width, canvas.height) / 2
+    // Use a safe fallback for CLIENT_VIEW_RADIUS if not yet defined.
+    const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 420;
+    const cw = (canvas && canvas.width) || window.innerWidth || 0;
+    const ch = (canvas && canvas.height) || window.innerHeight || 0;
+    const minDim = Math.min(cw, ch);
+    if (minDim > 0 && VR > 0) {
+      renderScale = minDim / (2 * VR);
+    }
+  } catch(e) {
+    try { console.warn('[updateRenderScale] error', e && (e.message||e)); } catch(_){}
+  }
+}
 
-	updateRenderScale();
+// Keep mobile zoom correct when the screen size/orientation changes
+try {
+  window.addEventListener('resize', function(){ try{ updateRenderScale(); }catch(_){ } }, { passive: true });
+  window.addEventListener('orientationchange', function(){ try{ setTimeout(updateRenderScale, 0); }catch(_){ } }, { passive: true });
+} catch(_){}
+
+updateRenderScale();
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
@@ -3572,7 +3584,6 @@ socket.on('structureDestroyed', (payload) => {
   
 // Wall/Door cooldown update from server
 
-
 if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
 
   const ok = clearStructureAt(tx, ty);
@@ -4018,6 +4029,12 @@ try {
   var _logout = document.getElementById('btnLogout');
   if (_logout) _logout.disabled = inLobby;
 } catch(_){}
+
+    // Disable chat 'Send' when no pseudo
+try {
+  var _chatSend = document.getElementById('chatSend');
+  if (_chatSend) _chatSend.disabled = !hasPseudo;
+} catch(_){}
   }
   if (pseudoInput) {
     pseudoInput.addEventListener('input', updateButtonsDisabled, { passive: true });
@@ -4296,7 +4313,6 @@ socket.on('lobbiesList', function(list){
     });
   });
 
-
 function renderManualPlayers() {
   try {
     const playersObj = (typeof lobbyData === 'object' && lobbyData && lobbyData.players) ? lobbyData.players : {};
@@ -4560,7 +4576,6 @@ function renderManualPlayers() {
 })();
 </script>
 
-
 <script>
 (function(){
   try {
@@ -4657,10 +4672,11 @@ function renderManualPlayers() {
   const collapsedBtn = qs('chatCollapsedBtn');
   const tabWorld = qs('tabWorld');
   const tabLobby = qs('tabLobby');
+
+  try { if (typeof window.updateButtonsDisabled === 'function') window.updateButtonsDisabled(); } catch(_){}
   // Toggle / expand handlers
   if (toggle) toggle.addEventListener('click', function(){ setCollapsed(true); }, {passive:true});
   if (collapsedBtn) collapsedBtn.addEventListener('click', function(){ setCollapsed(false); }, {passive:true});
-
 
   // -- Helper: position collapsed button above HUD (best-effort)
   function positionCollapsedBtn(){
@@ -4788,6 +4804,12 @@ function renderManualPlayers() {
     try {
       if (!window.socket || !window.socket.connected) return;
       const now = Date.now();
+      // Block sending if no pseudo entered
+      try {
+        var __pi = window.pseudoInput || document.getElementById('pseudoInput');
+        var __has = !!(__pi && __pi.value && __pi.value.trim());
+        if (!__has) { if (__pi) try { __pi.focus(); } catch(_){ } return; }
+      } catch(_){}
       if (now - lastSent < COOLDOWN_MS) return;
       let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
       if (!t) return;
@@ -5034,7 +5056,6 @@ function __alertPseudoTaken(){
 })();
 </script>
 
-
 <script>
 // Robust listener to ensure popup on pseudo_taken for Join lobby actions (server-side signal)
 (function ensureJoinPseudoTakenPopup(){
@@ -5057,7 +5078,6 @@ function __alertPseudoTaken(){
   }
 })();
 </script>
-
 
 <!-- MOBILE LOBBY RESIZE PATCH JS -->
 <script id="mobile-lobby-resize-patch-js">
@@ -5127,7 +5147,6 @@ function __alertPseudoTaken(){
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitLobbyBoxMobile);
 })();
 </script>
-
 
 <script>
 /* === AUTH CLIENT === */
@@ -5351,7 +5370,6 @@ function __alertPseudoTaken(){
     }, true);
   } catch(_){}
 
-
   // Also guard chat sending (button click and Enter key) when pseudo is reserved
   try {
     var chatSendBtn = document.getElementById('chatSend');
@@ -5365,7 +5383,6 @@ function __alertPseudoTaken(){
       } catch(_){}
     }, true);
   } catch(_){}
-
 
   // Initial state from server
   async function refreshMe(){
@@ -5539,7 +5556,6 @@ function __alertPseudoTaken(){
 })();
 </script>
 
-
   <!-- Visual Debug Console -->
   <style id="debugConsoleStyles">
     #debugConsole { position: fixed; left: 0; right: 0; bottom: 0; max-height: 42vh; z-index: 2147483647; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.35; background: rgba(0,0,0,0.75); color: #c7f284; overflow-y:auto; padding:6px 8px; display:none; box-shadow: 0 -4px 12px rgba(0,0,0,0.35); }
@@ -5627,7 +5643,6 @@ function __alertPseudoTaken(){
   </script>
   <!-- /Visual Debug Console -->
 
-
 <script>
 (function(){
   if (window.__forceGameEnterInstalled) return;
@@ -5654,7 +5669,6 @@ function __alertPseudoTaken(){
   };
 })();
 </script>
-
 
 <script>
 // NON_BLOCKING_GAMESTARTED_HELPER
@@ -5790,11 +5804,12 @@ function __alertPseudoTaken(){
     } catch(e){ try{ debugWarn('ensureCanvasSize error', e && (e.message||e)); }catch(_){ } }
   }
   function drawMarker(canvas){
+  try {
     // Disabled: avoid drawing the small green square + 'tick' text on desktop.
     // Return false so any probing logic that depends on this simply no-ops.
-    try { return false; } catch(_) { return false; }
+    return false;
   } catch(e){ try{ debugError('drawMarker error', e && (e.message||e)); }catch(_){ } return false; }
-  }
+}
   function readOnePixel(canvas){
     try {
       var ctx = canvas.getContext && canvas.getContext('2d'); if (!ctx) return null;
