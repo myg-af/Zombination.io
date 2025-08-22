@@ -6167,69 +6167,92 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 </style>
 
 <script id="mobile-build-selection-highlight">
-(function(){
-  if (window.__mobileBuildHighlightPatched) return;
-  window.__mobileBuildHighlightPatched = true;
+try {
+  // Define a no-op early to avoid undefined calls if anything fails later.
+  window.updateMobileBuildSelectionHighlight = window.updateMobileBuildSelectionHighlight || function(){};
 
-  function isMobileLike(){
-    try { return window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches; }
-    catch(_){ try { return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent); } catch(__){ return false; } }
-  }
+  (function(){
+    if (window.__mobileBuildHighlightPatched) return;
+    window.__mobileBuildHighlightPatched = true;
 
-  function doUpdate(){
-    try {
-      if (!isMobileLike()) { return; } // keep PC unchanged
-      var sel = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
-      var btCont = document.getElementById('buildTiles');
-      if (btCont){
-        btCont.querySelectorAll('.build-tile').forEach(function(btn){
-          var type = btn.getAttribute('data-type') || '';
-          if (sel && type === sel) btn.classList.add('is-selected');
-          else btn.classList.remove('is-selected');
-        });
+    function isMobileLike(){
+      try {
+        if (window.matchMedia && typeof window.matchMedia === 'function') {
+          var q = window.matchMedia('(hover: none) and (pointer: coarse)');
+          if (q && typeof q.matches === 'boolean') return q.matches;
+        }
+      } catch(_){}
+      try { return /android|iphone|ipad|ipod|mobile/i.test(String(navigator.userAgent||'')); } catch(__){}
+      return false;
+    }
+
+    function toggleSelectedClass(container, itemSelector, selectedType){
+      if (!container) return;
+      var list = container.querySelectorAll(itemSelector);
+      if (!list) return;
+      for (var i=0;i<list.length;i++){
+        var btn = list[i];
+        var type = (btn && btn.getAttribute) ? (btn.getAttribute('data-type') || '') : '';
+        if (selectedType && type === selectedType) { 
+          try { btn.classList.add('is-selected'); } catch(_){}
+        } else {
+          try { btn.classList.remove('is-selected'); } catch(_){}
+        }
       }
-      var mCont = document.querySelector('.mobile-build');
-      if (mCont){
-        mCont.querySelectorAll('.mb-btn').forEach(function(btn){
-          var type = btn.getAttribute('data-type') || '';
-          if (sel && type === sel) btn.classList.add('is-selected');
-          else btn.classList.remove('is-selected');
-        });
+    }
+
+    function doUpdate(){
+      try {
+        if (!isMobileLike()) return; // keep PC unchanged
+        var sel = '';
+        try {
+          sel = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
+        } catch(_){ sel = ''; }
+        // Desktop build tiles (also visible on some mobiles)
+        var btCont = document.getElementById('buildTiles');
+        toggleSelectedClass(btCont, '.build-tile', sel);
+        // Mobile dedicated buttons, if present
+        var mCont = document.querySelector('.mobile-build');
+        toggleSelectedClass(mCont, '.mb-btn', sel);
+      } catch(_){ /* swallow */ }
+    }
+
+    // Expose globally for existing code paths
+    window.updateMobileBuildSelectionHighlight = doUpdate;
+
+    // Initial sync
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function(){ try { doUpdate(); } catch(_){ } }, { once:true });
+    } else {
+      try { doUpdate(); } catch(_){ }
+    }
+
+    // Keep in sync with layout
+    try { window.addEventListener('orientationchange', doUpdate, {passive:true}); } catch(_){}
+    try { window.addEventListener('resize', doUpdate, {passive:true}); } catch(_){}
+
+    // Observe mutations carefully (older mobile may not support MutationObserver)
+    try {
+      if (typeof MutationObserver !== 'undefined') {
+        var obs = new MutationObserver(function(){ doUpdate(); });
+        var bt = document.getElementById('buildTiles');
+        if (bt) obs.observe(bt, { childList:true, subtree:true, attributes:true });
+        var mb = document.querySelector('.mobile-build');
+        if (mb) obs.observe(mb, { childList:true, subtree:true, attributes:true });
       }
     } catch(_){}
-  }
 
-  // Expose for any existing code paths that toggle buildMode
-  window.updateMobileBuildSelectionHighlight = doUpdate;
-
-  // Initial sync after DOM is ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function(){ setTimeout(doUpdate, 0); }, {once:true});
-  } else {
-    setTimeout(doUpdate, 0);
-  }
-
-  // Keep in sync with layout and user interaction
-  window.addEventListener('orientationchange', doUpdate, {passive:true});
-  window.addEventListener('resize', doUpdate, {passive:true});
-
-  // Observe mutations in the containers (buttons may rerender)
-  try {
-    var obs = new MutationObserver(function(){ doUpdate(); });
-    var bt = document.getElementById('buildTiles');
-    if (bt) obs.observe(bt, { childList:true, subtree:true, attributes:true });
-    var mb = document.querySelector('.mobile-build');
-    if (mb) obs.observe(mb, { childList:true, subtree:true, attributes:true });
-  } catch(_){}
-
-  // As a last safeguard, poll lightly on mobile (does nothing on desktop)
-  var lastSel = null;
-  setInterval(function(){
-    if (!isMobileLike()) return;
-    var cur = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
-    if (cur !== lastSel) { lastSel = cur; doUpdate(); }
-  }, 200);
-})();
+    // Very light polling only if really on mobile (as a safety net)
+    var lastSel = null;
+    try {
+      setInterval(function(){
+        if (!isMobileLike()) return;
+        var cur = (typeof window.buildMode === 'string' && window.buildMode) ? String(window.buildMode) : '';
+        if (cur !== lastSel) { lastSel = cur; doUpdate(); }
+      }, 400);
+    } catch(_){}
+  })();
+} catch(_){ /* absolute safety */ }
 </script>
 <script>try { window.lobbyData = lobbyData; } catch(_){}</script>
 </body></html>
