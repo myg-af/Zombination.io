@@ -640,8 +640,8 @@ socket.on("connect", () => {
   try {
     var __last_gid = 0, __last_pseudo = '';
     try { __last_gid = Number(localStorage.getItem('zombi_last_gid') || '0'); } catch(_){}
-    try { __last_pseudo = String(localStorage.getItem('zombi_last_pseudo') || localStorage.getItem('zombi_pseudo') || '').trim(); } catch(_){}
-    if (__last_gid && __last_pseudo) {
+    try { __last_pseudo = String(localStorage.getItem('zombi_pseudo') || '').trim(); } catch(_){ }
+if (__last_gid && __last_pseudo) {
       socket.emit('reclaimPlayer', { gameId: __last_gid, pseudo: __last_pseudo }, function(res){
         try { console.log('[reclaimPlayer]', res); } catch(_){}
       });
@@ -658,6 +658,8 @@ socket.on("connect_error", (err) => {
 // Global guards to prevent any crash from bubbling up and blanking the page
 window.addEventListener('error', function(e){ try { console.error('Global error:', e && e.message, e); } catch(_){} });
 window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
+
+
 
 // LOBBY STATE LOGS
 
@@ -1089,11 +1091,11 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
 
   if (typeof window.playerImg === 'undefined') {
     window.playerImg = new Image();
-    window.playerImg.src = '/stv.png';
+    window.playerImg.src = '/sprites/player.png';
   }
   if (typeof window.zombieImg === 'undefined') {
     window.zombieImg = new Image();
-    window.zombieImg.src = '/zm.png';
+    window.zombieImg.src = '/sprites/zombies.png';
   }
 window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
     // --- LANG/LOBBY ---
@@ -1342,6 +1344,8 @@ socket.on('upgradeTurretResult', function(res){
     if (typeof window !== 'undefined' && typeof window.refreshShop === 'function') window.refreshShop();
     if (typeof renderShopUpgrades === 'function') renderShopUpgrades();
     if (typeof drawHUD === 'function') drawHUD();
+    try { if (typeof window.refreshBuildTooltip === 'function') window.refreshBuildTooltip(); } catch(_){ }
+
   } else {
     if (msg) {
       const tr = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
@@ -1631,7 +1635,7 @@ const UPGRADES = [
     desc: "Tire plus fort.",
     icon: "/icons/bullet.svg",
     getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-    baseValue: 10,
+    baseValue: 15,
     statLabel: "Dégâts",
     format: v => v
   },
@@ -1905,19 +1909,76 @@ function createMapBuffer() {
   mapBuffer.height = mapBufH;
   mapBufCtx = mapBuffer.getContext('2d');
 
-  // Fond neutre (optionnel) : on laisse transparent, on ne dessine que les murs
-  // Rendu des tuiles MURS une seule fois
-  mapBufCtx.fillStyle = '#363636';
+  // Pour un rendu pixel-art net si les assets sont pixelisés
+  try { mapBufCtx.imageSmoothingEnabled = false; } catch(_){}
+
+  // === SPRITES sol/mur (chargés une seule fois, global) ===
+  if (!window.__TILE_SPRITES__) {
+    const stones = [];
+    const grass  = [];
+    for (let i = 1; i <= 5; i++) { const im = new Image(); im.src = '/sprites/stone_' + i + '.png'; stones.push(im); }
+    for (let i = 1; i <= 5; i++) { const im = new Image(); im.src = '/sprites/grass_' + i + '.png'; grass.push(im); }
+    window.__TILE_SPRITES__ = { stones, grass, ready: false };
+    // Quand tout est chargé, on re-dessine le buffer pour poser les textures
+    const all = stones.concat(grass);
+    let remain = all.length;
+    const done = () => { if (--remain <= 0) { window.__TILE_SPRITES__.ready = true; try { createMapBuffer(); } catch(_) {} } };
+    for (const im of all) { im.onload = done; im.onerror = done; }
+  }
+
+  // Index pseudo-aléatoire mais déterministe par tuile (évite un "clignotement")
+  function vIndex(r, c, n) {
+    const n1 = (r + 1) * 73856093;
+    const n2 = (c + 1) * 19349663;
+    const h  = (n1 ^ n2) >>> 0;
+    return (h % n) | 0;
+  }
+
+  const spr = window.__TILE_SPRITES__;
+  const stones = spr && spr.stones || [];
+  const grass  = spr && spr.grass  || [];
+  const ready  = spr && spr.ready;
+
+  // --- D'abord le SOL partout (herbe 1..5) ---
+  for (let r = 0; r < MAP_ROWS; r++) {
+    for (let c = 0; c < MAP_COLS; c++) {
+      const x = c * TILE_SIZE, y = r * TILE_SIZE;
+      if (ready && grass.length) {
+        const gi = vIndex(r, c, grass.length);
+        const g  = grass[gi];
+        if (g && g.complete && g.naturalWidth > 0) {
+          mapBufCtx.drawImage(g, x, y, TILE_SIZE, TILE_SIZE);
+          continue;
+        }
+      }
+      // fallback couleur si sprites pas prêts
+      mapBufCtx.fillStyle = '#2e5a2e';
+      mapBufCtx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // --- Puis les MURS non destructibles (pierre 1..5) ---
   for (let r = 0; r < MAP_ROWS; r++) {
     for (let c = 0; c < MAP_COLS; c++) {
       if (map[r][c] === 1) {
-        mapBufCtx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        const x = c * TILE_SIZE, y = r * TILE_SIZE;
+        if (ready && stones.length) {
+          const si = vIndex(r, c, stones.length);
+          const s  = stones[si];
+          if (s && s.complete && s.naturalWidth > 0) {
+            mapBufCtx.drawImage(s, x, y, TILE_SIZE, TILE_SIZE);
+            continue;
+          }
+        }
+        // fallback couleur si sprites pas prêts
+        mapBufCtx.fillStyle = '#5a5a5a';
+        mapBufCtx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
       }
     }
   }
 }
 
-    // JOYSTICK PATCH MOBILE
+// JOYSTICK PATCH MOBILE
     let moveJoy = null, aimJoy = null;
 	let moveJoyVal = {x:0, y:0}, aimJoyVal = {x:0, y:0}; // valeurs normalisées [-1..1]
 	
@@ -3427,6 +3488,7 @@ socket.on('zombieDied', () => {
 	  myMoney += amount;          // <--- ajoute
 	  drawHUD();                  // <--- ajoute
 	  updateBuildTilesState();    // <--- ajoute
+	  try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(e){}  // <--- ajoute
 	});
 
 socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
@@ -3435,7 +3497,8 @@ socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
   renderShopUpgrades();
   drawHUD();
   updateBuildTilesState();
-});
+try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(e){}
+	});
 
     socket.on('waveMessage', (msg) => {
   try {
@@ -3523,7 +3586,7 @@ function upperFirstLocalized(s){
 const buildBar = document.getElementById('buildBar');
 const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
 const buildTooltip = document.getElementById('buildTooltip');
-let STRUCTURE_PRICES = { T: 1000, t: 250, G: 5000, B: 100, D: 200 };
+let STRUCTURE_PRICES = { T: 2000, t:  500, G:  10000, B:  250, D:  500 };
 
 // Hover → tooltip (localized, hard method)
 buildTiles.forEach(btn => {
@@ -3893,7 +3956,7 @@ function renderShopUpgrades() {
   // --- Upgrades Tourelles (3 slots, même design) ---
   const turretDefs = [
       
-    { type:'G', name:'Big-tourelle +Dégâts',  color:'#b48cff', border:'#2b1b3a', basePrice:5000, scale:1.2 },
+    { type:'G', name:'Big-tourelle +Dégâts',  color:'#b48cff', border:'#2b1b3a', basePrice:10000, scale:1.2 },
     { type:'T', name:'Tourelle +Dégâts',      color:'#ff3b3b', border:'#2b0b0b', basePrice:2000, scale:1.3 },
     { type:'t', name:'Mini-tourelle +Dégâts', color:'#3aa6ff', border:'#0b2436', basePrice:500,  scale:1.3 }
   
@@ -6366,9 +6429,12 @@ e.preventDefault(); e.stopPropagation();
       } else {
         tip = attrTip || name;
       }
-      // Prefer dynamic, but if attrTip exists and looks more specific (e.g. localized), use it
+      // For turret types, always use dynamic text so damage reflects upgrades.
+      // For walls/doors or unknown types, allow static attrTip if present.
       try {
-        if (attrTip && attrTip.length >= tip.length - 4) tip = attrTip;
+        if ((type==='B' || type==='D') && attrTip && attrTip.length >= tip.length - 4) {
+          return attrTip;
+        }
       } catch(_){}
       return tip;
     }
@@ -6396,6 +6462,16 @@ e.preventDefault(); e.stopPropagation();
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function(){ tooltip.style.display = 'none'; lastBtn = null; }, 90);
     }
+
+    // Expose a helper to recompute tooltip text if it's currently visible
+    try {
+      window.refreshBuildTooltip = function(){
+        try{
+          var hovered = document.querySelector('#buildTiles .build-tile:hover');
+          if (hovered) { showFor(hovered); }
+        } catch(_){ }
+      };
+    } catch(_){}
 
     function isInsideAnyBuildTile(el){
       return !!(el && el.closest && el.closest('#buildTiles .build-tile'));
@@ -6804,4 +6880,3 @@ e.preventDefault(); e.stopPropagation();
   }
 })(); 
 </script>
-

@@ -86,7 +86,7 @@ const MAX_ZOMBIES_PER_WAVE = 500;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
-  base: { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 },
+  base: { maxHp: 100, speed: 40, regen: 0, damage: 15, goldGain: 10 },
   regenPerLevel: 1,                 // 1 PV/sec/niveau
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
   priceStepAfterTier: 75            // après niv 5 → +50/niv
@@ -94,11 +94,11 @@ const SHOP_CONST = {
 
 // --- Prix d'achat des structures (serveur autoritatif) ---
 const SHOP_BUILD_PRICES = {
-  T: 1000, // Tourelle
-  t: 250,  // Mini-tourelle
-  G: 5000, // Big-tourelle
-  B: 100,  // Mur
-  D: 200   // Porte
+  T: 2000, // Tourelle
+  t: 500,  // Mini-tourelle
+  G: 10000, // Big-tourelle
+  B: 250,  // Mur
+  D: 500   // Porte
 };
 
 // Cooldown for placing walls/doors (applies to both types)
@@ -1114,7 +1114,7 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
         const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
         game.players[sid] = {
           x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-          damage:10, speed:40, goldGain:10, regen:0,
+          damage:15, speed:40, goldGain:10, regen:0,
           lastShot:0, pseudo, kills:0, money:0, spectator:false
         };
       }
@@ -1130,7 +1130,7 @@ try {
       const y = cR * TILE_SIZE + TILE_SIZE/2;
       game.players[sid] = {
         x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-        damage:10, speed:40, goldGain:10, regen:0,
+        damage:15, speed:40, goldGain:10, regen:0,
         lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
         kills:0, money:0, spectator:false
       };
@@ -1613,7 +1613,7 @@ socket.on('upgradeTurret', ({ type }) => {
     if (!player) { return; }
     player.turretUpgrades = player.turretUpgrades || {};
     const current = player.turretUpgrades[type] || 0;
-    const basePrice = (type === 't') ? 500 : (type === 'T' ? 2000 : 5000);
+    const basePrice = (type === 't') ? 500 : (type === 'T' ? 2000 : 10000);
     const growth = (type === 'G') ? 1.20 : 1.30; // G 20%, others 30%
     const price = Math.round(basePrice * Math.pow(growth, current));
     if ((player.money||0) < price) {
@@ -2099,7 +2099,7 @@ socket.on('killAllZombies', () => {
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  const base = { maxHp: 100, speed: 40, regen: 0, damage: 15, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
