@@ -4084,7 +4084,11 @@ function getUpgText(upg, field){
   } catch(e){ return (upg && upg[field]) || ''; }
 }
 function renderShopUpgrades() {
-  const _money = Number((typeof window !== 'undefined' && window._money != null) ? window._money : 0);
+  const _money = Number(
+  (typeof myMoney === 'number') ? myMoney :
+  ((typeof window !== 'undefined' && typeof window.myMoney === 'number') ? window.myMoney :
+   ((typeof window !== 'undefined' && typeof window._money === 'number') ? window._money : 0))
+);
 
   if (!window.myTurretUp || typeof myTurretUp !== 'object') { window.myTurretUp = {}; }
   const el = document.getElementById('shopUpgrades');
