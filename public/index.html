@@ -2,6 +2,27 @@
 
 <html lang="fr">
 <head>
+<script>
+// Safe null-object for removed #lobbyJoin (Solo) button
+(function(){
+  if (!('lobbyJoin' in window)) {
+    var noop = function(){};
+    window.lobbyJoin = {
+      disabled: false,
+      style: {},
+      dataset: {},
+      addEventListener: noop,
+      removeEventListener: noop,
+      click: noop,
+      set textContent(v){},
+      get textContent(){ return ''; },
+      set onclick(v){},
+      get onclick(){ return null; }
+    };
+  }
+})();
+</script>
+
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport"/>
 <title>Zombination.io</title>
@@ -547,7 +568,6 @@ body.menu-hide-ui #fpsCounter,
 <input id="pseudoInput" maxlength="10" placeholder="" type="text"/>
 <br/>
 <div id="lobbyBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:10px;">
-<button id="lobbyJoin"></button>
 <button id="btnJoinLobbyList" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Join lobby</button>
 <button id="btnCreateLobby" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Create lobby</button>
 </div>
@@ -562,7 +582,6 @@ body.menu-hide-ui #fpsCounter,
             <button id="btnBackFromShop" style="padding: 8px 14px; border:none; border-radius:6px; cursor:pointer; background: #666; color: white;">Back</button>
           </div>
           <div id="shopLobbyBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
-            <button id="shopSoloBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
             <button id="shopJoinLobbyListBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
             <button id="shopCreateLobbyBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
 </div>
@@ -799,7 +818,7 @@ console.log("📤 [SOCKET] Emit requestLobbyState");
 
 // JOIN BUTTON
 if (lobbyJoin) {
-  lobbyJoin.addEventListener("click", () => {
+  if (lobbyJoin) lobbyJoin.addEventListener("click", () => {
     const pseudo = pseudoInput.value;
     console.log("👤 Bouton JOIN cliqué. Pseudo saisi:", pseudo);
     try{ var now=Date.now(); if (typeof window.__joinLockTs==='number' && (now-window.__joinLockTs)<1200){ debugWarn('⛔ join re-entry blocked (A)', (now-window.__joinLockTs),'ms'); return; } window.__joinLockTs=now; var btn=document.getElementById('lobbyJoin'); if(btn){ btn.disabled=true; btn.dataset.clicked='1'; setTimeout(function(){ try{btn.disabled=false;}catch(_){}} , 3000);} }catch(_){}
@@ -1222,7 +1241,7 @@ window.addEventListener('contextmenu', e => e.preventDefault(), { passive: false
     function initLobbyTexts() {
       updateLobbyTexts();
       pseudoInput.placeholder = TRANSLATIONS[currentLang].enterPseudo;
-      lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
+if (lobbyJoin)       lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
     }
     function updateLobbyTexts() {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
@@ -1374,7 +1393,7 @@ const langSelectRow = document.getElementById('langSelectRow');
     try {
       if (typeof window !== 'undefined') {
         if (typeof pseudoInput !== 'undefined' && pseudoInput) window.pseudoInput = pseudoInput;
-        var lobbyJoin = document.getElementById('lobbyJoin');
+        var lobbyJoin = document.getElementById("lobbyJoin") || window.lobbyJoin;
         if (lobbyJoin) window.lobbyJoin = lobbyJoin;
       }
     } catch(_){}
@@ -3443,12 +3462,12 @@ function gameLoop(timestamp = 0) {
       }
       lobbyScreen.style.display = 'flex';
       updateLobbyTexts();
-      lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
+      if (lobbyJoin) lobbyJoin.disabled = (!!window.lobbyJoined) || !pseudoInput.value.trim();
       pseudoInput.readOnly = lobbyJoined;
-      lobbyJoin.textContent = tr.join;
+if (lobbyJoin)       lobbyJoin.textContent = tr.join;
     });
 
-    lobbyJoin.onclick = () => {
+    if (lobbyJoin) lobbyJoin.onclick = () => {
       if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
@@ -3457,15 +3476,15 @@ function gameLoop(timestamp = 0) {
       }
       socket.emit('setPseudoAndReady', pseudoInput.value.trim()); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
       window.lobbyJoined = true;
-      lobbyJoin.disabled = true;
+      if (lobbyJoin) lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
       
-          try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
+if (lobbyJoin)           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }lobbyJoin.textContent = TRANSLATIONS[currentLang].waiting;
       try { updateButtonsDisabled(); } catch(_) {}
     };
 
     pseudoInput.onkeydown = (e) => {
-      if (e.key === "Enter") lobbyJoin.click();
+      if (e.key === "Enter") if (lobbyJoin) lobbyJoin.click();
     };
 
     socket.on('gameStarted', (data) => { currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
@@ -4343,6 +4362,7 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
     manualPanel.style.display = 'block';
     listPanel.style.display = 'none';
     try{ if (pseudoInput) pseudoInput.style.display = 'none'; }catch(_){}
+    try{ if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); }catch(_){}
   }
   function showList(){
     manualPanel.style.display = 'none';
@@ -4352,12 +4372,13 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
 
   function updateButtonsDisabled() {
     const hasPseudo = !!(pseudoInput && pseudoInput.value.trim());
-    const shouldDisable = !hasPseudo || !!window.lobbyJoined;
-    const inLobby = !!window.lobbyJoined;
+    // Robust in-lobby check: either the global flag is set OR the manual lobby panel is visible
+    const inLobby = !!(window.lobbyJoined || (manualPanel && manualPanel.style && manualPanel.style.display === 'block'));
+    const shouldDisable = !hasPseudo || inLobby;
 
     if (btnJoinList) btnJoinList.disabled = shouldDisable;
     if (btnCreate) btnCreate.disabled = shouldDisable;
-    if (lobbyJoin) lobbyJoin.disabled = shouldDisable;
+    if (lobbyJoin) if (lobbyJoin) lobbyJoin.disabled = shouldDisable;
     // Also gray out Ladder and auth buttons when in a lobby
 try {
   var _ladder = document.getElementById('btnLadder');
@@ -4498,7 +4519,7 @@ if (btnCreate) {
           } catch(err) {
             console.error('createLobby callback error', err);
 } finally {
-            try { btnCreate.disabled = false; } catch(_) {}
+            try { if (typeof updateButtonsDisabled==='function') updateButtonsDisabled(); } catch(_) {}
           }
         });
       } catch(err) {
@@ -4743,7 +4764,7 @@ function renderManualPlayers() {
     window.updateUITexts = function(){
       try { _updateUITexts.apply(this, arguments); } catch(_){}
       var tr = (window.TRANSLATIONS && window.TRANSLATIONS[window.currentLang]) || (window.TRANSLATIONS && window.TRANSLATIONS['en']) || {};
-      var lobbyJoin = document.getElementById('lobbyJoin');
+      var lobbyJoin = document.getElementById("lobbyJoin") || window.lobbyJoin;
       if (lobbyJoin) lobbyJoin.textContent = tr.join || 'Join';
 
 // Keep the Join button localized even if other code changes its text
@@ -4770,17 +4791,17 @@ function renderManualPlayers() {
 
   // Override main Join click to start solo immediately (server handles launch)
   safe(function(){
-    var lobbyJoin = document.getElementById('lobbyJoin');
+    var lobbyJoin = document.getElementById("lobbyJoin") || window.lobbyJoin;
     var pseudoInput = document.getElementById('pseudoInput');
     if (lobbyJoin){
-      lobbyJoin.onclick = function(){
+      if (lobbyJoin) lobbyJoin.onclick = function(){
         if (!pseudoInput || !pseudoInput.value || !pseudoInput.value.trim()){
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
         socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); try { localStorage.setItem('zombi_last_pseudo', String((pseudoInput && pseudoInput.value || '').trim())); } catch(_) {}
         window.lobbyJoined = true;
-        try { lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
+        try { if (lobbyJoin) lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
       };
@@ -5521,7 +5542,7 @@ function __alertPseudoTaken(){
   const btnCancel = document.getElementById('authCancel');
   const btnSubmit = document.getElementById('authSubmit');
   const pseudoInput = document.getElementById('pseudoInput');
-  const lobbyJoin = document.getElementById('lobbyJoin');
+  const lobbyJoin = document.getElementById("lobbyJoin") || window.lobbyJoin;
   const btnJoinLobbyList = document.getElementById('btnJoinLobbyList');
   const btnCreateLobby = document.getElementById('btnCreateLobby');
   let reservedPseudo = false;

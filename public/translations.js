@@ -28,7 +28,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Lobby chat',
     worldChat: 'World chat',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Join',
     waiting: "Waiting...",
     enterPseudo: "Enter your nickname",
@@ -101,7 +101,7 @@ const TRANSLATIONS = {
     lobbyChat: '大厅聊天',
     worldChat: '世界聊天',
     zombination: "Zombination.io",
-    join: '单人',
+
     joinAction: '加入',
     waiting: "等待中...",
     enterPseudo: "输入昵称",
@@ -174,7 +174,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Чат лобби',
     worldChat: 'Мировой чат',
     zombination: "Zombination.io",
-    join: 'Соло',
+
     joinAction: 'Присоединиться',
     waiting: "Ожидание...",
     enterPseudo: "Введите ник",
@@ -241,7 +241,7 @@ const TRANSLATIONS = {
     fillAll: 'Rellena todos los campos.',
     reservedName: 'Este apodo está reservado por una cuenta. Elige otro.',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Unirse',
     waiting: "Esperando...",
     enterPseudo: "Introduce tu apodo",
@@ -314,7 +314,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Chat do lobby',
     worldChat: 'Chat global',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Entrar',
     waiting: "Aguardando...",
     enterPseudo: "Digite seu apelido",
@@ -387,7 +387,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Lobby-Chat',
     worldChat: 'Weltchat',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Beitreten',
     waiting: "Warten...",
     enterPseudo: "Spitznamen eingeben",
@@ -460,7 +460,7 @@ const TRANSLATIONS = {
     lobbyChat: 'ロビーチャット',
     worldChat: 'ワールドチャット',
     zombination: "Zombination.io",
-    join: 'ソロ',
+
     joinAction: '参加',
     waiting: "待機中...",
     enterPseudo: "ニックネームを入力",
@@ -533,7 +533,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Chat du lobby',
     worldChat: 'Chat global',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Rejoindre',
     waiting: "En attente...",
     enterPseudo: "Entrez votre pseudo",
@@ -606,7 +606,7 @@ const TRANSLATIONS = {
     lobbyChat: 'Czat lobby',
     worldChat: 'Czat globalny',
     zombination: "Zombination.io",
-    join: 'Solo',
+
     joinAction: 'Dołącz',
     waiting: "Oczekiwanie...",
     enterPseudo: "Wpisz pseudonim",
@@ -679,7 +679,7 @@ const TRANSLATIONS = {
     lobbyChat: '로비 채팅',
     worldChat: '월드 채팅',
     zombination: "Zombination.io",
-    join: '솔로',
+
     joinAction: '참가',
     waiting: "대기 중...",
     enterPseudo: "닉네임 입력",
