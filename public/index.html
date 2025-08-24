@@ -821,7 +821,7 @@ if (lobbyJoin) {
   if (lobbyJoin) lobbyJoin.addEventListener("click", () => {
     const pseudo = pseudoInput.value;
     console.log("👤 Bouton JOIN cliqué. Pseudo saisi:", pseudo);
-    try{ var now=Date.now(); if (typeof window.__joinLockTs==='number' && (now-window.__joinLockTs)<1200){ debugWarn('⛔ join re-entry blocked (A)', (now-window.__joinLockTs),'ms'); return; } window.__joinLockTs=now; var btn=document.getElementById('lobbyJoin'); if(btn){ btn.disabled=true; btn.dataset.clicked='1'; setTimeout(function(){ try{btn.disabled=false;}catch(_){}} , 3000);} }catch(_){}
+    try{ var now=Date.now(); if (typeof window.__joinLockTs==='number' && (now-window.__joinLockTs)<1200){ debugWarn('⛔ join re-entry blocked (A)', (now-window.__joinLockTs),'ms'); return; } window.__joinLockTs=now; var btn=document.getElementById('lobbyJoin'); if(btn){ btn.disabled=true; btn.dataset.clicked='1'; setTimeout(function(){ try{btn.disabled=false;}catch(_){}} , 900);} }catch(_){}
 if (!pseudo) return;
   });
 }
@@ -4456,18 +4456,31 @@ try {
               if (res && res.ok && res.pseudo) {
                 applyAcceptedPseudo(res.pseudo);
                 if (window.pseudoInput && document.activeElement !== window.pseudoInput) { try { window.pseudoInput.value = res.pseudo; } catch(_){ } }
-              } else if (res && res.reason === 'pseudo_taken') {
+              } else if (res && (res.reason === 'pseudo_taken' || res.reason === 'reserved')) {
+  var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+  if (res.reason === 'reserved') { showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.'); } else { __alertPseudoTaken(); 
+            if (window.pseudoInput) {
+              try { window.pseudoInput.value = ''; } catch(_){ }
+              try { window.pseudoInput.style.background = '#3b0000'; setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450); } catch(_){ }
+            }
+}
+
                 if (window.pseudoInput) {
-                  window.pseudoInput.value = __lastAcceptedPseudo || '';
+                  if (res && res.reason === 'reserved') {
+                    window.pseudoInput.value = '';
+                  } else {
+                    window.pseudoInput.value = __lastAcceptedPseudo || '';
+                  }
                   window.pseudoInput.style.background = '#3b0000';
-                  setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450);
+                  setTimeout(function(){ try { window.pseudoInput.style.background = ''; 
+} catch(_){ } }, 450);
                 }
                 window.myPseudo = __lastAcceptedPseudo || '';
                 try { localStorage.setItem('zombi_pseudo', window.myPseudo); } catch(_){}
               }
             } catch(_){}
           });
-        }
+}
       } catch(_){}
     })();
 
@@ -4670,8 +4683,17 @@ socket.on('lobbiesList', function(list){
 
             renderManualPlayers();
             try { updateButtonsDisabled(); } catch(_) {}
-          } else if (res && res.reason === 'pseudo_taken') {
-            try { var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+          } else if (res && (res.reason === 'pseudo_taken' || res.reason === 'reserved')) {
+  var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+  if (res.reason === 'reserved') { showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.'); } else { __alertPseudoTaken(); 
+            if (window.pseudoInput) {
+              try { window.pseudoInput.value = ''; } catch(_){ }
+              try { window.pseudoInput.style.background = '#3b0000'; setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450); } catch(_){ }
+            }
+}
+
+            try { var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {
+};
             __alertPseudoTaken(); } catch(_){}
           }
         });
@@ -5189,7 +5211,43 @@ function renderManualPlayers() {
       let t = (input.value || '').replace(/[\r\n\t]/g,' ').trim();
       if (!t) return;
       if (t.length > MAX_LEN) t = t.slice(0, MAX_LEN);
-      window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
+      
+      // Local duplicate pseudo pre-check (align with lobby join behavior)
+      try {
+        if (currentChannel === 'lobby' && window && window.lobbyData && window.lobbyData.players) {
+          var myId = (window.socket && socket.id) || null;
+          var p = String(window.myPseudo || '').trim();
+          if (p) {
+            var arr = Object.keys(window.lobbyData.players).map(function(k){
+              var o = window.lobbyData.players[k];
+              return (o && o.pseudo) ? { sid: k, name: String(o.pseudo) } : null;
+            }).filter(Boolean);
+            var taken = arr.some(function(o){ return o && o.name && o.name.toLowerCase() === p.toLowerCase() && o.sid !== myId; });
+            if (taken) { try { __alertPseudoTaken(); } catch(_){ } return; }
+          }
+        }
+      } catch(_){}
+
+      // World channel duplicate pseudo pre-check using recent history
+      try {
+        if (currentChannel === 'world' && (!window || !window.loggedUser)) {
+          var myId = (window.socket && socket.id) || null;
+          var pInput = (window.pseudoInput || document.getElementById('pseudoInput'));
+          var p = pInput && pInput.value ? String(pInput.value).trim().substring(0,10).replace(/[^a-zA-Z0-9]/g,'') : '';
+          if (!p && window.myPseudo) { p = String(window.myPseudo).trim(); }
+          if (p) {
+            var arr = (typeof chatBuf !== 'undefined' && chatBuf && Array.isArray(chatBuf['world'])) ? chatBuf['world'] : [];
+            var taken = false;
+            for (var i=0;i<arr.length;i++){
+              var m = arr[i];
+              if (!m || !m.pseudo) continue;
+              if (String(m.pseudo).toLowerCase() === p.toLowerCase() && m.sid !== myId) { taken = true; break; }
+            }
+            if (taken) { try { __alertPseudoTaken(); } catch(_){ } return; }
+          }
+        }
+      } catch(_){}
+window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (window.myPseudo || '') });
       lastSent = now;
       input.value = '';
     } catch(e){}
@@ -5383,10 +5441,24 @@ function renderManualPlayers() {
         try {
           if (!res || res.ok) return;
           var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-          __alertPseudoTaken();
-        } catch(_){}
+          try {
+  var r = (res && res.reason) || '';
+  var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+  if (r === 'reserved') {
+    showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.');
+  
+            if (window.pseudoInput) {
+              try { window.pseudoInput.value = ''; } catch(_){ }
+              try { window.pseudoInput.style.background = '#3b0000'; setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450); } catch(_){ }
+            }
+} else {
+    __alertPseudoTaken();
+  }
+  if (window.__flashPseudoError) window.__flashPseudoError();
+} catch(_){ }
+try { if (window.__unlockJoinAfterPseudoError) __unlockJoinAfterPseudoError(r || (e && e.type)); } catch(_){ }} catch(_){}
       });
-      socket.on('renameResult', function(res){
+socket.on('renameResult', function(res){
         try {
           if (!res || res.ok) return;
           if (res && res.reason === 'pseudo_taken') {
@@ -5409,6 +5481,41 @@ function __alertPseudoTaken(){
 </script>
 
 <script>
+// Unlock Join UI immediately on nickname errors so users can retry without waiting.
+(function(){
+  if (window.__unlockJoinInstalled) return; window.__unlockJoinInstalled = true;
+  window.__unlockJoinAfterPseudoError = function(reason){
+    try {
+      // Clear fast-click lock
+      try { window.__joinLockTs = 0; } catch(_){}
+      // UI elements
+      var pseudoInput = document.getElementById('pseudoInput');
+      var lobbyJoin = document.getElementById('lobbyJoin') || window.lobbyJoin;
+      // Reset joined flag so buttons aren't disabled
+      try { window.lobbyJoined = false; } catch(_){}
+      // Re-enable controls immediately
+      try {
+        if (lobbyJoin) { lobbyJoin.disabled = false; }
+        if (pseudoInput) {
+          pseudoInput.disabled = false;
+          pseudoInput.readOnly = false;
+          pseudoInput.style.background = '#fff';
+          pseudoInput.style.color = '#000';
+          pseudoInput.style.border = '1px solid #444';
+          // focus so the user can retry right away
+          pseudoInput.focus();
+          pseudoInput.select && pseudoInput.select();
+        }
+      } catch(_){}
+      try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
+    } catch(_){}
+  };
+})();
+</script>
+
+
+
+<script>
 // Robust listener to ensure popup on pseudo_taken for chat send, even if other handlers exist.
 (function ensurePseudoTakenPopup(){
   function bind(){
@@ -5419,8 +5526,15 @@ function __alertPseudoTaken(){
           if (e && e.type === 'pseudo_taken') {
             var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
             showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
-          }
-        }catch(_){}
+          } else if (e && (e.type === 'reserved' || e.reason === 'reserved')) {
+            showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.');
+          
+            if (window.pseudoInput) {
+              try { window.pseudoInput.value = ''; } catch(_){ }
+              try { window.pseudoInput.style.background = '#3b0000'; setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450); } catch(_){ }
+            }
+}
+        }catch(_){ }
       });
       return true;
     }catch(_){ return false; }
@@ -5442,10 +5556,17 @@ function __alertPseudoTaken(){
           if (e && e.type === 'pseudo_taken') {
             var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
             showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
-          }
-        }catch(_){}
+          } else if (e && (e.type === 'reserved' || e.reason === 'reserved')) {
+            showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.');
+          
+            if (window.pseudoInput) {
+              try { window.pseudoInput.value = ''; } catch(_){ }
+              try { window.pseudoInput.style.background = '#3b0000'; setTimeout(function(){ try { window.pseudoInput.style.background = ''; } catch(_){ } }, 450); } catch(_){ }
+            }
+}
+        }catch(_){ }
       });
-      return true;
+return true;
     }catch(_){ return false; }
   }
   if (!bind()){
@@ -5453,6 +5574,41 @@ function __alertPseudoTaken(){
   }
 })();
 </script>
+
+<script>
+// Ensure we instantly re-enable Join UI on server-side join errors (e.g., pseudo_taken/reserved)
+(function(){
+  function bind(){
+    try{
+      if (!window.socket || !window.socket.on) return false;
+      window.socket.on('join:error', function(e){
+        try{
+          if (!e) return;
+          var t = (e.type || e.reason || '');
+          if (t === 'pseudo_taken' || t === 'reserved' || t === 'invalid_pseudo'){
+            if (window.__unlockJoinAfterPseudoError) __unlockJoinAfterPseudoError(t);
+          }
+        }catch(_){}
+      });
+      window.socket.on('setPseudoAndReadyResult', function(res){
+        try{
+          if (!res || res.ok) return;
+          var r = res.reason || '';
+          if (r === 'pseudo_taken' || r === 'reserved' || r === 'invalid_pseudo'){
+            if (window.__unlockJoinAfterPseudoError) __unlockJoinAfterPseudoError(r);
+          }
+        }catch(_){}
+      });
+      return true;
+    }catch(_){ return false; }
+  }
+  if (!bind()){
+    var __unlockInt = setInterval(function(){ if (bind()) clearInterval(__unlockInt); }, 300);
+  }
+})();
+</script>
+
+
 
 <!-- MOBILE LOBBY RESIZE PATCH JS -->
 <script id="mobile-lobby-resize-patch-js">
@@ -7325,6 +7481,27 @@ e.preventDefault(); e.stopPropagation();
 })();
 </script>
 <!-- /MAIN BUTTON RESCUE 2 -->
+
+<script>
+// Flash the nickname field red and restore last accepted pseudo (or empty)
+(function(){
+  if (window.__flashPseudoErrorInstalled) return;
+  window.__flashPseudoErrorInstalled = true;
+  window.__flashPseudoError = function(){
+    try{
+      var pseudoInput = document.getElementById('pseudoInput');
+      if (!pseudoInput) return;
+      // revert to last accepted nickname if available
+      var fallback = (typeof window.myPseudo === 'string' && window.myPseudo) ? window.myPseudo : '';
+      try { pseudoInput.value = fallback; } catch(_){}
+      var old = pseudoInput.style.background;
+      pseudoInput.style.background = '#3b0000';
+      setTimeout(function(){ try{ pseudoInput.style.background = old || ''; }catch(_){} }, 450);
+    }catch(_){}
+  };
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
 <!-- [PATCH] turret-skins-swap v1 -->

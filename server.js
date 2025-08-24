@@ -1469,7 +1469,15 @@ if (!pseudo || pseudo === 'player') {
       }
 
       
-            const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+            
+      // Enforce pseudo uniqueness for chat (same policy as lobby joins)
+      try {
+        if (isPseudoTaken(pseudo, socket.id)) {
+          try { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); } catch(_){}
+          return;
+        }
+      } catch(_){}
+const msg = { sid: socket.id, pseudo, text, ts: now, channel };
 
       if (channel === 'world') {
         worldChatHistory.push(msg);
@@ -1543,15 +1551,20 @@ if (!pseudo || pseudo === 'player') {
 if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
 
 
-// Enforce limit: one manual lobby per public IP at the same time (as founder)
+// Enforce limit: up to two manual lobbies per public IP at the same time (as founder)
     const __hostIp = getClientIP(socket);
-    // Only block if the existing manual lobby for this IP still has its host currently connected
-    const __alreadyHosting = activeGames.some(g =>
-      g && g.lobby && g.lobby.manual && !g.lobby.started &&
-      g.lobby.hostIp && g.lobby.hostIp === __hostIp &&
-      g.lobby.hostId && io.sockets.sockets.get(g.lobby.hostId)
-    );
-    if (__alreadyHosting) { if (cb) cb({ ok:false, reason:'ip_limit' }); return; }
+    // Count existing manual lobbies for this IP whose host is currently connected (not started)
+    let __hostingCount = 0;
+    try {
+      for (const g of activeGames) {
+        if (
+          g && g.lobby && g.lobby.manual && !g.lobby.started &&
+          g.lobby.hostIp && g.lobby.hostIp === __hostIp &&
+          g.lobby.hostId && io.sockets.sockets.get(g.lobby.hostId)
+        ) { __hostingCount++; if (__hostingCount >= 2) break; }
+      }
+    } catch(_){}
+    if (__hostingCount >= 2) { if (cb) cb({ ok:false, reason:'ip_limit' }); return; }
 
     const oldGameId = socketToGame[socket.id];
     const oldGame = activeGames.find(g => g.id === oldGameId);
