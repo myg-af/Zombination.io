@@ -70,13 +70,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} lvl {level} succeeded. Money: ${money}',
     notEnoughMoney: 'Not enough money.',
     actionImpossible: 'Action impossible.',
-    upgrades: {
-    pseudoTaken: 'Apodo ya usado.',
-    send: 'Enviar',
-    chatPlaceholder: 'Mensaje (máx. 50)',
-    chat: 'Chat',
-    lobbyChat: 'Chat de lobby',
-    worldChat: 'Chat global', maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Gold gain', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
+    upgrades: { maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Money earned', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
   },
   cn: {
     login: '登录',
@@ -149,7 +143,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '升级 {type} 等级 {level} 成功。金钱: ${money}',
     notEnoughMoney: '金钱不足。',
     actionImpossible: '无法执行操作。',
-    upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+7% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金币获取', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
+    upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+7% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金钱获得', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
   },
   ru: {
     login: 'Войти',
@@ -222,7 +216,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Улучшение {type} ур. {level} выполнено. Деньги: ${money}',
     notEnoughMoney: 'Недостаточно денег.',
     actionImpossible: 'Действие невозможно.',
-    upgrades: { maxHp: { label: '+10% Макс. HP', desc: 'Увеличивает максимальный запас HP.', statLabel: 'Макс. HP' }, speed: { label: '+7% Скорость', desc: 'Двигайтесь быстрее.', statLabel: 'Скорость' }, regen: { label: '+0,05 HP/с', desc: 'Постепенное восстановление здоровья.', statLabel: 'Регенерация' }, damage: { label: '+10% Урон', desc: 'Повышает ваш урон.', statLabel: 'Урон' }, goldGain: { label: '+10% Золото', desc: 'Больше золота за убийства.', statLabel: 'Золото' } },
+    upgrades: { maxHp: { label: '+10% Макс. HP', desc: 'Увеличивает максимальный запас HP.', statLabel: 'Макс. HP' }, speed: { label: '+7% Скорость', desc: 'Двигайтесь быстрее.', statLabel: 'Скорость' }, regen: { label: '+0,05 HP/с', desc: 'Постепенное восстановление здоровья.', statLabel: 'Регенерация' }, damage: { label: '+10% Урон', desc: 'Повышает ваш урон.', statLabel: 'Урон' }, goldGain: { label: '+10% Заработанных денег', desc: 'Больше золота за убийства.', statLabel: 'Золото' } },
   },
   es: {
     login: 'Iniciar sesión',
@@ -289,7 +283,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Mejora {type} niv {level} completada. Dinero: ${money}',
     notEnoughMoney: 'No hay suficiente dinero.',
     actionImpossible: 'Acción imposible.',
-    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Oro ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Dinero ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
   },
   pt: {
     login: 'Entrar',
@@ -362,7 +356,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} nv {level} concluído. Dinheiro: ${money}',
     notEnoughMoney: 'Dinheiro insuficiente.',
     actionImpossible: 'Ação impossível.',
-    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Ouro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Dinheiro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
   },
   de: {
     login: 'Anmelden',
@@ -435,7 +429,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} Stufe {level} erfolgreich. Geld: ${money}',
     notEnoughMoney: 'Nicht genug Geld.',
     actionImpossible: 'Aktion nicht möglich.',
-    upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+7% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Goldgewinn', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
+    upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+7% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Verdientes Geld', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
   },
   jp: {
     login: 'ログイン',
@@ -508,7 +502,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '{type} Lv{level} の強化に成功。お金: ${money}',
     notEnoughMoney: 'お金が足りません。',
     actionImpossible: '操作できません。',
-    upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+7% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% ゴールド獲得', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
+    upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+7% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% 獲得金額', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
   },
   fr: {
     login: 'Se connecter',
@@ -536,8 +530,8 @@ const TRANSLATIONS = {
     send: 'Envoyer',
     chatPlaceholder: 'Message (max 50)',
     chat: 'Chat',
-    lobbyChat: 'Lobby chat',
-    worldChat: 'World chat',
+    lobbyChat: 'Chat du lobby',
+    worldChat: 'Chat global',
     zombination: "Zombination.io",
     join: 'Solo',
     joinAction: 'Rejoindre',
@@ -581,7 +575,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Amélioration {type} niv {level} réussie. Argent: ${money}',
     notEnoughMoney: 'Pas assez d\'argent.',
     actionImpossible: 'Action impossible.',
-    upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+7% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% Or gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
+    upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+7% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% d\'Argent gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
   },
   pl: {
     login: 'Zaloguj się',
@@ -654,7 +648,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Ulepszono {type} do poziomu {level}. Pieniądze: ${money}',
     notEnoughMoney: 'Za mało pieniędzy.',
     actionImpossible: 'Akcja niemożliwa.',
-    upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+7% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Złoto', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
+    upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+7% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Zdobytych pieniędzy', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
   },
   kr: {
     login: '로그인',
@@ -727,7 +721,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '{type} 레벨 {level} 업그레이드 성공. 돈: ${money}',
     notEnoughMoney: '돈이 부족합니다.',
     actionImpossible: '작업을 수행할 수 없습니다.',
-    upgrades: { maxHp: { label: '+10% 최대 HP', desc: '최대 HP 증가.', statLabel: '최대 HP' }, speed: { label: '+7% 이동 속도', desc: '더 빨리 이동.', statLabel: '이동 속도' }, regen: { label: '+0.05 HP/초', desc: '시간 경과에 따라 회복.', statLabel: '재생' }, damage: { label: '+10% 대미지', desc: '공격력 증가.', statLabel: '대미지' }, goldGain: { label: '+10% 골드 획득', desc: '처치당 더 많은 골드.', statLabel: '골드 획득' } },
+    upgrades: { maxHp: { label: '+10% 최대 HP', desc: '최대 HP 증가.', statLabel: '최대 HP' }, speed: { label: '+7% 이동 속도', desc: '더 빨리 이동.', statLabel: '이동 속도' }, regen: { label: '+0.05 HP/초', desc: '시간 경과에 따라 회복.', statLabel: '재생' }, damage: { label: '+10% 대미지', desc: '공격력 증가.', statLabel: '대미지' }, goldGain: { label: '+10% 획득 금액', desc: '처치당 더 많은 골드.', statLabel: '골드 획득' } },
   }
 };
 
@@ -860,7 +854,7 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
     TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv);
   }
   add('en', { ladder:'Ladder', ladderTitle:'Top 100 — Ladder', rank:'Rank', player:'Player', noData:'No data' });
-  add('fr', { ladder:'Ladder', ladderTitle:'Top 100 — Ladder', rank:'Rang', player:'Joueur', noData:'Aucune donnée' });
+  add('fr', { ladder:'Classement', ladderTitle:'Top 100 — Classement', rank:'Rang', player:'Joueur', noData:'Aucune donnée' });
   add('es', { ladder:'Clasificación', ladderTitle:'Top 100 — Clasificación', rank:'Puesto', player:'Jugador', noData:'Sin datos' });
   add('pt', { ladder:'Ranking', ladderTitle:'Top 100 — Ranking', rank:'Posição', player:'Jogador', noData:'Sem dados' });
   add('de', { ladder:'Bestenliste', ladderTitle:'Top 100 — Bestenliste', rank:'Rang', player:'Spieler', noData:'Keine Daten' });
@@ -907,3 +901,80 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
   }catch(_){}
 })();
 
+
+
+// === Gold Shop translations injection ===
+(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
+  add('en', {
+    shopMain:'Shop', gold:'Gold', needLoginShop:'You must be logged in to access the shop.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Start each game with +1 HP per level (up to +200).',
+    dmgUpgTitle:'Damage +1', dmgUpgDesc:'Start each game with +1 damage per level (up to +20).',
+    level:'Level', price:'Price', buy:'Buy', maxLevel:'Max level reached', notEnoughGold:'Not enough gold.',
+    goldHowTo:'Earn gold by clearing waves from 5 onward: wave 5=+1, 6=+2, 7=+3, etc.'
+  , purchaseOk:'Purchase successful.' });
+  add('fr', {
+    shopMain:'Boutique', gold:'Or', needLoginShop:'Vous devez être connecté pour accéder à la boutique.',
+    hpUpgTitle:'PV +1', hpUpgDesc:'Commence chaque partie avec +1 PV par niveau (jusqu’à +200).',
+    dmgUpgTitle:'Dégâts +1', dmgUpgDesc:'Commence chaque partie avec +1 dégât par niveau (jusqu’à +20).',
+    level:'Niveau', price:'Prix', buy:'Acheter', maxLevel:'Niveau max atteint', notEnoughGold:'Pas assez de gold.',
+    goldHowTo:'Gagne des golds à partir de la vague 5 : vague 5=+1, 6=+2, 7=+3, etc.'
+  , purchaseOk:'Achat réussi.' });
+  add('es', {
+    shopMain:'Tienda', gold:'Oro', needLoginShop:'Debes iniciar sesión para acceder a la tienda.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Empiezas cada partida con +1 HP por nivel (hasta +200).',
+    dmgUpgTitle:'Daño +1', dmgUpgDesc:'Empiezas cada partida con +1 de daño por nivel (hasta +20).',
+    level:'Nivel', price:'Precio', buy:'Comprar', maxLevel:'Nivel máximo alcanzado', notEnoughGold:'No hay suficiente oro.',
+    goldHowTo:'Gana oro superando oleadas desde la 5: oleada 5=+1, 6=+2, 7=+3, etc.'
+  , purchaseOk:'Compra realizada.' });
+  add('pt', {
+    shopMain:'Loja', gold:'Ouro', needLoginShop:'Você precisa estar conectado para acessar a loja.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Comece cada partida com +1 HP por nível (até +200).',
+    dmgUpgTitle:'Dano +1', dmgUpgDesc:'Comece cada partida com +1 de dano por nível (até +20).',
+    level:'Nível', price:'Preço', buy:'Comprar', maxLevel:'Nível máximo atingido', notEnoughGold:'Ouro insuficiente.',
+    goldHowTo:'Ganhe ouro ao completar ondas a partir da 5: onda 5=+1, 6=+2, 7=+3, etc.'
+  , purchaseOk:'Compra concluída.' });
+  add('de', {
+    shopMain:'Shop', gold:'Gold', needLoginShop:'Du musst eingeloggt sein, um den Shop zu nutzen.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Starte jedes Spiel mit +1 HP pro Stufe (bis +200).',
+    dmgUpgTitle:'Schaden +1', dmgUpgDesc:'Starte jedes Spiel mit +1 Schaden pro Stufe (bis +20).',
+    level:'Stufe', price:'Preis', buy:'Kaufen', maxLevel:'Maximalstufe erreicht', notEnoughGold:'Nicht genug Gold.',
+    goldHowTo:'Verdiene Gold ab Welle 5: Welle 5=+1, 6=+2, 7=+3, usw.'
+  , purchaseOk:'Kauf erfolgreich.' });
+  add('ru', {
+    shopMain:'Магазин', gold:'Золото', needLoginShop:'Нужно войти в аккаунт, чтобы открыть магазин.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Начинайте игру с +1 HP за уровень (до +200).',
+    dmgUpgTitle:'Урон +1', dmgUpgDesc:'Начинайте игру с +1 урона за уровень (до +20).',
+    level:'Уровень', price:'Цена', buy:'Купить', maxLevel:'Достигнут макс. уровень', notEnoughGold:'Недостаточно золота.',
+    goldHowTo:'Получайте золото с 5‑й волны: волна 5=+1, 6=+2, 7=+3 и т.д.'
+  , purchaseOk:'Покупка успешна.' });
+  add('cn', {
+    shopMain:'商店', gold:'金币', needLoginShop:'需要登录才能进入商店。',
+    hpUpgTitle:'生命值 +1', hpUpgDesc:'每级开局 +1 生命（最多 +200）。',
+    dmgUpgTitle:'伤害 +1', dmgUpgDesc:'每级开局 +1 伤害（最多 +20）。',
+    level:'等级', price:'价格', buy:'购买', maxLevel:'已达最高等级', notEnoughGold:'金币不足。',
+    goldHowTo:'从第 5 波开始通关即可得金币：第5波+1，第6波+2，第7波+3，依此类推。'
+  , purchaseOk:'购买成功。' });
+  add('jp', {
+    shopMain:'ショップ', gold:'ゴールド', needLoginShop:'ショップを利用するにはログインが必要です。',
+    hpUpgTitle:'HP +1', hpUpgDesc:'各レベルにつき初期HP+1（最大+200）。',
+    dmgUpgTitle:'ダメージ +1', dmgUpgDesc:'各レベルにつき初期ダメージ+1（最大+20）。',
+    level:'レベル', price:'価格', buy:'購入', maxLevel:'最大レベルに到達', notEnoughGold:'ゴールドが足りません。',
+    goldHowTo:'ウェーブ5以降をクリアしてゴールド獲得：5=+1, 6=+2, 7=+3...'
+  , purchaseOk:'購入に成功しました。' });
+  add('pl', {
+    shopMain:'Sklep', gold:'Złoto', needLoginShop:'Musisz być zalogowany, aby wejść do sklepu.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'Zaczynasz grę z +1 HP na poziom (do +200).',
+    dmgUpgTitle:'Obrażenia +1', dmgUpgDesc:'Zaczynasz grę z +1 obrażeniem na poziom (do +20).',
+    level:'Poziom', price:'Cena', buy:'Kup', maxLevel:'Osiągnięto maks. poziom', notEnoughGold:'Za mało złota.',
+    goldHowTo:'Zarabiaj złoto od fali 5: fala 5=+1, 6=+2, 7=+3 itd.'
+  , purchaseOk:'Zakup udany.' });
+  add('kr', {
+    shopMain:'상점', gold:'골드', needLoginShop:'상점에 들어가려면 로그인해야 합니다.',
+    hpUpgTitle:'HP +1', hpUpgDesc:'레벨당 시작 HP +1 (최대 +200).',
+    dmgUpgTitle:'데미지 +1', dmgUpgDesc:'레벨당 시작 데미지 +1 (최대 +20).',
+    level:'레벨', price:'가격', buy:'구매', maxLevel:'최대 레벨 도달', notEnoughGold:'골드가 부족합니다.',
+    goldHowTo:'웨이브 5부터 클리어 시 골드 획득: 5=+1, 6=+2, 7=+3 등'
+  , purchaseOk:'구매 완료되었습니다.' });
+})();

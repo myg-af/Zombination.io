@@ -31,8 +31,12 @@ const io = socketIo(server, {
 // --- Chat globals ---
 let worldChatHistory = [];
 
+// Keep last known pseudo per socket to label chat messages even before game context is attached
+const lastPseudoBySocket = new Map();
 
 
+
+const chatLastByIp = new Map(); // per-IP cooldown
 // === Helper: normalize client IP (supports proxies) ===
 function getClientIP(socket) {
   try {
@@ -86,7 +90,7 @@ const MAX_ZOMBIES_PER_WAVE = 500;
 
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
-  base: { maxHp: 100, speed: 40, regen: 0, damage: 15, goldGain: 10 },
+  base: { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 },
   regenPerLevel: 1,                 // 1 PV/sec/niveau
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
   priceStepAfterTier: 75            // après niv 5 → +50/niv
@@ -298,6 +302,35 @@ function getPlayersHealthStateFiltered(game, cx, cy, r) {
   }
   return out;
 }
+
+// Build a public map for a specific recipient: keep self under real sid, others as p1, p2...
+// If hostId is provided and differs from self, also include 'host' alias for the host player's entry.
+function buildPublicMapForRecipient(selfSid, fullMap, hostId) {
+  const out = {};
+  if (!fullMap || typeof fullMap !== 'object') return out;
+  let idx = 0;
+  for (const k in fullMap) {
+    if (Object.prototype.hasOwnProperty.call(fullMap, k)) {
+      if (k === selfSid) {
+        out[k] = fullMap[k];
+      } else {
+        // Do not alias the host as pX for non-host recipients;
+        // it will be exposed once under 'host' below.
+        if (hostId && hostId !== selfSid && k === hostId) {
+          continue;
+        }
+        const alias = 'p' + (++idx);
+        out[alias] = fullMap[k];
+      }
+    }
+  }
+  if (hostId && hostId !== selfSid && fullMap[hostId]) {
+    out['host'] = fullMap[hostId];
+  }
+  return out;
+}
+
+
 
 function getZombiesFiltered(game, cx, cy, r) {
   const r2 = r * r;
@@ -750,6 +783,17 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       viewY: null,
       _lastSpectateMoveAt: 0,
     };
+    // Attach account shop upgrades (hp/dmg) to player if logged-in
+    try {
+      const authUser = getSessionUsernameBySocketId(sid);
+      if (authUser) {
+        const urec = loadUsers()[normalizeKey(authUser)] || null;
+        if (urec) {
+          game.players[sid].accountShop = { hp: (urec.shopUpgrades&&urec.shopUpgrades.hp|0)||0, dmg: (urec.shopUpgrades&&urec.shopUpgrades.dmg|0)||0 };
+        }
+      }
+    } catch(_){}
+
 
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
@@ -913,18 +957,45 @@ let accumulator = 0;
 
 
 function broadcastLobby(game) {
-  io.to('lobby' + game.id).emit('lobbyUpdate', {
-    id: game.id,
-    players: game.lobby.players,
-    count: Object.keys(game.lobby.players).length,
-    max: MAX_PLAYERS,
-    timeLeft: game.lobby.timeLeft,
-    started: game.lobby.started,
-    manual: !!(game.lobby && game.lobby.manual),
-    hostId: (game.lobby && game.lobby.hostId) || null,
-  });
+  try {
+    const playersOrig = (game && game.lobby && game.lobby.players) ? game.lobby.players : {};
+    const count = Object.keys(playersOrig).length;
+    const manual = !!(game.lobby && game.lobby.manual);
+    const started = !!(game.lobby && game.lobby.started);
+    const timeLeft = game.lobby.timeLeft;
+    const max = MAX_PLAYERS;
+    const hostIdReal = (game.lobby && game.lobby.hostId) || null;
+    for (const sid in playersOrig) {
+      const pub = {};
+      let idx = 0;
+      for (const otherId in playersOrig) {
+        if (otherId === sid) { pub[otherId] = playersOrig[otherId]; }
+        else {
+          // Avoid duplicating the host: if the recipient is NOT the host,
+          // we expose the host only under the 'host' alias (not as pX).
+          if (hostIdReal && hostIdReal !== sid && otherId === hostIdReal) {
+            continue;
+          }
+          pub['p' + (++idx)] = playersOrig[otherId];
+        }
+      }
+      let hostOut = (hostIdReal === sid) ? sid : 'host';
+      if (hostOut === 'host' && hostIdReal && playersOrig[hostIdReal]) {
+        // Provide a single 'host' entry so the UI can show the crown,
+        // without adding another pX alias for the host.
+        pub['host'] = playersOrig[hostIdReal];
+      }
+      io.to(sid).emit('lobbyUpdate', {
+        id: game.id,
+        players: pub,
+        count, max, timeLeft, started, manual,
+        hostId: hostOut
+      });
+    }
+  } catch(e) {
+    try { console.error('[broadcastLobby error]', e && e.message); } catch(_){}
+  }
 }
-
 function startLobbyTimer(game) {
   if (game.lobby.timer) return;
   game.lobby.timeLeft = LOBBY_TIME / 1000;
@@ -983,9 +1054,43 @@ function spawnZombies(game, count) {
 
 function checkWaveEnd(game) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && game._zombieCount === 0) {
+    const prevRound = game.currentRound;
     game.currentRound++;
     game.zombiesSpawnedThisWave = 0;
     game.zombiesKilledThisWave = 0;
+    // GOLD AWARD: starting from wave 5, award (prevRound-4) gold
+    try {
+      if (prevRound >= 5 && game._lastAwardedRound !== prevRound) {
+        const bonus = prevRound - 4;
+        const users = loadUsers();
+        const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+        // Group sockets by account username to award once per account
+        const perUserSids = {};
+        for (const sid in game.players) {
+          try {
+            const auth = getSessionUsernameBySocketId(sid);
+            if (!auth) continue;
+            const key = normalizeKey(auth);
+            if (!perUserSids[key]) perUserSids[key] = { username: auth, sids: [] };
+            perUserSids[key].sids.push(sid);
+          } catch(_){}
+        }
+        for (const key in perUserSids) {
+          try {
+            const rec = users[key] || (users[key] = { username: perUserSids[key].username, createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+            rec.gold = (rec.gold|0) + bonus;
+            // emit to all sockets of this account if connected
+            if (socketsMap) {
+              for (const sid of perUserSids[key].sids) {
+                if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: rec.gold|0 }); } catch(_){ } }
+              }
+            }
+          } catch(_){}
+        }
+        saveUsers(users);
+        game._lastAwardedRound = prevRound;
+      }
+    } catch(_){ }
     const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
     game.totalZombiesToSpawn = Math.min(_nextTotal, MAX_ZOMBIES_PER_WAVE);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
@@ -1114,7 +1219,7 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
         const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
         game.players[sid] = {
           x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-          damage:15, speed:40, goldGain:10, regen:0,
+          damage:10, speed:40, goldGain:10, regen:0,
           lastShot:0, pseudo, kills:0, money:0, spectator:false
         };
       }
@@ -1130,7 +1235,7 @@ try {
       const y = cR * TILE_SIZE + TILE_SIZE/2;
       game.players[sid] = {
         x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-        damage:15, speed:40, goldGain:10, regen:0,
+        damage:10, speed:40, goldGain:10, regen:0,
         lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
         kills:0, money:0, spectator:false
       };
@@ -1142,15 +1247,19 @@ try {
 
 
   try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
-  io.to('lobby' + game.id).emit('gameStarted', { gameId: game.id,
-    map: game.map,
-    players: game.players,
-    round: game.currentRound,
-    structures: game.structures,
-    structurePrices: SHOP_BUILD_PRICES
-  });
-
-  io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
+  for (const sid in (game.players||{})) {
+    try {
+      const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
+      io.to(sid).emit('gameStarted', { gameId: game.id,
+        map: game.map,
+        players: pubPlayers,
+        round: game.currentRound,
+        structures: game.structures,
+        structurePrices: SHOP_BUILD_PRICES
+      });
+    } catch(_){}
+  }
+io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
   io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
 
   console.log(`---- Partie lancée : ${nbPlayers} joueur(s) dans la partie !`);
@@ -1309,15 +1418,19 @@ socket.on('clientPing', () => {});
       if (!text) return;
       if (text.length > 50) text = text.slice(0,50);
 
-      // cooldown
-      socket.__lastChatAt = socket.__lastChatAt || 0;
-      if (now - socket.__lastChatAt < 2000) {
-        try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - socket.__lastChatAt) }); } catch(_){}
-        return;
+      // cooldown per IP (2s)
+      {
+        const ip = getClientIP(socket) || 'unknown';
+        const last = chatLastByIp.get(ip) || 0;
+        if (now - last < 2000) {
+          try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - last) }); } catch(_){}
+          return;
+        }
+        chatLastByIp.set(ip, now);
       }
-      socket.__lastChatAt = now;
 
       // resolve pseudo
+
       let pseudo = 'player';
       try {
         const gid = socketToGame[socket.id];
@@ -1328,12 +1441,31 @@ socket.on('clientPing', () => {});
                 || 'player';
         }
       } catch(_){}
-      if ((!pseudo || pseudo === 'player') && payload && payload.name) {
+      if (!pseudo || pseudo === 'player') {
+        const lp = lastPseudoBySocket.get(socket.id);
+        if (lp) pseudo = lp;
+      }
+      
+      // Allow using client-provided display name ONLY as a fallback, sanitized,
+      // and without letting users impersonate registered accounts.
+      if ((!pseudo || pseudo === 'player') && payload && typeof payload.name === 'string') {
         try {
-          let n = String(payload.name).trim().slice(0,10);
-          n = n.replace(/[^a-zA-Z0-9]/g, '');
-          if (n) pseudo = n;
+          let candidate = sanitizeUsername(payload.name);
+          if (candidate) {
+            const sessUser = getSessionUsernameBySocketId(socket.id);
+            if (!isRegisteredUsername(candidate) || sessUser === candidate) {
+              pseudo = candidate;
+              try { lastPseudoBySocket.set(socket.id, candidate); } catch(_){}
+            }
+          }
         } catch(_){}
+      }
+if (!pseudo || pseudo === 'player') {
+        try {
+          const ip2 = getClientIP(socket) || '';
+          const h = require('crypto').createHash('md5').update(String(ip2||socket.id)).digest('hex').slice(0,4).toUpperCase();
+          pseudo = 'Guest' + h;
+        } catch(_){ pseudo = 'Guest'; }
       }
 
       
@@ -1399,7 +1531,16 @@ socket.on('clientPing', () => {});
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
     pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
-    if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+    
+      // Reserved username enforcement: if pseudo is a registered account, only the authenticated owner can use it
+      {
+        const sessUser = getSessionUsernameBySocketId(socket.id);
+        if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+          if (cb) cb({ ok:false, reason:'reserved' });
+          return;
+        }
+      }
+if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
 
 
 // Enforce limit: one manual lobby per public IP at the same time (as founder)
@@ -1422,6 +1563,8 @@ socket.on('clientPing', () => {});
     // Generate a host token for secure reclaim
     newGame.lobby.hostToken = crypto.randomBytes(16).toString('hex');
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
+    try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
+
 
     // Move socket room + mapping
     if (oldGame) { try { socket.leave('lobby' + oldGame.id); } catch(_){} }
@@ -1486,7 +1629,16 @@ socket.on('clientPing', () => {});
     let pseudo = (data && data.pseudo) || '';
     pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
-    if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+    
+      // Reserved username enforcement
+      {
+        const sessUser = getSessionUsernameBySocketId(socket.id);
+        if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+          if (cb) cb({ ok:false, reason:'reserved' });
+          return;
+        }
+      }
+if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
 
     const target = activeGames.find(g => g.id === targetId);
     if (!target || !target.lobby.manual || target.lobby.started) { if (cb) cb({ ok:false, reason:'not_joinable' }); return; }
@@ -1530,9 +1682,24 @@ socket.on('kickPlayer', (data, cb) => {
     const game = activeGames.find(g => g.id === gameId);
     if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) { if (cb) cb && cb({ ok:false, reason:'not_in_manual' }); return; }
     if (game.lobby.hostId !== socket.id) { if (cb) cb && cb({ ok:false, reason:'not_host' }); return; }
-    const targetId = data && data.targetId;
-    if (!targetId || targetId === socket.id) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+        // Resolve target; accept real socket.id or host-view aliases like 'p1','p2'
+    let targetId = data && data.targetId;
+    if (!targetId) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+    if (targetId === socket.id) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+    if (typeof targetId === 'string') {
+      const m = targetId.match(/^p(\d+)$/);
+      if (m) {
+        try {
+          const idx = Math.max(0, parseInt(m[1], 10) - 1);
+          const otherIds = Object.keys(game.lobby.players).filter(id => id !== socket.id);
+          if (otherIds[idx]) targetId = otherIds[idx];
+        } catch(_){}
+      } else if (targetId === 'host') {
+        if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return;
+      }
+    }
     if (!game.lobby.players[targetId]) { if (cb) cb && cb({ ok:false, reason:'not_in_lobby' }); return; }
+
 
     // compute IP of target socket
     const targetSock = io.sockets.sockets.get(targetId);
@@ -1661,9 +1828,19 @@ socket.on('skipRound', () => {
   pseudo = (pseudo || '').trim().substring(0, 10);
   pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
   if (!pseudo) pseudo = 'Joueur';
-  if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'pseudo_taken' }); } catch(_) {} return; }
+  
+    // Reserved username enforcement
+    {
+      const sessUser = getSessionUsernameBySocketId(socket.id);
+      if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+        try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'reserved' }); } catch(_){}
+        return;
+      }
+    }
+if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'pseudo_taken' }); } catch(_) {} return; }
 
   game.lobby.players[socket.id] = { pseudo, ready: true };
+  try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
   broadcastLobby(game);
   if (!game.lobby.manual) {
   try {
@@ -1690,7 +1867,17 @@ socket.on('renamePseudo', (data, cb) => {
       return;
     }
 
-    if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_taken' }); } catch(_){} try { io.to(socket.id).emit('renameResult', { ok:false, reason:'pseudo_taken' }); } catch(_){} return; }
+    
+    // Reserved username enforcement
+    {
+      const sessUser = getSessionUsernameBySocketId(socket.id);
+      if (isRegisteredUsername(p) && normalizeKey(sessUser||'') !== normalizeKey(p)) {
+        try { if (cb) cb({ ok:false, reason:'reserved' }); } catch(_){}
+        try { io.to(socket.id).emit('renameResult', { ok:false, reason:'reserved' }); } catch(_){}
+        return;
+      }
+    }
+if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_taken' }); } catch(_){} try { io.to(socket.id).emit('renameResult', { ok:false, reason:'pseudo_taken' }); } catch(_){} return; }
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g && g.id === gid);
 
@@ -1698,6 +1885,8 @@ socket.on('renamePseudo', (data, cb) => {
       // Update pseudo in both lobby roster and active players if present
       try { if (game.lobby && game.lobby.players && game.lobby.players[socket.id]) game.lobby.players[socket.id].pseudo = p; } catch(_){}
       try { if (game.players && game.players[socket.id]) game.players[socket.id].pseudo = p; } catch(_){}
+      try { lastPseudoBySocket.set(socket.id, p); } catch(_){ }
+
       // Notify lobby UIs
       try { broadcastLobby(game); } catch(_){}
       // Also refresh health/name overlays for clients already in-game
@@ -1740,6 +1929,8 @@ socket.on('renamePseudo', (data, cb) => {
 
   
   socket.on('disconnect', () => {
+    try { lastPseudoBySocket.delete(socket.id); } catch(_){}
+
     console.log('[DISCONNECT]', socket.id);
 
     // Try to resolve the game from mapping
@@ -2099,17 +2290,22 @@ socket.on('killAllZombies', () => {
 
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
-  const base = { maxHp: 100, speed: 40, regen: 0, damage: 15, goldGain: 10 }; // regen à 0 pour éviter la confusion
+  const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
-  return {
+  const acc = (player && player.accountShop) || {hp:0,dmg:0};
+  const baseStats = {
     maxHp: Math.round(base.maxHp * Math.pow(1.1, u.maxHp || 0)),
     speed: +(base.speed * Math.pow(1.1, u.speed || 0)).toFixed(1),
     regen, // hp/s
     damage: Math.round(base.damage * Math.pow(1.1, u.damage || 0)),
     goldGain: Math.round(base.goldGain * Math.pow(1.1, u.goldGain || 0)),
   };
+  // Apply account-level additive bonuses
+  baseStats.maxHp += (acc.hp|0) * 1;
+  baseStats.damage += (acc.dmg|0) * 1;
+  return baseStats;
 }
 
 
@@ -3065,7 +3261,7 @@ function stepOnce(dt) {
           io.to(sid).volatile.emit('stateUpdate', {
             zombies: zSnap,
             bullets: bSnap,
-            playersHealth: phSnap,
+            playersHealth: buildPublicMapForRecipient(sid, phSnap, (game.lobby && game.lobby.hostId) || null),
             round: game.currentRound
           });
           game._lastNetSend[sid] = now;
@@ -3181,6 +3377,8 @@ function sanitizeUsername(u) {
 }
 function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
 
+
+function isRegisteredUsername(name){ try { const users = loadUsers(); return !!users[normalizeKey(String(name||''))]; } catch(_){ return false; } }
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   const iterations = 120000;
@@ -3215,13 +3413,43 @@ function parseCookies(req) {
   return out;
 }
 
-const sessions = new Map(); // token -> { username, createdAt }
+const sessions = new Map();
 const SESSION_MAX_AGE_MS = 7*24*60*60*1000;
 function createSession(username) {
   const token = crypto.randomBytes(24).toString('hex');
   sessions.set(token, { username, createdAt: Date.now() });
   return token;
 }
+
+
+function getSessionUsernameBySocketId(sid){
+  try {
+    // Fast path: explicit link
+    const sock = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets.get(sid) : null;
+    if (sock && typeof sock.__accountUser === 'string') return sock.__accountUser;
+    if (!sock) return null;
+    const header = (sock.request && sock.request.headers && sock.request.headers.cookie) ? sock.request.headers.cookie
+                  : (sock.handshake && sock.handshake.headers && sock.handshake.headers.cookie) ? sock.handshake.headers.cookie
+                  : '';
+    if (!header) return null;
+    const parts = header.split(';');
+    let token = '';
+    for (const part of parts){
+      const i = part.indexOf('=');
+      const k = (i>-1?part.slice(0,i):part).trim();
+      const v = (i>-1?part.slice(i+1):'').trim();
+      if (k === 'auth') { token = decodeURIComponent(v); break; }
+    }
+    if (!token) return null;
+    const sObj = sessions.get(token);
+    if (!sObj) return null;
+    if ((Date.now() - sObj.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return sObj.username || null;
+  } catch(_){ return null; }
+}
+
+
+
 function getSessionUsernameByReq(req){
   try {
     const cookies = parseCookies(req);
@@ -3234,10 +3462,33 @@ function getSessionUsernameByReq(req){
   } catch(_){ return null; }
 }
 function setAuthCookie(res, token){
-  try { res.setHeader('Set-Cookie', `auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS/1000)}; Secure`); } catch(_){}
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
+    const parts = [
+      `auth=${token}`,
+      'Path=/',
+      'HttpOnly',
+      `Max-Age=${maxAge}`,
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
 }
 function clearAuthCookie(res){
-  try { res.setHeader('Set-Cookie', 'auth=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax; Secure'); } catch(_){}
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const parts = [
+      'auth=',
+      'Path=/',
+      'HttpOnly',
+      'Max-Age=0',
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
 }
 setInterval(()=>{
   try {
@@ -3388,14 +3639,48 @@ app.get('/api/username-taken', (req,res)=>{
 app.get('/api/me', (req,res)=>{
   try {
     const u = getSessionUsernameByReq(req);
-    if (u) return res.json({ ok:true, username: u });
+    if (u) {
+      const users = loadUsers(); const key = normalizeKey(u); const rec = users[key] || {}; const gold = rec.gold|0; const shopUpgrades = Object.assign({hp:0,dmg:0}, rec.shopUpgrades||{});
+      return res.json({ ok:true, username: u, gold, shopUpgrades });
+    }
     return res.json({ ok:false });
   } catch(e){ return res.json({ ok:false }); }
 });
 
 /* signup */
-app.post('/api/signup', (req,res)=>{
+
+// === Simple in-memory rate limiter (per-IP, per-key) ===
+const __rateBuckets = new Map();
+/**
+ * rateLimitAllow(ip, key, max, windowMs) -> { ok: boolean, retryAfterMs: number }
+ */
+function rateLimitAllow(ip, key, max, windowMs) {
   try {
+    const now = Date.now();
+    const mapKey = String(ip||'') + '|' + String(key||'');
+    let b = __rateBuckets.get(mapKey);
+    if (!b || now >= b.resetAt) {
+      b = { count: 1, resetAt: now + windowMs };
+      __rateBuckets.set(mapKey, b);
+      return { ok: true, retryAfterMs: 0 };
+    }
+    if (b.count < max) {
+      b.count++;
+      return { ok: true, retryAfterMs: 0 };
+    }
+    return { ok: false, retryAfterMs: Math.max(0, b.resetAt - now) };
+  } catch(_) { return { ok: true, retryAfterMs: 0 }; }
+}
+// Periodic cleanup to avoid unbounded growth
+setInterval(()=>{ 
+  try { 
+    const now = Date.now();
+    for (const [k,v] of __rateBuckets) { if (!v || now >= v.resetAt) __rateBuckets.delete(k); }
+  } catch(_){}
+}, 10*60*1000);
+
+app.post('/api/signup', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
     ensureUsersFile();
     const { username, password } = req.body || {};
     const user = sanitizeUsername(username);
@@ -3405,15 +3690,30 @@ app.post('/api/signup', (req,res)=>{
     const users = loadUsers();
     const key = normalizeKey(user);
     if (users[key]) return res.status(409).json({ ok:false, code:'exists' });
-    users[key] = { username: user, usernameLower: key, passHash: hashPassword(pass), createdAt: Date.now() };
+    users[key] = { username: user, usernameLower: key, passHash: hashPassword(pass), createdAt: Date.now(), gold: 0, shopUpgrades: { hp:0, dmg:0 } };
     if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
     return res.json({ ok:true });
   } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
 
 /* login */
-app.post('/api/login', (req,res)=>{
+
+// === Basic CSRF protection for authenticated POSTs ===
+function passesCsrf(req){
   try {
+    const host = String((req.headers && req.headers.host) || '').toLowerCase();
+    const origin = String((req.headers && req.headers.origin) || '').toLowerCase();
+    const referer = String((req.headers && req.headers.referer) || '').toLowerCase();
+    const allowList = new Set(String(process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+    if (host) { allowList.add('http://' + host); allowList.add('https://' + host); }
+    if (origin) return allowList.has(origin);
+    if (referer) { for (const a of allowList) { if (referer === a || referer.startsWith(a + '/')) return true; } }
+    return false;
+  } catch(_){ return false; }
+}
+
+app.post('/api/login', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
     const { username, password } = req.body || {};
     const user = sanitizeUsername(username);
     const pass = String(password || '');
@@ -3428,7 +3728,8 @@ app.post('/api/login', (req,res)=>{
 
 /* logout */
 app.post('/api/logout', (req,res)=>{
-  try {
+    if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
     const token = (parseCookies(req)['auth'] || '');
     if (token) { try { sessions.delete(token); } catch(_){ } }
     clearAuthCookie(res);
@@ -3438,7 +3739,9 @@ app.post('/api/logout', (req,res)=>{
 
 /* change password (requires login) */
 app.post('/api/change-password', (req,res)=>{
-  try {
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
     const uname = getSessionUsernameByReq(req);
     if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
     const { currentPassword, newPassword } = req.body || {};
@@ -3454,4 +3757,29 @@ app.post('/api/change-password', (req,res)=>{
     clearAuthCookie(res);
     return res.json({ ok:true });
   } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* shop buy (requires login) */
+app.post('/api/shop/buy', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { type } = req.body || {};
+    if (type !== 'hp' && type !== 'dmg') return res.status(400).json({ ok:false, code:'bad_request' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const rec = users[key] || (users[key]={ username: uname, usernameLower:key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+    const price = (type === 'hp') ? 5 :  200;
+    const maxLv = (type === 'hp') ? 200 :  20;
+    const lv = (rec.shopUpgrades && rec.shopUpgrades[type]|0) || 0;
+    if (lv >= maxLv) return res.json({ ok:false, code:'max_level' });
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+    rec.shopUpgrades = rec.shopUpgrades || { hp:0, dmg:0 };
+    rec.shopUpgrades[type] = lv + 1;
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+  } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
 });

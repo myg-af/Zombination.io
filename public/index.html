@@ -32,7 +32,7 @@
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
     #btnJoinLobbyList[disabled], #btnCreateLobby[disabled] { opacity: 0.6; cursor: not-allowed; }
     
-    #btnLadder[disabled], #btnLogin[disabled], #btnSignup[disabled], #btnLogout[disabled], #btnSettings[disabled] { opacity: 0.6; cursor: not-allowed; }
+    #btnLadder[disabled], #btnLogin[disabled], #btnSignup[disabled], #btnLogout[disabled], #btnSettings[disabled], #btnAccountShop[disabled] { opacity: 0.6; cursor: not-allowed; }
 #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
@@ -430,6 +430,49 @@ body.menu-hide-ui #fpsCounter,
 
 </head>
 <body>
+<!-- top-message helper -->
+<script>
+(function(){
+  try {
+    if (window.showTopMessage) return;
+    window.showTopMessage = function(msg, duration){
+      try {
+        var DUR = (typeof duration === 'number' && duration >= 0) ? duration : 2000;
+        var id = 'topMsgBanner';
+        var el = document.getElementById(id);
+        if (!el) {
+          el = document.createElement('div');
+          el.id = id;
+          el.setAttribute('role', 'alert');
+          el.setAttribute('aria-live', 'assertive');
+          el.style.position = 'fixed';
+          el.style.top = '10px';
+          el.style.left = '50%';
+          el.style.transform = 'translateX(-50%)';
+          el.style.zIndex = '99999';
+          el.style.background = 'rgba(20,20,20,0.92)';
+          el.style.color = '#fff';
+          el.style.padding = '10px 14px';
+          el.style.borderRadius = '10px';
+          el.style.boxShadow = '0 8px 22px rgba(0,0,0,0.35)';
+          el.style.fontFamily = 'inherit';
+          el.style.fontSize = '14px';
+          el.style.pointerEvents = 'none';
+          el.style.display = 'none';
+          document.body.appendChild(el);
+        }
+        el.textContent = (msg == null ? '' : String(msg));
+        el.style.display = 'block';
+        clearTimeout(el.__hideTimer);
+        el.__hideTimer = setTimeout(function(){
+          try { el.style.display = 'none'; } catch(_){}
+        }, DUR);
+      } catch(_){}
+    };
+  } catch(_){}
+})();
+</script>
+
 <script>
   // Default UI scale: mobile x4, desktop x1 (can be overridden by setting window.__uiScale before)
   (function(){
@@ -448,6 +491,7 @@ body.menu-hide-ui #fpsCounter,
 <canvas id="gameCanvas"></canvas>
 <div id="hudStats">
 <div id="hudAlive"></div>
+<div id="hudGold"></div>
 <div id="hudMoney"></div>
 <div id="hudZombies"></div>
 <div id="hudKills"></div>
@@ -507,9 +551,29 @@ body.menu-hide-ui #fpsCounter,
 <button id="btnJoinLobbyList" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Join lobby</button>
 <button id="btnCreateLobby" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;">Create lobby</button>
 </div>
-<!-- Ladder button (same size as main buttons, violet) -->
-<div id="ladderBtnRow" style="display:flex; justify-content:center; margin-top:8px;">
-  <button id="btnLadder" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#7a3df0; color:#fff; cursor:pointer; margin-top:7px;">Ladder</button>
+
+        <!-- Shop panel (hidden by default) -->
+        <div id="shopPanel" style="display:none; margin-top:12px;">
+          <div style="text-align:center; font-weight:600; margin-bottom:6px;">
+            <span id="shopPanelTitle">Shop</span>
+          </div>
+          <div id="shopPanelContent" style="display:block; overflow-y:auto; max-height: calc(60vh - 120px); padding-right: 6px;"></div>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+            <button id="btnBackFromShop" style="padding: 8px 14px; border:none; border-radius:6px; cursor:pointer; background: #666; color: white;">Back</button>
+          </div>
+          <div id="shopLobbyBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
+            <button id="shopSoloBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
+            <button id="shopJoinLobbyListBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
+            <button id="shopCreateLobbyBtn" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#49c749; color:#fff; cursor:pointer; margin-top:7px;"></button>
+</div>
+
+        </div>
+
+        <!--
+        <!-- Ladder button (same size as main buttons, violet) -->
+<div id="ladderBtnRow" style="display:flex; justify-content:center; gap:10px; margin-top:8px;">
+  <button id="btnLadder" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#8a70f0; color:#fff; cursor:pointer; margin-top:7px; pointer-events:auto; position:relative; z-index:10">Ladder</button>
+  <button id="btnAccountShop" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#ff8800; color:#fff; cursor:pointer; margin-top:7px; pointer-events:auto; position:relative; z-index:10">Shop</button>
 </div>
 <br/>
 <div id="authBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
@@ -615,6 +679,7 @@ window.lastPlayerAngle = {};
 window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
+
 const socket = io({ transports: ['polling','websocket'] });
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
@@ -635,26 +700,21 @@ socket.on("connect", () => {
         try { console.log('[reclaimHost]', res); } catch(_) {}
       });
     }
+  } catch(_) {}
 
   // Try to reclaim previous lobby seat (non-host) if we have a saved lobby id + pseudo
   try {
     var __last_gid = 0, __last_pseudo = '';
     try { __last_gid = Number(localStorage.getItem('zombi_last_gid') || '0'); } catch(_){}
     try { __last_pseudo = String(localStorage.getItem('zombi_pseudo') || '').trim(); } catch(_){ }
-if (__last_gid && __last_pseudo) {
+    if (__last_gid && __last_pseudo) {
       socket.emit('reclaimPlayer', { gameId: __last_gid, pseudo: __last_pseudo }, function(res){
         try { console.log('[reclaimPlayer]', res); } catch(_){}
       });
     }
   } catch(_) {}
-  } catch (_) {}
 });
-socket.on("disconnect", (reason) => {
-  console.warn("❌ Déconnecté du serveur. Raison:", reason);
-});
-socket.on("connect_error", (err) => {
-  console.error("⚠️ Erreur de connexion à Socket.IO:", err);
-});
+
 // Global guards to prevent any crash from bubbling up and blanking the page
 window.addEventListener('error', function(e){ try { console.error('Global error:', e && e.message, e); } catch(_){} });
 window.addEventListener('unhandledrejection', function(e){ try { console.error('Unhandled rejection:', e && e.reason); } catch(_){} });
@@ -692,6 +752,50 @@ socket.on("lobbyUpdate", (data) => {
 
 socket.emit("requestLobbyState");
 console.log("📤 [SOCKET] Emit requestLobbyState");
+
+/* Inline Kick handler — ultra robust, no dependency on re-renders */
+(function(){
+  try {
+    if (window.__kickBtn) return;
+    window.__kickBtn = function(btn, ev){
+      try {
+        if (!btn) return;
+        try{ if(ev){ if(ev.preventDefault) ev.preventDefault(); if(ev.stopPropagation) ev.stopPropagation(); } }catch(_){ }
+        var targetId = btn.getAttribute('data-target');
+        console.log('[KICK] Click inline → targetId=', targetId);
+        if (!targetId || targetId === 'host') return;
+        var ld = (window.lobbyData || {});
+        var amHost = !!(ld && ld.manual && !ld.started && ld.hostId && window.socket && window.socket.id && ld.hostId === socket.id);
+        if (!amHost) { return; }
+        if (targetId === socket.id) return;
+        if (btn.__kicking) return;
+        btn.__kicking = true;
+        btn.disabled = true;
+        try {
+          socket.emit('kickPlayer', { targetId: targetId }, function(res){
+            try {
+              if (!res || !res.ok) {
+                btn.__kicking = false;
+                btn.disabled = false;
+                try {
+                  var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+                  var msg = tr.actionImpossible || 'Action impossible.';
+                  console.warn('[KICK] Refusé:', res && res.reason);
+                  showTopMessage(msg + (res && res.reason ? (' [' + res.reason + ']') : ''));
+                } catch(_){}
+              } else {
+                console.log('[KICK] Émis et accepté, mise à jour via lobbyUpdate.');
+              }
+            } catch(_){}
+          });
+        } catch(_){
+          btn.__kicking = false;
+          btn.disabled = false;
+        }
+      } catch(_){}
+    };
+  } catch(_){}
+})();
 
 // JOIN BUTTON
 if (lobbyJoin) {
@@ -1591,6 +1695,7 @@ function centerCameraOn(x, y){
     const hudKills = document.getElementById('hudKills');
     const hudRound = document.getElementById('hudRound');
     const hudHP = document.getElementById('hudHP');
+	const hudGold = document.getElementById('hudGold');
 	const hudMoney = document.getElementById('hudMoney');
 	let myMoney = 0;
 	
@@ -1601,7 +1706,7 @@ const UPGRADES = [
     label: "+10% Vie max",
     desc: "Augmente les PV max.",
     icon: "/icons/heart.svg",
-    getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
+    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.hp|0))*1); },
     baseValue: 100,
     statLabel: "PV max",
     format: v => v + " PV"
@@ -1634,14 +1739,14 @@ const UPGRADES = [
     label: "+10% Dégâts",
     desc: "Tire plus fort.",
     icon: "/icons/bullet.svg",
-    getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
-    baseValue: 15,
+    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.dmg|0))*1); },
+    baseValue: 10,
     statLabel: "Dégâts",
     format: v => v
   },
   {
     id: "goldGain",
-    label: "+10% d'or gagné",
+    label: "+10% d'argent gagné",
     desc: "Gagne plus d’or sur les zombies.",
     icon: "/icons/gold.svg",
     getValue: (base, level) => Math.round(base * Math.pow(1.1, level)),
@@ -1654,6 +1759,9 @@ const UPGRADES = [
     }
   }
 ];
+
+// Ensure account-level shop bonuses are available client-side
+window.accountShop = window.accountShop || { hp: 0, dmg: 0 };
 
 	// Niveau des upgrades du joueur local (simulé pour l’instant)
 	let myUpgrades = {
@@ -1785,7 +1893,7 @@ function structAtWorld(x, y) {
 }
 function isSolidForZombieClient(struct) {
   // pour la ligne de vue côté client : tout ce qui a des PV bloque
-  return struct && struct.hp > 0; // B, D, T…
+  return struct && struct.hp > 0; // B, D, T...
 }
 function losBlockedForZombieClient(x0, y0, x1, y1) {
   // Échantillonnage plus grossier (≈ 1 pas par tuile) : bien plus léger en rafale
@@ -3185,7 +3293,30 @@ function drawHUD() {
   hudHP.textContent = me && me.maxHealth
     ? `${tr.health}: ${Math.round(me.health)} / ${me.maxHealth}`
     : `${tr.health}: ${Math.round(me ? me.health : 0)}`;
+
+  // Gold line (account-level), only when logged in
+  try {
+    if (window.__meOk === true && hudGold) {
+      const pack = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+      hudGold.style.display = '';
+      hudGold.textContent = `${pack.gold || 'Gold'} : ${String((window.accountGold|0))}`;
+    } else if (hudGold) {
+      hudGold.style.display = 'none';
+    }
+  } catch(_){}
 }
+
+  // Gold line (account-level), only when logged in
+  try {
+    if (window.__meOk === true && hudGold) {
+      const pack = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
+      hudGold.style.display = '';
+      hudGold.textContent = `${pack.gold || 'Gold'} : ${String((window.accountGold|0))}`;
+    } else if (hudGold) {
+      hudGold.style.display = 'none';
+    }
+  } catch(_){}
+
 
     function showDeathScreen(kills = myKills, round = currentRound) {
       const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
@@ -3494,7 +3625,7 @@ socket.on('zombieDied', () => {
 socket.on('upgradeUpdate', ({ myUpgrades: u, myMoney: m }) => {
   if (u) myUpgrades = u;
   if (typeof m === 'number') myMoney = m;
-  renderShopUpgrades();
+   try { window.myMoney = m; } catch(_){ } renderShopUpgrades();
   drawHUD();
   updateBuildTilesState();
 try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(e){}
@@ -3934,6 +4065,8 @@ function getUpgText(upg, field){
   } catch(e){ return (upg && upg[field]) || ''; }
 }
 function renderShopUpgrades() {
+  const _money = Number((typeof window !== 'undefined' && window._money != null) ? window._money : 0);
+
   if (!window.myTurretUp || typeof myTurretUp !== 'object') { window.myTurretUp = {}; }
   const el = document.getElementById('shopUpgrades');
   el.innerHTML = "";
@@ -3973,7 +4106,7 @@ function renderShopUpgrades() {
     const dmgNext = computeTurretDamageDisplay(td.type);
     myTurretUp[td.type] = tmp;
 
-    const disabled = myMoney < price;
+    const disabled = _money < price;
     
 
     el.innerHTML += `
@@ -4011,7 +4144,7 @@ function renderShopUpgrades() {
     const price = getUpgradePrice(lvl + 1);
     const value = upg.getValue(upg.baseValue, lvl);
     const nextValue = upg.getValue(upg.baseValue, lvl + 1);
-    const disabled = myMoney < price;
+    const disabled = _money < price;
 
     let __label = getUpgText(upg,'label');
     try {
@@ -4237,6 +4370,8 @@ try {
   if (_settings) _settings.disabled = inLobby;
   var _logout = document.getElementById('btnLogout');
   if (_logout) _logout.disabled = inLobby;
+  var _shop = document.getElementById('btnAccountShop');
+  if (_shop) _shop.disabled = inLobby;
 } catch(_){}
 
     // Disable chat 'Send' when no pseudo
@@ -4363,7 +4498,7 @@ if (btnCreate) {
           } catch(err) {
             console.error('createLobby callback error', err);
 } finally {
-            try { btnCreate.disabled = true; } catch(_) {}
+            try { btnCreate.disabled = false; } catch(_) {}
           }
         });
       } catch(err) {
@@ -4538,9 +4673,9 @@ function renderManualPlayers() {
         const sid = entries[i][0];
         const p = entries[i][1] || {};
         const name = (p && p.pseudo) ? p.pseudo : '';
-        const canKick = isHost && sid !== socket.id; // host cannot kick self
+        const canKick = isHost && sid !== socket.id && sid !== "host"; // host cannot kick self
         let inner = '<div style="display:flex;align-items:center;gap:8px;">'
-                    + '<span>' + (name || '') + '</span>' + (((window.lobbyData && window.lobbyData.hostId === sid) || (!window.lobbyData?.hostId && entries && entries.length === 1 && window.socket && sid === window.socket.id)) ? '<span class="host-crown" title="Host" aria-label="Host" style="margin-left:6px">👑</span>' : '' )+ (canKick ? '<button class="kick-btn" data-target="' + sid + '" style="padding:4px 8px;font-size:12px;cursor:pointer;background:#b00020;color:#fff;border:none;border-radius:4px;margin-left:auto;">'+kickTxt+'</button>' : '')
+                    + '<span>' + (name || '') + '</span>' + (((window.lobbyData && window.lobbyData.hostId === sid) || (!window.lobbyData?.hostId && entries && entries.length === 1 && window.socket && sid === window.socket.id)) ? '<span class="host-crown" title="Host" aria-label="Host" style="margin-left:6px">👑</span>' : '' )+ (canKick ? '<button class="kick-btn" onclick="__kickBtn(this,event)" type="button" data-target="' + sid + '" style="padding:4px 8px;font-size:12px;cursor:pointer;background:#b00020;color:#fff;border:none;border-radius:4px;margin-left:auto;">'+kickTxt+'</button>' : '')
                     + '</div>';
         cells.push({ inner, empty:false });
       } else {
@@ -4567,7 +4702,8 @@ function renderManualPlayers() {
     if (container) container.innerHTML = html;
   } catch(e) {}
 
-  try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(_){}
+    // Robust: delegate click for Kick buttons (global, works across re-renders)
+    try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(_){}
 }  function safe(fn){ try{ fn(); }catch(e){} }
 
   // Hide legacy timer/status elements globally
@@ -4795,6 +4931,7 @@ function renderManualPlayers() {
         if (!btn) return;
         if (!window.socket) return;
         var targetId = btn.getAttribute('data-target');
+            console.log('[KICK] Click sur bouton rouge → targetId=', targetId);
         if (!targetId) return;
         // Only host will see the button; server will re-check permissions
         try { socket.emit('kickPlayer', { targetId: targetId }); } catch(e){}
@@ -4807,7 +4944,12 @@ function renderManualPlayers() {
       
           
           socket.on('kicked', function(info){
-            // Force back to main menu without relying on local-scope functions
+            
+            // Ensure browser can show native dialogs immediately
+            try { if (document.fullscreenElement) { document.exitFullscreen().catch(function(){}); } } catch(_){}
+            try { if (document.pointerLockElement && document.exitPointerLock) { document.exitPointerLock(); } } catch(_){}
+            try { var ae = document.activeElement; if (ae && ae.blur) ae.blur(); } catch(_){}
+// Force back to main menu without relying on local-scope functions
             try {
               var panel = document.getElementById('manualLobbyPanel');
               if (panel) panel.style.display = 'none';
@@ -4831,8 +4973,7 @@ function renderManualPlayers() {
               var tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang] || TRANSLATIONS['en'])) || {};
               var wait = (info && info.until && info.until > Date.now()) ? Math.ceil((info.until - Date.now())/1000) : 30;
               var msg = (tr && tr.kickedMsg) ? tr.kickedMsg.replace('{s}', String(wait)) : ('You were kicked. You can rejoin in ~' + wait + 's.');
-              alert(msg);
-            } catch(_){}
+              try { setTimeout(function(){ showTopMessage(msg); }, 0); } catch(_){ }try { if (typeof showModal === 'function') showModal('kicked', { message: msg }); } catch(_){ }} catch(_){}
           });
 }
   } catch(e){}
@@ -5237,8 +5378,8 @@ function renderManualPlayers() {
 function __alertPseudoTaken(){
   try {
     var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-    alert(tr.pseudoTaken || 'Nickname already in use.');
-  } catch(_) { alert('Nickname already in use.'); }
+    showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
+  } catch(_) { showTopMessage('Nickname already in use.'); }
 }
 </script>
 
@@ -5252,7 +5393,7 @@ function __alertPseudoTaken(){
         try{
           if (e && e.type === 'pseudo_taken') {
             var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-            alert(tr.pseudoTaken || 'Nickname already in use.');
+            showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
           }
         }catch(_){}
       });
@@ -5275,7 +5416,7 @@ function __alertPseudoTaken(){
         try{
           if (e && e.type === 'pseudo_taken') {
             var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-            alert(tr.pseudoTaken || 'Nickname already in use.');
+            showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
           }
         }catch(_){}
       });
@@ -5374,6 +5515,7 @@ function __alertPseudoTaken(){
   const btnSettings = document.getElementById('btnSettings');
   const modal = document.getElementById('authModal');
   const overlay = document.getElementById('authModalOverlay');
+  const btnShop = document.getElementById('btnAccountShop');
   const modalTitle = document.getElementById('authModalTitle');
   const modalBody = document.getElementById('authModalBody');
   const btnCancel = document.getElementById('authCancel');
@@ -5407,8 +5549,8 @@ function __alertPseudoTaken(){
         if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled();
       }
     } catch(_){}
-    loggedUser = loggedIn ? (username || '') : null;
-    validatePseudoBlocking(); // re-validate
+    loggedUser = loggedIn ? (username || '') : null; try{ window.loggedUser = loggedIn ? (username||'') : null; }catch(_){}
+     try{ window.__meOk = !!loggedIn; }catch(_){ } validatePseudoBlocking(); // re-validate
   }
 
   function updateAuthTexts(){
@@ -5437,19 +5579,22 @@ function __alertPseudoTaken(){
     } catch(_){}
   }, 0);
 
-  function showModal(kind){
+  function showModal(kind, payload){
     overlay.style.display = 'flex';
     modal.style.display = 'flex';
-    if (kind === 'login') {
+if (kind === 'login') {
       modalTitle.textContent = trAuth('login','Log in');
-      modalBody.innerHTML = ''
+      var __shopHtml = ''
         + '<div style="display:flex;flex-direction:column;gap:8px;">'
         + '  <label>' + trAuth('username','Username') + '</label>'
         + '  <input id="authUser" maxlength="10" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '  <label>' + trAuth('password','Password') + '</label>'
         + '  <input id="authPass" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '</div>';
+      modalBody.innerHTML = __shopHtml;
+      
       btnSubmit.onclick = doLogin;
+      btnSubmit.style.display = '';
     } else if (kind === 'signup') {
       modalTitle.textContent = trAuth('signup','Sign up');
       modalBody.innerHTML = ''
@@ -5462,6 +5607,81 @@ function __alertPseudoTaken(){
         + '  <input id="authPass2" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '</div>';
       btnSubmit.onclick = doSignup;
+      btnSubmit.style.display = '';
+
+    } else if (kind === 'shop') {
+      // Shop content inside auth modal
+      modalTitle.textContent = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])||{}).shopMain || 'Shop';
+      // Initial placeholder while fetching
+      if (!document.getElementById('shopUpgradesLobby')) { modalBody.innerHTML = '<div style="padding:8px;color:#9ab;">Loading...</div>'; }
+      btnSubmit.style.display = 'none';
+      btnCancel.textContent = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])||{}).cancel || 'Close';
+      (async function(){
+        try{
+          const r = await fetch('/api/me', { credentials:'include' });
+          const j = await r.json();
+          const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+          if (!j || !j.ok) { try{ showTopMessage((T.needLoginShop || 'You must be logged in to access the shop.')); }catch(_){} try{ overlay.style.display='none'; modal.style.display='none'; }catch(_){} return; }
+          const gold = j.gold|0;
+          try { window.myMoney = gold; } catch(_){ }
+      const up = Object.assign({hp:0,dmg:0}, j.shopUpgrades||{});
+          
+            try { window.accountShop = up; } catch(_){}
+            try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+    const hpLv = up.hp|0, dmgLv = up.dmg|0;
+          const hpMax = 200, dmgMax = 20, HP_PRICE = 5, DMG_PRICE = 200;
+          function item(id, title, desc, level, max, price){
+            const disabled = level>=max || gold < price;
+            const note = (level>=max) ? '<div style="color:#9ab; font-size:12px;">'+(T.maxLevel||'Max level reached')+'</div>' : '';
+            return (
+              '<div style="display:flex;align-items:center;gap:12px;background:#232834;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
+            + '  <div id="badge-' + id + '" style="width:40px;height:40px;border-radius:10px;background:#ffa00022;border:2px solid #ffb300;display:flex;align-items:center;justify-content:center;font-weight:700;">' + (id==='hp' ? (100 + (level|0)*1) : (10 + (level|0)*1)) + '</div>'
+            + '  <div style="flex:1;">'
+            + '    <div style="font-size:17px;font-weight:700;">'+title+'</div>'
+            + '    <div style="color:#9ab;font-size:13px;">'+desc+'</div>'
+            + '    <div style="margin-top:6px;font-size:14px;">'+(T.level||'Level')+': <b>'+level+'</b> / '+max+'</div>'
+            + '  </div>'
+            + '  <div style=\"display:flex;flex-direction:column;align-items:center;gap:6px;min-width:160px;width:160px;\">'
+            + '    <div style="font-size:14px;">'+(T.price||'Price')+': <b>'+price+'</b> '+(T.gold||'Gold')+'</div>'
+            + '    <button data-shop-buy="'+id+'" style="padding:8px 12px;border:none;border-radius:10px;background:'+(disabled?'#444':'#ff8800')+';color:#fff;cursor:'+(disabled?'not-allowed':'pointer')+';" '+(disabled?'disabled':'')+'>'+(T.buy||'Buy')+'</button>'
+            +       note
+            + '  </div>'
+            + '</div>'
+            );
+          }
+          const hpTitle = T.hpUpgTitle || 'HP +1';
+          const hpDesc  = T.hpUpgDesc  || 'Start each game with +1 HP per level (up to +200).';
+          const dmgTitle= T.dmgUpgTitle|| 'Damage +1';
+          const dmgDesc = T.dmgUpgDesc || 'Start each game with +1 damage per level (up to +20).';
+          modalBody.innerHTML = ''
+            + '<div style="margin-bottom:8px;"><b>'+(T.gold||'Gold')+'</b>: <span id="shopGoldVal">'+gold+'</span></div>'
+            + item('hp', hpTitle, hpDesc, hpLv, hpMax, HP_PRICE)
+            + item('dmg', dmgTitle, dmgDesc, dmgLv, dmgMax, DMG_PRICE)
+            + '<div style="margin-top:10px; font-size:12px; color:#9ab;">'+(T.goldHowTo||'Earn gold by clearing waves 5+ (wave 5=+1, 6=+2, etc.).')+'</div>';
+          
+          var __wrapM = document.getElementById('shopUpgradesLobby');
+          if (__wrapM) { __wrapM.innerHTML = __shopHtml; } else { modalBody.innerHTML = '<div id="shopUpgradesLobby">' + __shopHtml + '</div>'; }
+// Bind buys (inside modal)
+          Array.prototype.slice.call(modalBody.querySelectorAll('[data-shop-buy]')).forEach(function(btn){
+            btn.addEventListener('click', async function(){
+              const type = this.getAttribute('data-shop-buy');
+              try{
+                const r = await fetch('/api/shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
+                const jj = await r.json();
+                if (jj && jj.ok){
+                  // refresh view in-place
+                  (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0));
+                } else {
+                  if (jj && jj.code === 'not_enough_gold') showTopMessage(T.notEnoughGold||'Not enough gold.');
+                  else if (jj && jj.code === 'max_level') showTopMessage(T.maxLevel||'Max level reached');
+                  else showTopMessage(T.actionImpossible||'Action impossible.');
+                }
+              }catch(_){ showTopMessage('Shop not available.'); }
+            }, { passive:false });
+          });
+        }catch(_){ modalBody.innerHTML = '<div style="padding:12px; background:#3a2f2f; border:1px solid #6b3; color:#ffd; border-radius:10px;">Shop not available.</div>'; }
+      })();
+    
     } else if (kind === 'settings') {
       modalTitle.textContent = trAuth('settings','Settings');
       modalBody.innerHTML = ''
@@ -5474,12 +5694,28 @@ function __alertPseudoTaken(){
         + '  <input id="newPass2" type="password" style="padding:8px;border-radius:8px;border:1px solid #444;background:#111;color:#fff" />'
         + '</div>';
       btnSubmit.onclick = doChangePassword;
+      btnSubmit.style.display = '';
     }
-    btnCancel.textContent = trAuth('cancel','Cancel');
+    
+ else if (kind === 'kicked') {
+      try {
+        var trAuthFn = (typeof trAuth === 'function') ? trAuth : function(){ return arguments[1] || ''; };
+        var m = (payload && payload.message) || 'You were kicked. You can rejoin in ~30s.';
+        modalTitle.textContent = trAuthFn('info', 'Info');
+        // Set message safely without HTML injection
+        if (modalBody) { modalBody.textContent = m; }
+        if (btnSubmit) { btnSubmit.style.display = 'none'; btnSubmit.onclick = null; }
+        if (btnCancel) { btnCancel.textContent = trAuthFn('ok', 'OK'); btnCancel.onclick = hideModal; btnCancel.style.display = ''; }
+      } catch(_){}
+    
+      return;
+    }
+btnCancel.textContent = trAuth('cancel','Cancel');
     btnSubmit.textContent = trAuth('submit','Submit');
     setTimeout(() => { const u = document.getElementById('authUser'); if (u) u.focus(); }, 30);
-  }
-  function hideModal(){ overlay.style.display='none'; modal.style.display='none'; modalBody.innerHTML=''; }
+
+}
+function hideModal(){ overlay.style.display='none'; modal.style.display='none'; modalBody.innerHTML=''; }
 
   async function fetchJSON(url, opts){
     const res = await fetch(url, Object.assign({ headers:{'Content-Type':'application/json'} }, opts||{}));
@@ -5492,38 +5728,41 @@ function __alertPseudoTaken(){
       const u = document.getElementById('authUser').value.trim();
       const p = document.getElementById('authPass').value;
       const p2 = document.getElementById('authPass2').value;
-      if (!u || !p || !p2) { alert(trAuth('fillAll')); return; }
-      if (p !== p2) { alert(trAuth('confirmPassword') + ' ✖'); return; }
+      if (!u || !p || !p2) { showTopMessage(trAuth('fillAll')); return; }
+      if (p !== p2) { showTopMessage(trAuth('confirmPassword') + ' ✖'); return; }
       const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
-      if (ok && (!data || data.ok)) { hideModal(); alert(trAuth('signupOk')); }
+      if (ok && (!data || data.ok)) { hideModal(); showTopMessage(trAuth('signupOk')); }
       else {
-        if (data && data.code === 'exists') alert(trAuth('userExists'));
-        else if (data && (data.code === 'weak_password' || status === 400)) alert(trAuth('weakPassword'));
-        else alert('Error.');
+        if (data && data.code === 'exists') showTopMessage(trAuth('userExists'));
+        else if (data && (data.code === 'weak_password' || status === 400)) showTopMessage(trAuth('weakPassword'));
+        else showTopMessage('Error.');
       }
-    } catch(e){ alert('Error'); }
+    } catch(e){ showTopMessage('Error'); }
   }
   async function doLogin(){
     try {
       const u = document.getElementById('authUser').value.trim();
       const p = document.getElementById('authPass').value;
-      if (!u || !p) { alert(trAuth('fillAll')); return; }
+      if (!u || !p) { showTopMessage(trAuth('fillAll')); return; }
       const { ok, data } = await fetchJSON('/api/login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
-      if (ok && data && data.username) { hideModal(); setAuthUI(true, data.username); alert(trAuth('loginOk')); }
-      else { alert(trAuth('invalidCredentials')); }
-    } catch(e){ alert('Error'); }
+      if (ok && data && data.username) { hideModal(); setAuthUI(true, data.username);
+        try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); window.linkSocketToSession && window.linkSocketToSession(); }catch(_){ } }, 300); } }catch(_){ }
+        try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); }catch(_){ } }, 150); } }catch(_){ }
+        showTopMessage(trAuth('loginOk')); }
+      else { showTopMessage(trAuth('invalidCredentials')); }
+    } catch(e){ showTopMessage('Error'); }
   }
   async function doChangePassword(){
     try {
       const c = document.getElementById('currPass').value;
       const n = document.getElementById('newPass').value;
       const n2 = (document.getElementById('newPass2') && document.getElementById('newPass2').value) || '';
-      if (!c || !n || !n2) { alert(trAuth('fillAll')); return; }
-      if (n !== n2) { alert(trAuth('confirmNewPassword') + ' ✖'); return; }
+      if (!c || !n || !n2) { showTopMessage(trAuth('fillAll')); return; }
+      if (n !== n2) { showTopMessage(trAuth('confirmNewPassword') + ' ✖'); return; }
       const { ok, data } = await fetchJSON('/api/change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
-      if (ok) { hideModal(); setAuthUI(false); alert(trAuth('pwdChanged')); }
-      else { if (data && data.code === 'weak_password') alert(trAuth('weakPassword')); else alert(trAuth('invalidCredentials')); }
-    } catch(e){ alert('Error'); }
+      if (ok) { hideModal(); setAuthUI(false); showTopMessage(trAuth('pwdChanged')); }
+      else { if (data && data.code === 'weak_password') showTopMessage(trAuth('weakPassword')); else showTopMessage(trAuth('invalidCredentials')); }
+    } catch(e){ showTopMessage('Error'); }
   }
 
   // Check if pseudo is reserved by an account when not logged in
@@ -5554,15 +5793,16 @@ function __alertPseudoTaken(){
   }, { passive:true });
 
   if (btnLogin) btnLogin.addEventListener('click', function(){ showModal('login'); }, { passive:true });
+  if (btnShop) btnShop.addEventListener('click', function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
   if (btnSignup) btnSignup.addEventListener('click', function(){ showModal('signup'); }, { passive:true });
-  if (btnLogout) btnLogout.addEventListener('click', async function(){ try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ } setAuthUI(false); alert(trAuth('logoutOk')); }, { passive:true });
+  if (btnLogout) btnLogout.addEventListener('click', async function(){ try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ } setAuthUI(false); showTopMessage(trAuth('logoutOk')); }, { passive:true });
   if (btnSettings) btnSettings.addEventListener('click', function(){ showModal('settings'); }, { passive:true });
   if (overlay) overlay.addEventListener('click', hideModal, { passive:true });
   if (btnCancel) btnCancel.addEventListener('click', hideModal, { passive:true });
 
   // Intercept clicks to block reserved pseudo
   function guardAction(e){
-    if (reservedPseudo) { e.preventDefault(); e.stopPropagation(); alert(trAuth('reservedName')); return false; }
+    if (reservedPseudo) { e.preventDefault(); e.stopPropagation(); showTopMessage(trAuth('reservedName')); return false; }
   }
   [lobbyJoin, btnJoinLobbyList, btnCreateLobby].forEach(el => { if (el) el.addEventListener('click', guardAction, true); });
   // Also guard chat sending (button click and Enter key) when pseudo is reserved
@@ -5574,7 +5814,7 @@ function __alertPseudoTaken(){
       try {
         var k = ev && (ev.key || ev.code || '');
         var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13));
-        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); alert(trAuth('reservedName')); return false; }
+        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); showTopMessage(trAuth('reservedName')); return false; }
       } catch(_){}
     }, true);
   } catch(_){}
@@ -5588,7 +5828,7 @@ function __alertPseudoTaken(){
       try {
         var k = ev && (ev.key || ev.code || '');
         var isEnter = (k === 'Enter') || (ev && (ev.keyCode === 13 || ev.which === 13));
-        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); alert(trAuth('reservedName')); return false; }
+        if (isEnter && reservedPseudo) { ev.preventDefault(); ev.stopPropagation(); showTopMessage(trAuth('reservedName')); return false; }
       } catch(_){}
     }, true);
   } catch(_){}
@@ -5667,9 +5907,21 @@ function __alertPseudoTaken(){
   const ladderList = qs('ladderList');
 
   function showLadder(){
+    // Ensure Shop UI is fully closed if open (panel or account modal)
+    try { var panelShop = document.getElementById('shopPanel'); if (panelShop) panelShop.style.display = 'none'; } catch(_){}
+    try {
+      var modal = document.getElementById('authModal');
+      if (modal && modal.style.display !== 'none' && document.getElementById('shopUpgradesLobby')) {
+        var ov = document.getElementById('authModalOverlay');
+        if (ov) ov.style.display = 'none';
+        modal.style.display = 'none';
+      }
+    } catch(_){}
+
     try { if (panelManual) panelManual.style.display = 'none'; } catch(_){}
     try { if (panelList) panelList.style.display = 'none'; } catch(_){}
     try { if (panelLadder) panelLadder.style.display = 'block'; } catch(_){}
+    try { var row = document.getElementById('lobbyBtnRow'); if (row) row.style.display='flex'; } catch(_){}
     try{ if (typeof pseudoInput!=='undefined' && pseudoInput) pseudoInput.style.display='none'; }catch(_){ }
     // Fetch ladder
     fetch('/api/ladder', { method: 'GET' })
@@ -5764,6 +6016,244 @@ function __alertPseudoTaken(){
   window.showLadder = showLadder;
 })();
 </script>
+<script>
+(function(){
+  function qs(id){ return document.getElementById(id); }
+  const panelShop   = qs('shopPanel');
+  const panelManual = qs('manualLobbyPanel');
+  const panelList   = qs('joinLobbyPanel');
+  const panelLadder = qs('ladderPanel');
+  const content     = qs('shopPanelContent');
+  const titleEl     = qs('shopPanelTitle');
+  const btnBack     = qs('btnBackFromShop');
+
+  const shopSoloBtn  = qs('shopSoloBtn');
+  const shopJoinList = qs('shopJoinLobbyListBtn');
+  const shopCreate   = qs('shopCreateLobbyBtn');
+function applyShopLobbyTexts(){
+    try {
+      if (btnBack) btnBack.textContent = tr('back','Back');
+      if (shopSoloBtn)  shopSoloBtn.textContent  = tr('join','Solo');
+      if (shopJoinList) shopJoinList.textContent = tr('joinLobby','Join lobby');
+      if (shopCreate)   shopCreate.textContent   = tr('createLobby','Create lobby');
+if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
+    } catch(_){}
+  }
+  applyShopLobbyTexts();
+
+  try { window.applyShopLobbyTexts = applyShopLobbyTexts; } catch(_){ }
+
+
+  // Bind forwarding actions oncece
+  try {
+    if (shopSoloBtn && !shopSoloBtn.__bound) {
+      shopSoloBtn.__bound = true;
+      shopSoloBtn.addEventListener('click', function(){
+        try { hideShopPanel(); } catch(_){}
+        try { var el = document.getElementById('lobbyJoin'); if (el) el.click(); } catch(_){}
+      }, { passive:true });
+    }
+    if (shopJoinList && !shopJoinList.__bound) {
+      shopJoinList.__bound = true;
+      shopJoinList.addEventListener('click', function(){
+        try { hideShopPanel(); } catch(_){}
+        try { var el = document.getElementById('btnJoinLobbyList'); if (el) el.click(); } catch(_){}
+      }, { passive:true });
+    }
+    if (shopCreate && !shopCreate.__bound) {
+      shopCreate.__bound = true;
+      shopCreate.addEventListener('click', function(){
+        try { hideShopPanel(); } catch(_){}
+        try { var el = document.getElementById('btnCreateLobby'); if (el) el.click(); } catch(_){}
+      }, { passive:true });
+    }
+  } catch(_) {}
+
+  function tr(key, fallback){
+    try {
+      var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+      return T[key] || fallback || key;
+    } catch(_){ return fallback || key; }
+  }
+
+  async function renderShopPanel(){
+    if (!content) return;
+    try {
+      if (!document.getElementById('shopUpgradesLobby')) { content.innerHTML = '<div style="padding:8px;color:#9ab;">Loading...</div>'; }
+      titleEl.textContent = tr('shopMain','Shop');
+      const r = await fetch('/api/me', { credentials:'include' });
+      const j = await r.json();
+      if (!j || !j.ok){
+        try { if (typeof showTopMessage==='function') showTopMessage(tr('needLoginShop','Please log in to access the shop.')); } catch(_){}
+        // Return to main list
+        hideShopPanel();
+        return;
+      }
+      const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+      const gold = j.gold|0;
+      const up = Object.assign({hp:0,dmg:0}, j.shopUpgrades||{});
+      try { window.accountShop = up; } catch(_){}
+      try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+
+      const hpLv = up.hp|0, dmgLv = up.dmg|0;
+      const hpMax = 200, dmgMax = 20, HP_PRICE = 5, DMG_PRICE = 200;
+
+      function item(id, title, desc, level, max, price){
+  const disabled = level>=max || gold < price;
+  const note = (level>=max) ? '<div style="color:#9ab;font-size:12px;min-height:16px;">'+(T.maxLevel||'Max level reached')+'</div>' : '<div style="min-height:16px;"></div>';
+  return (
+    '<div style="display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
+  + '  <div id="badge-' + id + '" style="width:40px;height:40px;border-radius:10px;border:2px solid #ffb300;display:flex;align-items:center;justify-content:center;font-weight:700;">'
+  +        String((id==='hp') ? (100 + (level|0)*1) : (10 + (level|0)*1))
+  + '  </div>'
+  + '  <div style="flex:1;">'
+  + '    <div style="font-size:17px;font-weight:700;">'+title+'</div>'
+  + '    <div style="color:#9ab;font-size:13px;">'+desc+'</div>'
+  + '    <div style="margin-top:6px;font-size:14px;">'+(T.level||'Level')+': <b>'+level+'</b> / '+max+'</div>'
+  + '  </div>'
+  + '  <div style=\"display:flex;flex-direction:column;align-items:center;gap:6px;min-width:160px;width:160px;\">'
+  + '    <div style="font-size:14px;">'+(T.price||'Price')+': <b>'+price+'</b> '+(T.gold||'Gold')+'</div>'
+  + '    <button class="btn-buy" data-shop-buy="'+id+'" style="padding:7px 14px;'+(disabled?'opacity:0.6;cursor:not-allowed;':'cursor:pointer;')+'background:#ff8800;color:#fff;border:none;border-radius:8px;" '+(disabled?'disabled':'')+'>'+(T.buy||'Buy')+'</button>'
+  +        note
+  + '  </div>'
+  + '</div>'
+  );
+}
+// Assemble list
+      let html = '';
+      html += '<div style="margin-bottom:8px;"><b>'+(T.gold||'Gold')+'</b>: <span id="shopGoldVal">'+gold+'</span></div>';
+      const hpTitle = T.hpUpgTitle || 'HP +1';
+      const hpDesc  = T.hpUpgDesc  || 'Start each game with +1 HP per level (up to +200).';
+      const dmgTitle= T.dmgUpgTitle|| 'Damage +1';
+      const dmgDesc = T.dmgUpgDesc || 'Start each game with +1 damage per level (up to +20).';
+      html += item('hp',  hpTitle,  hpDesc,  hpLv,  hpMax,  HP_PRICE);
+      html += item('dmg', dmgTitle, dmgDesc, dmgLv, dmgMax, DMG_PRICE);
+      // Placeholder for turret skins/upgrades if provided by the backend:
+      if (j.turretShop && Array.isArray(j.turretShop)){
+        j.turretShop.forEach(function(t){
+          const id   = String(t.id||'').slice(0,3);
+          const name = String(t.title||'Turret');
+          const d    = String(t.desc||'');
+          const lv   = (t.level|0);
+          const mx   = (t.max|0) || 10;
+          const pr   = (t.price|0) || 100;
+          html += item(id, name, d, lv, mx, pr);
+        });
+      }
+      var __wrap = document.getElementById('shopUpgradesLobby');
+      if (__wrap) { __wrap.innerHTML = html; } else { content.innerHTML = '<div id="shopUpgradesLobby">'+html+'</div>'; }
+
+      // Bind purchases
+      Array.prototype.slice.call(content.querySelectorAll('[data-shop-buy]')).forEach(function(btn){
+        btn.addEventListener('click', async function(){
+          const type = this.getAttribute('data-shop-buy');
+          try {
+            const r = await fetch('/api/shop/buy', {
+              method:'POST', headers:{ 'Content-Type': 'application/json' },
+              credentials:'include', body: JSON.stringify({ type })
+            });
+            const jj = await r.json();
+            if (jj && jj.ok){
+              try { if (typeof showTopMessage==='function') showTopMessage(T.purchaseOk || 'Purchase successful.'); } catch(_){}
+              refreshShopPanel();
+              try { if (typeof drawHUD==='function') drawHUD(); } catch(_){}
+            } else {
+              if (jj && jj.code === 'not_enough_gold') { try{showTopMessage(T.notEnoughGold||'Not enough gold.');}catch(_){}} 
+              else if (jj && jj.code === 'max_level') { try{showTopMessage(T.maxLevel||'Max level reached');}catch(_){}}
+              else { try{showTopMessage(T.actionImpossible||'Action impossible.');}catch(_){} }
+            }
+          } catch(_){
+            try{ showTopMessage('Shop not available.'); }catch(_){}
+          }
+        }, { passive:true });
+      });
+
+    } catch(e){
+      console.error(e);
+      content.innerHTML = '<div style="padding:8px;color:#e88;">Error loading shop.</div>';
+    }
+  }
+
+  function hideShopPanel(){
+    try { if (panelShop) panelShop.style.display='none'; } catch(_){}
+    try { if (panelManual) panelManual.style.display='none'; } catch(_){}
+    try { if (panelList) panelList.style.display='none'; } catch(_){}
+    try { if (panelLadder) panelLadder.style.display='none'; } catch(_){}
+    // Show main lobby buttons + restore pseudo input if needed
+    try { var row = document.getElementById('lobbyBtnRow'); if (row) row.style.display=''; } catch(_){}
+    try { var pe = document.getElementById('pseudoInput'); if (pe) pe.style.display=''; }catch(_){}
+  }
+  
+
+  function showShopPanel(){
+    try { if (panelManual) panelManual.style.display='none'; } catch(_){}
+    try { if (panelList) panelList.style.display='none'; } catch(_){}
+    try { if (panelLadder) panelLadder.style.display='none'; } catch(_){}
+    try { if (panelShop) panelShop.style.display='block'; } catch(_){}
+    try { var row = document.getElementById('lobbyBtnRow'); if (row) row.style.display='none'; } catch(_){}
+    try { var pe = document.getElementById('pseudoInput'); if (pe) pe.style.display='none'; }catch(_){}
+    renderShopPanel();
+  }
+
+  function refreshShopPanel(){
+    if (!panelShop || panelShop.style.display!=='block') return;
+    renderShopPanel();
+  }
+
+  if (btnBack) btnBack.addEventListener('click', function(){
+    // go back to list panel
+    hideShopPanel();
+    try {
+      // show the default lobby panel (buttons)
+      var list = qs('joinLobbyPanel'); if (list) list.style.display='none';
+      var manual = qs('manualLobbyPanel'); if (manual) manual.style.display='none';
+      var ladder = qs('ladderPanel'); if (ladder) ladder.style.display='none';
+    } catch(_){}
+  }, { passive:true });
+
+  // Close Shop when main action buttons are clicked
+  try {
+    ['lobbyJoin','btnJoinLobbyList','btnCreateLobby','btnLadder'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el || el.__closeShopBound) return;
+      el.__closeShopBound = true;
+      el.addEventListener('click', function(){
+        try { if (panelShop && panelShop.style.display === 'block') hideShopPanel(); } catch(_){}
+        // also close account Shop modal if open
+        try {
+          var modal = document.getElementById('authModal');
+          if (modal && modal.style.display !== 'none' && document.getElementById('shopUpgradesLobby')) {
+            var ov = document.getElementById('authModalOverlay');
+            if (ov) ov.style.display = 'none';
+            modal.style.display = 'none';
+          }
+        } catch(_){}
+      }, { passive:true });
+    });
+  } catch(_){}
+
+
+  // Expose globals used elsewhere
+  try { window.showShopPanel = showShopPanel; window.refreshShopPanel = refreshShopPanel; } catch(_){}
+})();
+
+  try {
+    var _u = window.updateUITexts;
+    window.updateUITexts = function(){ try { if (typeof _u==='function') _u.apply(this, arguments); }catch(_){}
+      try { if (typeof window.applyShopLobbyTexts==='function') window.applyShopLobbyTexts(); } catch(_){ }try {
+        var p = document.getElementById('shopPanel');
+        if (p && p.style.display !== 'none' && typeof window.refreshShopPanel === 'function') { window.refreshShopPanel(); }
+      } catch(_){}
+      try {
+        var modal = document.getElementById('authModal');
+        if (modal && modal.style.display !== 'none' && document.getElementById('shopUpgradesLobby')) {
+          if (typeof window.showModal === 'function') window.showModal('shop');
+        }
+      } catch(_){}
+    };
+  } catch(_){}
+</script>
+
 
   <!-- Visual Debug Console -->
   <style id="debugConsoleStyles">
@@ -6517,6 +7007,299 @@ e.preventDefault(); e.stopPropagation();
   } catch(_e){}
 })();
 </script>
+<!-- Account Gold Shop Modal -->
+
+
+      <button id="accountShopClose" style="border:none; background:#333; color:#fff; padding:6px 10px; border-radius:8px; cursor:pointer;">✕</button>
+    </div>
+    <div id="accountGoldLine" style="margin:8px 0 14px; font-size:16px;"><b>Gold</b>: <span id="accountGoldValue">0</span></div>
+    <div id="accountShopItems"></div>
+    <div style="margin-top:10px; font-size:12px; color:#9ab;" id="accountShopHint"></div>
+  </div>
+</div>
+
+
+<script>
+// Ultra-robust Shop button watchdog: ensures the button exists, is visible, and is bound like other buttons.
+(function(){
+  if (window.__shopBtnWatchInstalled) return; window.__shopBtnWatchInstalled = true;
+  function ensureShopButton(){
+    try{
+      var row = document.getElementById('ladderBtnRow');
+      if (!row) return;
+      var btn = document.getElementById('btnAccountShop');
+      if (!btn){
+        btn = document.createElement('button');
+        btn.id = 'btnAccountShop';
+        btn.textContent = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])||{}).shopMain || 'Shop';
+        btn.setAttribute('style', 'font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#ff8800; color:#fff; cursor:pointer; margin-top:7px;');
+        row.appendChild(btn);
+      } else {
+        // ensure visible
+        btn.style.display = '';
+        btn.style.pointerEvents = 'auto';
+      }
+      if (!btn.__shopBound){
+        btn.addEventListener('click', function(){ try{ if (typeof showModal==='function') (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e); } }, { passive:true });
+        btn.__shopBound = true;
+      }
+    }catch(e){}
+  }
+  function relabel(){
+    try{
+      var btn = document.getElementById('btnAccountShop');
+      if (!btn) return;
+      var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+      var label = T.shopMain || 'Shop';
+      if (btn.textContent !== label) btn.textContent = label;
+    }catch(_){}
+  }
+  ensureShopButton(); relabel();
+  try{ var mo = new MutationObserver(function(){ ensureShopButton(); relabel(); }); mo.observe(document.body, { childList:true, subtree:true }); }catch(_){}
+  try{ setInterval(function(){ ensureShopButton(); relabel(); }, 1200); }catch(_){}
+  // hook updateUITexts
+  try {
+    var u = window.updateUITexts;
+    window.updateUITexts = function(){ try { if (typeof u==='function') u.apply(this, arguments); }catch(_){}
+      try { relabel(); } catch(_){};
+    };
+  } catch(_){}
+})();
+</script>
+<script>
+(function(){
+  if (window.__hudGoldInstalled) return; window.__hudGoldInstalled = true;
+  try { window.accountGold = window.accountGold|0; } catch(_){}
+  try {
+    fetch('/api/me', { credentials:'include' })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ if (j && j.ok){ window.__meOk = true; window.accountGold = j.gold|0; window.accountShop = Object.assign({hp:0,dmg:0}, (j.shopUpgrades||{}));
+            try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+            try { if (typeof window.updateAccountShopBadges === 'function') window.updateAccountShopBadges(); } catch(_){}
+             try{ window.linkSocketToSession && window.linkSocketToSession(); }catch(_){ } } })
+      .catch(function(){});
+  } catch(_){}
+  try {
+    if (window.socket) {
+      socket.on('goldUpdate', function(p){
+        try { if (p && Number.isFinite(p.total)) { window.__meOk = true; window.accountGold = p.total|0; } } catch(_){}
+      });
+    }
+  } catch(_){}
+})();
+</script>
+
+<!-- VIEWPORT & FULLSCREEN SIZING FIX -->
+<style id="viewport-fullscreen-fix">
+  :root{ --vh: 1vh; }
+  /* Use dynamic viewport units when supported, fallback to JS-set --vh */
+  #gameCanvas, #deathScreen, #lobbyScreen{
+    height: calc(var(--vh, 1vh) * 100) !important;
+  }
+  @supports (height: 100dvh){
+    #gameCanvas, #deathScreen, #lobbyScreen{
+      height: 100dvh !important;
+    }
+  }
+</style>
+<script id="viewport-fullscreen-fix-js">
+(function(){
+  if (window.__viewportFixInstalled) return;
+  window.__viewportFixInstalled = true;
+  function setVH(){
+    try{
+      var vh = (window.innerHeight||0) * 0.01;
+      document.documentElement.style.setProperty('--vh', vh + 'px');
+    }catch(_){}
+  }
+  window.__setVHUnit = setVH;
+  ['load','resize','orientationchange','fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange','pageshow'].forEach(function(ev){
+    try{ window.addEventListener(ev, setVH, { passive:true }); }catch(_){}
+  });
+  // ensure once
+  setVH();
+  // also when the game starts or we programmatically enter the game, fix sizes
+  try{
+    if (window.socket && socket.on){
+      socket.on('gameStarted', function(){ try{ setVH(); if (window.ensureCanvasReady) ensureCanvasReady(); }catch(_){} });
+    }
+  }catch(_){}
+})();
+</script>
+<!-- /VIEWPORT & FULLSCREEN SIZING FIX -->
+
+<!-- MAIN BUTTON RESCUE (re-enable Solo/Create after quick leave) -->
+<script id="main-buttons-rescue">
+(function(){
+  if (window.__mainBtnRescueInstalled) return;
+  window.__mainBtnRescueInstalled = true;
+  function rescue(){
+    try{
+      // Leaving to main menu means we're not in a lobby anymore
+      window.lobbyJoined = false;
+      var pseudoEl = document.getElementById('pseudoInput');
+      var hasPseudo = !!(pseudoEl && pseudoEl.value && pseudoEl.value.trim());
+      ['lobbyJoin','btnCreateLobby','btnJoinLobbyList'].forEach(function(id){
+        var b = document.getElementById(id);
+        if (b){
+          // Only disable if no pseudo; otherwise ensure enabled
+          b.disabled = !hasPseudo ? true : false;
+        }
+      });
+      try{ if (typeof window.updateButtonsDisabled === 'function') window.updateButtonsDisabled(); }catch(_){}
+    }catch(_){}
+  }
+  window.rescueMainButtons = rescue;
+  try{
+    var lobby = document.getElementById('lobbyScreen');
+    if (lobby && window.MutationObserver){
+      var mo = new MutationObserver(function(){
+        try{
+          // If the lobby overlay is visible again, fix buttons immediately
+          var shown = (lobby.style.display !== 'none');
+          if (shown) rescue();
+        }catch(_){}
+      });
+      mo.observe(lobby, { attributes:true, attributeFilter:['style','class'] });
+    }
+  }catch(_){}
+  // Also run on focus/pageshow
+  try{ window.addEventListener('focus', rescue, {passive:true}); }catch(_){}
+  try{ window.addEventListener('pageshow', rescue, {passive:true}); }catch(_){}
+})();
+</script>
+<!-- /MAIN BUTTON RESCUE -->
+
+
+<script id="canvas-fullscreen-ensure">
+(function(){
+  if (window.__canvasFullscreenEnsureInstalled) return;
+  window.__canvasFullscreenEnsureInstalled = true;
+  function ensure(){ try{ if (window.ensureCanvasReady) ensureCanvasReady(); }catch(_){ } }
+  ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(function(ev){
+    try{ window.addEventListener(ev, ensure, {passive:true}); }catch(_){}
+  });
+})();
+</script>
+
+
+<!-- CANVAS-FIT ULTIMATE PATCH -->
+<style id="canvas-fit-css">
+  html, body { margin:0; padding:0; height:100%; }
+  #gameCanvas, #lobbyScreen, #deathScreen{
+    width: 100vw !important;
+    height: calc(var(--vh, 1vh) * 100) !important;
+  }
+  @supports (height: 100dvh){
+    #gameCanvas, #lobbyScreen, #deathScreen{
+      height: 100dvh !important;
+    }
+  }
+</style>
+<script id="canvas-fit-ultimate">
+(function(){
+  if (window.__canvasFitInstalled) return;
+  window.__canvasFitInstalled = true;
+
+  function computeVHUnit(){
+    try{
+      var vh = (window.innerHeight||document.documentElement.clientHeight||1) * 0.01;
+      document.documentElement.style.setProperty('--vh', vh + 'px');
+    }catch(_){}
+  }
+
+  function canvasFit(){
+    try{
+      var canvas = document.getElementById('gameCanvas');
+      if (!canvas) return;
+
+      // Ensure the CSS covers the viewport
+      try{
+        canvas.style.width = '100vw';
+        canvas.style.height = 'calc(var(--vh, 1vh) * 100)';
+      }catch(_){}
+
+      // Use the actual rendered size to set the backing resolution
+      var rect = canvas.getBoundingClientRect();
+      var w = Math.max(1, Math.round(rect.width || window.innerWidth || document.documentElement.clientWidth || screen.width || 1));
+      var h = Math.max(1, Math.round(rect.height || window.innerHeight || document.documentElement.clientHeight || screen.height || 1));
+
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+    }catch(_){}
+  }
+
+  window.resizeCanvas = canvasFit; // override any previous definition
+  window.__ensureCanvasReady = canvasFit;
+
+  // Respond to all relevant viewport changes
+  ['load','resize','orientationchange','pageshow','visibilitychange',
+   'fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'
+  ].forEach(function(ev){
+    try{ window.addEventListener(ev, function(){ computeVHUnit(); canvasFit(); }, { passive:true }); }catch(_){}
+  });
+
+  // If sockets are present, attach to game/lobby events too
+  try{
+    if (window.socket && window.socket.on){
+      socket.on('gameStarted', function(){ computeVHUnit(); canvasFit(); });
+      socket.on('lobbyUpdate', function(){ computeVHUnit(); canvasFit(); });
+    }
+  }catch(_){}
+
+  // First run + gentle watchdog (covers rare missed events)
+  computeVHUnit();
+  setTimeout(canvasFit, 0);
+  setTimeout(canvasFit, 250);
+  setInterval(canvasFit, 1000);
+})();
+</script>
+<!-- /CANVAS-FIT ULTIMATE PATCH -->
+
+<!-- MAIN BUTTON RESCUE 2 (clear fast-quit locks) -->
+<script id="main-buttons-rescue-2">
+(function(){
+  if (window.__mainBtnRescue2Installed) return;
+  window.__mainBtnRescue2Installed = true;
+
+  function resetMainButtons(){
+    try{
+      // Clear fast-click locks
+      try{ window.__joinLockTs = 0; }catch(_){}
+      var ids = ['lobbyJoin','btnCreateLobby','btnJoinLobbyList'];
+      for (var i=0;i<ids.length;i++){
+        var b = document.getElementById(ids[i]);
+        if (!b) continue;
+        b.disabled = false;
+        try{ b.dataset.clicked = ''; b.removeAttribute('data-clicked'); }catch(_){}
+      }
+      try{ if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); }catch(_){}
+    }catch(_){}
+  }
+
+  function onLobbyVisible(){
+    try{
+      var lobby = document.getElementById('lobbyScreen');
+      if (!lobby) return;
+      // Run immediately when called
+      resetMainButtons();
+    }catch(_){}
+  }
+
+  try{
+    var lobby = document.getElementById('lobbyScreen');
+    if (lobby && window.MutationObserver){
+      var mo = new MutationObserver(onLobbyVisible);
+      mo.observe(lobby, {attributes:true, attributeFilter:['style','class']});
+    }
+  }catch(_){}
+  ['pageshow','focus','visibilitychange'].forEach(function(ev){
+    try{ window.addEventListener(ev, onLobbyVisible, { passive:true }); }catch(_){}
+  });
+  try{ if (window.socket && window.socket.on){ socket.on('lobbyUpdate', onLobbyVisible); } }catch(_){}
+})();
+</script>
+<!-- /MAIN BUTTON RESCUE 2 -->
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
 <!-- [PATCH] turret-skins-swap v1 -->

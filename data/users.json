@@ -3,14 +3,24 @@
     "myg": {
       "username": "Myg",
       "usernameLower": "myg",
-      "passHash": "pbkdf2$sha256$120000$8a1bf4c06d8ac33be5605a6c8fdaeab2$bcd1b0d7621496c98095f8826d6516bab1ac95dbf618a36a719b51779953de1d",
-      "createdAt": 1755715621796
+      "passHash": "pbkdf2$sha256$120000$018002089f00e82027182bc6d985215c$11322a6a419888231b192e6026aabfa150c721bfb16316305687d359849d6718",
+      "createdAt": 1755979158368,
+      "gold": 233,
+      "shopUpgrades": {
+        "hp": 58,
+        "dmg": 4
+      }
     },
     "test": {
       "username": "test",
       "usernameLower": "test",
-      "passHash": "pbkdf2$sha256$120000$7e459b200e90ccf60c3e4bf3c5f63786$26f3df04cac4c43190354b5343fdac7fa134f7ce1a497a49c7d5b02c911a9dcb",
-      "createdAt": 1755866484727
+      "passHash": "pbkdf2$sha256$120000$197fffe977c2d0a7404d645ea8d21967$d49d19e1d93df29d58d21d8ac4188d8f9ec59cc512f63326ef2cd23b5eeb5a19",
+      "createdAt": 1755989590049,
+      "gold": 0,
+      "shopUpgrades": {
+        "hp": 0,
+        "dmg": 0
+      }
     }
   }
 }
