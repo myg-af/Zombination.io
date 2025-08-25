@@ -978,3 +978,130 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
     goldHowTo:'웨이브 5부터 클리어 시 골드 획득: 5=+1, 6=+2, 7=+3 등'
   , purchaseOk:'구매 완료되었습니다.' });
 })();
+
+// === Character Skin / Customize translations injection ===
+(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
+  add('en', {
+    characterSkin:'Character skin',
+    characterSkinDesc:'Customize hair, skin and clothes colors.',
+    customize:'Customize',
+    customizeCharacter:'Customize character',
+    hair:'Hair',
+    skin:'Skin',
+    clothes:'Clothes',
+    preview:'Preview',
+    validate:'Apply',
+    color:'Color'
+  });
+  add('fr', {
+    characterSkin:"Apparence du personnage",
+    characterSkinDesc:"Personnalisez les couleurs des cheveux, de la peau et des vêtements.",
+    customize:'Personnaliser',
+    customizeCharacter:'Personnaliser le personnage',
+    hair:'Cheveux',
+    skin:'Peau',
+    clothes:'Vêtements',
+    preview:'Aperçu',
+    validate:'Valider',
+    color:'Couleur'
+  });
+  add('es', {
+    characterSkin:'Aspecto del personaje',
+    characterSkinDesc:'Personaliza los colores de cabello, piel y ropa.',
+    customize:'Personalizar',
+    customizeCharacter:'Personalizar personaje',
+    hair:'Cabello',
+    skin:'Piel',
+    clothes:'Ropa',
+    preview:'Vista previa',
+    validate:'Aplicar',
+    color:'Color'
+  });
+  add('pt', {
+    characterSkin:'Aparência do personagem',
+    characterSkinDesc:'Personalize as cores de cabelo, pele e roupas.',
+    customize:'Personalizar',
+    customizeCharacter:'Personalizar personagem',
+    hair:'Cabelo',
+    skin:'Pele',
+    clothes:'Roupas',
+    preview:'Prévia',
+    validate:'Aplicar',
+    color:'Cor'
+  });
+  add('de', {
+    characterSkin:'Charakter‑Skin',
+    characterSkinDesc:'Passe Haar‑, Haut‑ und Kleidungsfarben an.',
+    customize:'Anpassen',
+    customizeCharacter:'Charakter anpassen',
+    hair:'Haare',
+    skin:'Haut',
+    clothes:'Kleidung',
+    preview:'Vorschau',
+    validate:'Übernehmen',
+    color:'Farbe'
+  });
+  add('ru', {
+    characterSkin:'Скин персонажа',
+    characterSkinDesc:'Настройте цвета волос, кожи и одежды.',
+    customize:'Настроить',
+    customizeCharacter:'Настроить персонажа',
+    hair:'Волосы',
+    skin:'Кожа',
+    clothes:'Одежда',
+    preview:'Предпросмотр',
+    validate:'Применить',
+    color:'Цвет'
+  });
+  add('cn', {
+    characterSkin:'角色皮肤',
+    characterSkinDesc:'自定义头发、皮肤和服装的颜色。',
+    customize:'自定义',
+    customizeCharacter:'自定义角色',
+    hair:'头发',
+    skin:'皮肤',
+    clothes:'衣服',
+    preview:'预览',
+    validate:'应用',
+    color:'颜色'
+  });
+  add('jp', {
+    characterSkin:'キャラクタースキン',
+    characterSkinDesc:'髪・肌・服の色をカスタマイズ。',
+    customize:'カスタマイズ',
+    customizeCharacter:'キャラクターをカスタマイズ',
+    hair:'髪',
+    skin:'肌',
+    clothes:'服',
+    preview:'プレビュー',
+    validate:'適用',
+    color:'色'
+  });
+  add('pl', {
+    characterSkin:'Skórka postaci',
+    characterSkinDesc:'Dostosuj kolory włosów, skóry i ubrań.',
+    customize:'Dostosuj',
+    customizeCharacter:'Dostosuj postać',
+    hair:'Włosy',
+    skin:'Skóra',
+    clothes:'Ubrania',
+    preview:'Podgląd',
+    validate:'Zastosuj',
+    color:'Kolor'
+  });
+  add('kr', {
+    characterSkin:'캐릭터 스킨',
+    characterSkinDesc:'머리카락, 피부, 의상 색상을 커스터마이즈.',
+    customize:'꾸미기',
+    customizeCharacter:'캐릭터 꾸미기',
+    hair:'머리카락',
+    skin:'피부',
+    clothes:'의상',
+    preview:'미리보기',
+    validate:'적용',
+    color:'색상'
+  ,
+    saved:'저장됨!'});
+})();

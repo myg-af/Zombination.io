@@ -3369,6 +3369,50 @@ function ensureUsersFile() {
 }
 ensureUsersFile();
 
+/* === PLAYER SKINS (players.json) === */
+const PLAYERS_FILE = path.join(__dirname, 'data', 'players.json');
+function ensurePlayersFile(){
+  try { const dir = path.dirname(PLAYERS_FILE); if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(_){}
+  try { if (!fs.existsSync(PLAYERS_FILE)) fs.writeFileSync(PLAYERS_FILE, JSON.stringify({ players: {} }, null, 2)); } catch(_){}
+}
+function loadPlayersMap(){
+  try {
+    ensurePlayersFile();
+    const raw = fs.readFileSync(PLAYERS_FILE, 'utf8');
+    let obj = {};
+    if (raw && raw.trim()) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.players && typeof parsed.players === 'object') obj = parsed.players;
+    }
+    return obj;
+  } catch(_){ return {}; }
+}
+function savePlayersMap(map){
+  try {
+    ensurePlayersFile();
+    const tmp = PLAYERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ players: map }, null, 2));
+    fs.renameSync(tmp, PLAYERS_FILE);
+    return true;
+  } catch(e){ console.error('[PLAYERS] save failed', e); return false; }
+}
+function getPlayerSkin(username){
+  try {
+    const name = sanitizeUsername(username);
+    if (!name) return null;
+    const key = normalizeKey(name);
+    const map = loadPlayersMap();
+    const rec = map[key];
+    if (rec && rec.skin && typeof rec.skin === 'object') {
+      const { hair, skin, clothes } = rec.skin;
+      return { hair, skin, clothes };
+    }
+    return null;
+  } catch(_){ return null; }
+}
+
+
+
 function loadUsers() {
   try {
     const raw = fs.readFileSync(USERS_FILE, 'utf8');
@@ -3654,7 +3698,7 @@ app.get('/api/me', (req,res)=>{
     const u = getSessionUsernameByReq(req);
     if (u) {
       const users = loadUsers(); const key = normalizeKey(u); const rec = users[key] || {}; const gold = rec.gold|0; const shopUpgrades = Object.assign({hp:0,dmg:0}, rec.shopUpgrades||{});
-      return res.json({ ok:true, username: u, gold, shopUpgrades });
+      return res.json({ ok:true, username: u, gold, shopUpgrades, skin: getPlayerSkin(u) });
     }
     return res.json({ ok:false });
   } catch(e){ return res.json({ ok:false }); }
@@ -3795,4 +3839,33 @@ try {
     if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
     return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
   } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* buy & save custom skin (requires login) */
+app.post('/api/skin/buy', (req,res)=>{
+  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+  try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { hair, skin, clothes } = req.body || {};
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    if (!hexOk(hair) || !hexOk(skin) || !hexOk(clothes)) return res.status(400).json({ ok:false, code:'bad_colors' });
+
+    const users = loadUsers();
+    const ukey = normalizeKey(uname);
+    const urec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+    const price = 5;
+    if ((urec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    urec.gold = (urec.gold|0) - price;
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+
+    const map = loadPlayersMap();
+    map[ukey] = map[ukey] || { username: uname, usernameLower: ukey, createdAt: Date.now(), updatedAt: Date.now(), skin: { hair:'#6b4d2e', skin:'#f4c2c2', clothes:'#2aa84a' } };
+    map[ukey].skin = { hair, skin, clothes };
+    map[ukey].updatedAt = Date.now();
+    if (!savePlayersMap(map)) return res.status(500).json({ ok:false, code:'save_failed' });
+
+    return res.json({ ok:true, gold: urec.gold|0, skin: { hair, skin, clothes } });
+  } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });

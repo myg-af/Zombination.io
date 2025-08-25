@@ -20,6 +20,41 @@
       get onclick(){ return null; }
     };
   }
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        try{ ev.stopPropagation(); if (ev.stopImmediatePropagation) ev.stopImmediatePropagation(); }catch(_){}
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -449,6 +484,42 @@ body.menu-hide-ui #fpsCounter,
 
 </style>
 
+
+<style>
+/* Customize button: same structure as Buy but blue */
+#btnOpenSkin, .skinOpenBtn {
+  background: #4aa3ff;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  transition: transform .08s ease, filter .16s ease, box-shadow .16s ease;
+}
+#btnOpenSkin:hover, .skinOpenBtn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(0,0,0,0.4);
+}
+#btnOpenSkin:active, .skinOpenBtn:active {
+  filter: brightness(.98);
+  transform: translateY(0);
+}
+/* Small apply buttons beside color inputs */
+.skin-apply {
+  margin-left: 8px;
+  background: #2a5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.skin-apply:hover { filter: brightness(1.08); }
+</style>
 </head>
 <body>
 <!-- top-message helper -->
@@ -491,6 +562,40 @@ body.menu-hide-ui #fpsCounter,
       } catch(_){}
     };
   } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -504,7 +609,41 @@ body.menu-hide-ui #fpsCounter,
       }
       try { if (window.debugLog) debugLog('🔭 uiScale default =', window.__uiScale); } catch(_){}
     } catch(e){}
-  })();
+  
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
+})();
 </script>
 
 <div id="fpsCounter" style="position:fixed;left:8px;top:8px;background:#0008;color:#0f0;padding:4px 8px;border-radius:6px;font:12px monospace;z-index:9999">FPS: --</div>
@@ -609,7 +748,7 @@ body.menu-hide-ui #fpsCounter,
     <div id="authModalTitle" style="font-weight:700; font-size:20px; margin-bottom:10px;">Auth</div>
     <div id="authModalBody"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
-      <button id="authCancel" style="padding:8px 14px; border:0; border-radius:8px; background:#555; color:#fff; cursor:pointer;">Cancel</button>
+      <button id="authCancel" style="padding:8px 14px; border:0; border-radius:8px; background:#555; color:#fff; cursor:pointer;">' + ((T.cancel||'Cancel')) + '</button>
       <button id="authSubmit" style="padding:8px 14px; border:0; border-radius:8px; background:#2a6aff; color:#fff; cursor:pointer;">Submit</button>
     </div>
   </div>
@@ -851,6 +990,40 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
       } catch(e){ return fallback || key; }
     };
   }
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -2572,7 +2745,8 @@ function drawPlayers() {
     ctx.save();
     ctx.translate(screenX, screenY);
     ctx.rotate(angle + (window.SPRITE_BASE_ROT||0));
-    ctx.drawImage(playerImg, -half, -half, size, size);
+    var __img = (typeof getPlayerSpriteFor==='function') ? getPlayerSpriteFor(p && p.pseudo) : playerImg;
+    ctx.drawImage(__img || playerImg, -half, -half, size, size);
     ctx.restore();
 
     // Pseudo + barre de vie (inchangé)
@@ -4386,7 +4560,7 @@ const btnRefreshLobbies = document.getElementById('btnRefreshLobbies');
     // Also gray out Ladder and auth buttons when in a lobby
 try {
   var _ladder = document.getElementById('btnLadder');
-  if (_ladder) _ladder.disabled = inLobby;
+  if (_ladder) _ladder.disabled = shouldDisable;
   var _login = document.getElementById('btnLogin');
   if (_login) _login.disabled = inLobby;
   var _signup = document.getElementById('btnSignup');
@@ -4396,7 +4570,7 @@ try {
   var _logout = document.getElementById('btnLogout');
   if (_logout) _logout.disabled = inLobby;
   var _shop = document.getElementById('btnAccountShop');
-  if (_shop) _shop.disabled = inLobby;
+  if (_shop) _shop.disabled = shouldDisable;
 } catch(_){}
 
     // Disable chat 'Send' when no pseudo
@@ -4580,6 +4754,7 @@ if (btnCreate) {
       clearInterval(listInterval);
       listInterval = null;
       try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){ }
+      try{ if (window.enforcePseudoLock) window.enforcePseudoLock(); }catch(_){ }
     }, { passive: true });
   }
 
@@ -4837,6 +5012,40 @@ function renderManualPlayers() {
   // Clear players line on main load until manual panel is visible
   safe(function(){ var p = document.getElementById('lobbyPlayers'); if (p) p.textContent=''; });
 
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -4890,6 +5099,40 @@ function renderManualPlayers() {
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) setVersionBox(); }, {passive:true});
   window.addEventListener('resize', setVersionBox, {passive:true});
   window.setVersionBox = setVersionBox;
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -4949,6 +5192,40 @@ function renderManualPlayers() {
 
   // Initial paint
   updateJoinLobbyBtnText();
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -4965,6 +5242,40 @@ function renderManualPlayers() {
   } catch(e){}
   // In case UI functions are used elsewhere
   window.setMenuUIHidden = setMenuUIHidden;
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5024,6 +5335,40 @@ function renderManualPlayers() {
           });
 }
   } catch(e){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5430,6 +5775,40 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
     // Expose for debugging if needed
     window.__forceHideChatSolo = function(on){ FORCED_HIDE = !!on; applyVisibility(); };
   } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5469,6 +5848,40 @@ socket.on('renameResult', function(res){
       });
     }
   } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <script>
@@ -5510,6 +5923,40 @@ function __alertPseudoTaken(){
       try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){}
     } catch(_){}
   };
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5542,6 +5989,40 @@ function __alertPseudoTaken(){
   if (!bind()){
     var __ptint = setInterval(function(){ if (bind()) { clearInterval(__ptint); } }, 300);
   }
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5572,6 +6053,40 @@ return true;
   if (!bind()){
     var __jpt = setInterval(function(){ if (bind()) { clearInterval(__jpt); } }, 300);
   }
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5605,6 +6120,40 @@ return true;
   if (!bind()){
     var __unlockInt = setInterval(function(){ if (bind()) clearInterval(__unlockInt); }, 300);
   }
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5676,6 +6225,40 @@ return true;
   });
   window.addEventListener('resize', fitLobbyBoxMobile, {passive:true});
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitLobbyBoxMobile);
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -5707,6 +6290,63 @@ return true;
   const btnCreateLobby = document.getElementById('btnCreateLobby');
   let reservedPseudo = false;
   let loggedUser = null;
+  // === Robust lock for pseudo input when logged in ===
+  (function(){
+    try {
+      var __pseudo = document.getElementById('pseudoInput');
+      // Helper: are we logged in right now?
+      function __isLoggedIn(){
+        try {
+          // Prefer global state set by setAuthUI
+          if (typeof loggedUser !== 'undefined' && loggedUser) return true;
+        } catch(_){}
+        try {
+          var b = document.getElementById('btnLogout');
+          return !!(b && b.style && b.style.display !== 'none');
+        } catch(_){}
+        return false;
+      }
+      function enforcePseudoLock(){
+        try {
+          if (!__pseudo) __pseudo = document.getElementById('pseudoInput');
+          if (!__pseudo) return;
+          if (__isLoggedIn()){
+            try {
+              // Force account username and lock the field
+              var name = (typeof loggedUser !== 'undefined' && loggedUser) ? String(loggedUser) : (__pseudo.value||'');
+              __pseudo.value = name;
+              __pseudo.readOnly = true;
+              __pseudo.setAttribute('readonly','readonly');
+              // Keep visual "green/locked" style
+              __pseudo.style.background = '#c7f7c7';
+              __pseudo.style.color = '#000';
+              __pseudo.style.border = '1px solid #49c749';
+            } catch(_){}
+          }
+        } catch(_){}
+      }
+      // Prevent any user edits while logged in
+      if (__pseudo){
+        __pseudo.addEventListener('beforeinput', function(ev){ if (__isLoggedIn()){ ev.preventDefault(); enforcePseudoLock(); } }, true);
+        __pseudo.addEventListener('keydown', function(ev){
+          try {
+            if (!__isLoggedIn()) return;
+            var k = ev && (ev.key || ev.code || '');
+            // Allow navigation keys, deny all that would edit
+            var allow = ['Tab','Enter','Escape','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'];
+            if (allow.indexOf(k) === -1) { ev.preventDefault(); enforcePseudoLock(); }
+          } catch(_){}
+        }, true);
+        __pseudo.addEventListener('paste', function(ev){ if (__isLoggedIn()){ ev.preventDefault(); enforcePseudoLock(); } }, true);
+        __pseudo.addEventListener('drop', function(ev){ if (__isLoggedIn()){ ev.preventDefault(); enforcePseudoLock(); } }, true);
+      }
+      // Re‑enforce periodically in case some other code toggles readonly
+      setInterval(enforcePseudoLock, 800);
+      // Make globally accessible for calls from other UI flows
+      try { window.enforcePseudoLock = enforcePseudoLock; } catch(_){}
+    } catch(_){}
+  })();
+
 
   function setAuthUI(loggedIn, username){
     try {
@@ -5732,6 +6372,7 @@ return true;
     } catch(_){}
     loggedUser = loggedIn ? (username || '') : null; try{ window.loggedUser = loggedIn ? (username||'') : null; }catch(_){}
      try{ window.__meOk = !!loggedIn; }catch(_){ } validatePseudoBlocking(); // re-validate
+      try{ if (window.enforcePseudoLock) window.enforcePseudoLock(); }catch(_){ }
   }
 
   function updateAuthTexts(){
@@ -5796,8 +6437,7 @@ if (kind === 'login') {
       // Initial placeholder while fetching
       if (!document.getElementById('shopUpgradesLobby')) { modalBody.innerHTML = '<div style="padding:8px;color:#9ab;">Loading...</div>'; }
       btnSubmit.style.display = 'none';
-      btnCancel.textContent = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])||{}).cancel || 'Close';
-      (async function(){
+(async function(){
         try{
           const r = await fetch('/api/me', { credentials:'include' });
           const j = await r.json();
@@ -5886,13 +6526,12 @@ if (kind === 'login') {
         // Set message safely without HTML injection
         if (modalBody) { modalBody.textContent = m; }
         if (btnSubmit) { btnSubmit.style.display = 'none'; btnSubmit.onclick = null; }
-        if (btnCancel) { btnCancel.textContent = trAuthFn('ok', 'OK'); btnCancel.onclick = hideModal; btnCancel.style.display = ''; }
+        if (btnCancel) { btnCancel.style.display=''; btnCancel.textContent = (trAuth && trAuth('cancel','Cancel')) || 'Cancel'; btnCancel.onclick = hideModal; }
       } catch(_){}
     
       return;
     }
-btnCancel.textContent = trAuth('cancel','Cancel');
-    btnSubmit.textContent = trAuth('submit','Submit');
+btnSubmit.textContent = trAuth('submit','Submit');
     setTimeout(() => { const u = document.getElementById('authUser'); if (u) u.focus(); }, 30);
 
 }
@@ -5976,12 +6615,23 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   if (btnLogin) btnLogin.addEventListener('click', function(){ showModal('login'); }, { passive:true });
   if (btnShop) btnShop.addEventListener('click', function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
   if (btnSignup) btnSignup.addEventListener('click', function(){ showModal('signup'); }, { passive:true });
-  if (btnLogout) btnLogout.addEventListener('click', async function(){ try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ } setAuthUI(false); showTopMessage(trAuth('logoutOk')); }, { passive:true });
+  if (btnLogout) btnLogout.addEventListener('click', async function(){
+    try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ }
+    try { if (typeof setAuthUI === 'function') setAuthUI(false); } catch(_){ }
+    try { if (typeof showTopMessage === 'function') showTopMessage(trAuth('logoutOk')); } catch(_){ }
+    try {
+      // Prefer the existing hardReload() if available (disconnects socket + full reload)
+      if (typeof hardReload === 'function') { hardReload(); return; }
+      // Fallback: ensure socket is closed then force a full page reload
+      if (window.socket && socket && socket.connected) { try { socket.disconnect(); } catch(_){ } }
+      if (typeof location !== 'undefined' && location && location.reload) location.reload();
+      else window.location = window.location;
+    } catch(_){ /* swallow to avoid breaking UI */ }
+  }, { passive:true });
   if (btnSettings) btnSettings.addEventListener('click', function(){ showModal('settings'); }, { passive:true });
   if (overlay) overlay.addEventListener('click', hideModal, { passive:true });
   if (btnCancel) btnCancel.addEventListener('click', hideModal, { passive:true });
-
-  // Intercept clicks to block reserved pseudo
+// Intercept clicks to block reserved pseudo
   function guardAction(e){
     if (reservedPseudo) { e.preventDefault(); e.stopPropagation(); showTopMessage(trAuth('reservedName')); return false; }
   }
@@ -6023,6 +6673,40 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
     } catch(_){ setAuthUI(false); }
   }
   document.addEventListener('DOMContentLoaded', function(){ refreshMe(); updateAuthTexts(); validatePseudoBlocking(); }, { passive:true });
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6074,6 +6758,40 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       }, 150);
     } catch(_){}
   })();
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6179,6 +6897,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
         }
         try { if (window.myPseudo) pseudoInput.value = window.myPseudo; } catch(_){ }
         try { if (typeof updateButtonsDisabled === 'function') updateButtonsDisabled(); } catch(_){ }
+      try{ if (window.enforcePseudoLock) window.enforcePseudoLock(); }catch(_){ }
       }
     }catch(_){ }
   }, { passive: true });
@@ -6195,6 +6914,40 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   if (btnCreate) btnCreate.addEventListener('click', hideLadderOnly, { passive: true });
 
   window.showLadder = showLadder;
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <script>
@@ -6309,6 +7062,24 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       const dmgDesc = T.dmgUpgDesc || 'Start each game with +1 damage per level (up to +20).';
       html += item('hp',  hpTitle,  hpDesc,  hpLv,  hpMax,  HP_PRICE);
       html += item('dmg', dmgTitle, dmgDesc, dmgLv, dmgMax, DMG_PRICE);
+      // Character skin row
+      html += (
+        '<div data-skin-item="1" style="display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
+      + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
+      + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+      + '  </div>'
+      + '  <div style="flex:1;">'
+      + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
+      + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
+      + '  </div>'
+      + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:160px;width:160px;">'
+      + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
+      + '    <div style="min-height:16px;"></div>'
+      + '  </div>'
+      + '</div>'
+      );
+
       // Placeholder for turret skins/upgrades if provided by the backend:
       if (j.turretShop && Array.isArray(j.turretShop)){
         j.turretShop.forEach(function(t){
@@ -6333,6 +7104,21 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
               method:'POST', headers:{ 'Content-Type': 'application/json' },
               credentials:'include', body: JSON.stringify({ type })
             });
+        // Event delegation for Character skin "Customize" button
+        try {
+          content.addEventListener('click', function(ev){
+            var t = ev.target;
+            if (!t) return;
+            var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+            if (!btn) return;
+            try {
+              if (typeof window.openSkinModal === 'function') window.openSkinModal();
+              else if (typeof openSkinModal === 'function') openSkinModal();
+            } catch(_) {}
+            try { if (typeof window.fetchMe==='function') window.fetchMe(); } catch(_){}
+          }, { passive:true });
+        } catch(_) {}
+
             const jj = await r.json();
             if (jj && jj.ok){
               try { if (typeof showTopMessage==='function') showTopMessage(T.purchaseOk || 'Purchase successful.'); } catch(_){}
@@ -6347,6 +7133,21 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
             try{ showTopMessage('Shop not available.'); }catch(_){}
           }
         }, { passive:true });
+
+      // Bind Character skin customize button
+      try {
+        Array.prototype.slice.call(content.querySelectorAll('.skinOpenBtn')).forEach(function(b){
+          if (!b.__bound){
+            b.__bound = true;
+            b.addEventListener('click', function(){
+              try {
+                if (typeof window.fetchMe==='function' && typeof window.openSkinModal==='function') { (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }
+                else { setTimeout(function(){ try{ if (typeof window.fetchMe==='function' && typeof window.openSkinModal==='function') (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){} }, 50); }
+              } catch(_) {}
+            }, { passive:true });
+          }
+        });
+      } catch(_){}
       });
 
     } catch(e){
@@ -6547,6 +7348,40 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       }
     } catch(e) { debugError('forceGameEnter error', e && (e.message||e)); }
   };
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6576,6 +7411,40 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       } catch(e){ debugError('postStart handler error', e && e.message); }
     });
   } catch(e){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6649,6 +7518,40 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
     try { for (var k in originalIO) { patchedIO[k] = originalIO[k]; } } catch(_){}
     window.io = patchedIO; window.__io_patched_for_debug = true;
   })();
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6725,6 +7628,40 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
   window.addEventListener('orientationchange', function(){ try{ ensureCanvasReady(); }catch(_){ } });
   window.addEventListener('resize', function(){ try{ ensureCanvasReady(); }catch(_){ } });
   setTimeout(function(){ try{ ensureCanvasReady(); }catch(_){ } }, 500);
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -6994,6 +7931,40 @@ e.preventDefault(); e.stopPropagation();
   try { window.__applyBuildTileHighlight = applyBuildTileHighlight; } catch(_){}
 
   applyBuildTileHighlight();
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -7186,6 +8157,40 @@ e.preventDefault(); e.stopPropagation();
     }
 
   } catch(_e){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- Account Gold Shop Modal -->
@@ -7245,6 +8250,40 @@ e.preventDefault(); e.stopPropagation();
       try { relabel(); } catch(_){};
     };
   } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <script>
@@ -7267,6 +8306,40 @@ e.preventDefault(); e.stopPropagation();
       });
     }
   } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -7305,6 +8378,40 @@ e.preventDefault(); e.stopPropagation();
       socket.on('gameStarted', function(){ try{ setVH(); if (window.ensureCanvasReady) ensureCanvasReady(); }catch(_){} });
     }
   }catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /VIEWPORT & FULLSCREEN SIZING FIX -->
@@ -7347,6 +8454,40 @@ e.preventDefault(); e.stopPropagation();
   // Also run on focus/pageshow
   try{ window.addEventListener('focus', rescue, {passive:true}); }catch(_){}
   try{ window.addEventListener('pageshow', rescue, {passive:true}); }catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /MAIN BUTTON RESCUE -->
@@ -7360,6 +8501,40 @@ e.preventDefault(); e.stopPropagation();
   ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(function(ev){
     try{ window.addEventListener(ev, ensure, {passive:true}); }catch(_){}
   });
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 
@@ -7433,6 +8608,40 @@ e.preventDefault(); e.stopPropagation();
   setTimeout(canvasFit, 0);
   setTimeout(canvasFit, 250);
   setInterval(canvasFit, 1000);
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /CANVAS-FIT ULTIMATE PATCH -->
@@ -7478,6 +8687,40 @@ e.preventDefault(); e.stopPropagation();
     try{ window.addEventListener(ev, onLobbyVisible, { passive:true }); }catch(_){}
   });
   try{ if (window.socket && window.socket.on){ socket.on('lobbyUpdate', onLobbyVisible); } }catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /MAIN BUTTON RESCUE 2 -->
@@ -7499,6 +8742,85 @@ e.preventDefault(); e.stopPropagation();
       setTimeout(function(){ try{ pseudoInput.style.background = old || ''; }catch(_){} }, 450);
     }catch(_){}
   };
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
+})();
+</script>
+
+<script>
+// Global color sanitizer to normalize hex (accepts pure black/white).
+// Defined globally so all modules (picker, inputs, preview) can use it safely.
+window.__sanitizeHex = window.__sanitizeHex || function(hex){
+  try{
+    hex = String(hex||'').trim().toLowerCase();
+    if (hex[0] !== '#') hex = '#' + hex;
+    if (hex.length === 4) hex = '#' + hex[1]+hex[1]+hex[2]+hex[2]+hex[3]+hex[3];
+    if (!/^#[0-9a-f]{6}$/.test(hex)) hex = '#111111';
+    /* allow pure black */
+    /* allow pure white */
+    return hex;
+  } catch(_){ return '#111111'; }
+};
+</script>
+
+<script>
+// [PATCH] language-change sync for skin modal (no reload needed)
+(function(){
+  try {
+    var prevUpdate = window.updateUITexts;
+    if (typeof prevUpdate !== 'function') return;
+    if (prevUpdate.__skinLocalePatched) return;
+    function refreshSkinLocale(){
+      try{
+        var skin = document.getElementById('skinModal');
+        var wasOpen = false;
+        try { wasOpen = (skin && skin.style && skin.style.display !== 'none'); } catch(_){}
+        if (skin && skin.parentNode) skin.parentNode.removeChild(skin);
+        // Recreate skeleton to keep handlers ready if needed
+        try { if (typeof window.ensureSkinModal === 'function') window.ensureSkinModal(); } catch(_){}
+        if (wasOpen) { try { if (typeof window.openSkinModal === 'function') window.openSkinModal(); } catch(_){} }
+      }catch(_){}
+    }
+    function patchedUpdateUITexts(){
+      try { prevUpdate.apply(this, arguments); } catch(_){}
+      // Also refresh skin modal texts immediately if present
+      try { refreshSkinLocale(); } catch(_){}
+    }
+    patchedUpdateUITexts.__skinLocalePatched = true;
+    window.updateUITexts = patchedUpdateUITexts;
+  } catch(_){}
 })();
 </script>
 
@@ -7721,6 +9043,40 @@ e.preventDefault(); e.stopPropagation();
     } catch(_e){}
   })();
 
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /[PATCH] turret-skins-swap v1 -->
@@ -7747,6 +9103,40 @@ e.preventDefault(); e.stopPropagation();
     } catch(_) {}
   }
   try { setInterval(patchShopTurretIcons, 1000); } catch(_){}
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
 })();
 </script>
 <!-- /[PATCH] turret-skins-swap v1 - periodic shop patch -->
@@ -7865,3 +9255,729 @@ e.preventDefault(); e.stopPropagation();
   }
 })(); 
 </script>
+
+<!-- [PATCH] character-skin shop & recolor v1 -->
+<script>
+(function(){
+  if (window.__skinShopInstalled) return; 
+  window.__skinShopInstalled = true;
+
+  // ======= State & helpers =======
+  var __basePlayerImg = (typeof playerImg !== 'undefined') ? playerImg : null;
+  var __myUser = null;
+  var __mySkin = null; // { hair, skin, clothes }
+  var __spriteCache = {}; // pseudoLower -> Image
+
+  function uiLang(){
+    try { var raw = (window.currentLang||navigator.language||'en').slice(0,2); var alias={ja:'jp',zh:'cn',ko:'kr'}; return alias[raw]||raw||'en'; }catch(_){ return 'en'; }
+  }
+
+  function fetchMe(){
+    return fetch('/api/me', { credentials:'include' })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j && j.ok){
+          __myUser = j.username || null;
+          __mySkin = j.skin || __mySkin;
+        }
+      }).catch(function(_){});
+  }
+
+  function hexToRgb(h){ var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(h||'')); return m?{r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}:null; }
+  function rgbToHsl(r,g,b){
+    r/=255; g/=255; b/=255;
+    var max=Math.max(r,g,b), min=Math.min(r,g,b);
+    var h,s,l=(max+min)/2;
+    if (max==min){ h=s=0; }
+    else{
+      var d=max-min;
+      s=l>0.5? d/(2-max-min) : d/(max+min);
+      switch(max){
+        case r: h=(g-b)/d + (g<b?6:0); break;
+        case g: h=(b-r)/d + 2; break;
+        case b: h=(r-g)/d + 4; break;
+      }
+      h/=6;
+    }
+    return {h:h,s:s,l:l};
+  }
+  function hslToRgb(h,s,l){
+    var r,g,b;
+    if(s===0){ r=g=b=l; }
+    else{
+      function hue2rgb(p,q,t){ if(t<0) t+=1; if(t>1) t-=1; if(t<1/6) return p+(q-p)*6*t; if(t<1/2) return q; if(t<2/3) return p+(q-p)*(2/3 - t)*6; return p; }
+      var q = l < 0.5 ? l * (1 + s) : l + s - l*s;
+      var p = 2 * l - q;
+      r = hue2rgb(p,q,h + 1/3);
+      g = hue2rgb(p,q,h);
+      b = hue2rgb(p,q,h - 1/3);
+    }
+    return {r:Math.round(r*255), g:Math.round(g*255), b:Math.round(b*255)};
+  }
+
+  // Classify pixel by hue/sat ranges (robust to different base shades)
+  
+
+function classifyRegion(r,g,b,a){
+    if (a < 10) return 'none';
+    var hsl = rgbToHsl(r,g,b);
+    var h = hsl.h*360, s = hsl.s, l = hsl.l;
+
+    // Ignore outlines/eyes and fully transparent
+    // Ignore outlines/eyes and fully transparent
+    // Previous: l-extremes OR low saturation were skipped, which blocked near‑white/near‑black highlights.
+    // Keep ignoring truly gray/outline pixels, but allow colored extremes so gradients with white/black apply correctly.
+    if (s <= 0.03 || (l <= 0.06 && s <= 0.10) || (l >= 0.97 && s <= 0.10)) return 'none';
+
+    // Clothes: greens/cyans from the base sprite. Wider band to catch all shades.
+    if (s > 0.12 && h >= 70 && h <= 190) return 'clothes';
+
+    // Base orange/brown band used by hair/skin. Split by lightness.
+    if (h >= 8 && h <= 70 && s > 0.06){
+      return (l <= 0.56) ? 'hair' : 'skin';
+    }
+
+    // Fallback classification for borderline pixels (anti‑alias shades)
+    var diffGreen = Math.min(Math.abs(h - 120), 360 - Math.abs(h - 120));
+    var diffOrange = Math.min(Math.abs(h - 30),  360 - Math.abs(h - 30));
+    if (s > 0.05){
+      if (diffGreen < 30) return 'clothes';
+      if (diffOrange < 35) return (l <= 0.56) ? 'hair' : 'skin';
+    }
+    return 'none';
+  }
+
+  function applyTintPreserveLight(rgbTarget, srcHsl){
+    // If user picked pure black or pure white, apply it exactly
+    // (do not preserve source lightness), otherwise keep the original shading behavior.
+    if (rgbTarget && rgbTarget.r===0 && rgbTarget.g===0 && rgbTarget.b===0) return {r:0,g:0,b:0};
+    if (rgbTarget && rgbTarget.r===255 && rgbTarget.g===255 && rgbTarget.b===255) return {r:255,g:255,b:255};
+    var thsl = rgbToHsl(rgbTarget.r, rgbTarget.g, rgbTarget.b);
+    // Blend saturation slightly to keep sprite relief
+    var h = thsl.h;
+    var s = Math.min(1, Math.max(0, thsl.s*0.85 + srcHsl.s*0.15));
+    // Allow target lightness to influence the result near extremes (for white/black gradients),
+    // while preserving shading in mid‑tones.
+    var t = thsl.l; // target lightness
+    // closeness=0 in mid-range (~[0.25..0.75]), -> preserve src lightness
+    // closeness=1 near pure black/white -> follow target lightness (to let gradients work)
+    var closeness = Math.max(0, Math.min(1, (Math.abs(t - 0.5) - 0.25) / 0.25));
+    var l = srcHsl.l*(1 - closeness) + t*closeness;
+    var out = hslToRgb(h,s,l);
+    return out;
+  }function recolorPlayerImage(baseImg, colors, cb){
+    try{
+      var canvas = document.createElement('canvas');
+      var w = baseImg.naturalWidth||baseImg.width||64;
+      var h = baseImg.naturalHeight||baseImg.height||64;
+      if (!w || !h) { if (cb) cb(null); return; }
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      try { ctx.imageSmoothingEnabled = false; }catch(_){}
+      ctx.drawImage(baseImg, 0, 0, w, h);
+      var id = ctx.getImageData(0,0,w,h);
+      var d = id.data;
+      var rgbHair = hexToRgb(colors.hair||'#6b4d2e');
+      var rgbSkin = hexToRgb(colors.skin||'#f4c2c2');
+      var rgbClothes = hexToRgb(colors.clothes||'#2aa84a');
+      for (var i=0;i<d.length;i+=4){
+        var r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+        var reg = classifyRegion(r,g,b,a);
+        if (reg==='none') continue;
+        var hsl = rgbToHsl(r,g,b);
+        var target = (reg==='hair')?rgbHair : (reg==='skin')?rgbSkin : rgbClothes;
+        var out = applyTintPreserveLight(target, hsl);
+        d[i]=out.r; d[i+1]=out.g; d[i+2]=out.b; // keep alpha
+      }
+      ctx.putImageData(id,0,0);
+      var url = canvas.toDataURL('image/png');
+      var im = new Image(); im.src = url; im.decoding='async'; im.style.imageRendering='pixelated';
+      if (cb) { if (im.complete) cb(im); else im.onload=function(){ cb(im); }; }
+    }catch(e){ if (cb) cb(null); }
+  }
+
+  function getPlayerSpriteFor(pseudo){
+    try{
+      if (!pseudo) return __basePlayerImg;
+      var key = String(pseudo||'').toLowerCase();
+      if (__spriteCache[key]) return __spriteCache[key];
+      // Local user skin only (others default) to avoid heavy lookups
+      if (__myUser && key === String(__myUser||'').toLowerCase() && __mySkin && __basePlayerImg){
+        // Build synchronously? We kick an async build and return base for this frame
+        recolorPlayerImage(__basePlayerImg, __mySkin, function(img){ __spriteCache[key] = img || __basePlayerImg; });
+      }
+      return __basePlayerImg;
+    }catch(_){ return __basePlayerImg; }
+  }
+  try { window.getPlayerSpriteFor = getPlayerSpriteFor; } catch(_){}
+  try { if (typeof window.fetchMe!=='function') window.fetchMe = fetchMe; } catch(_){ }
+  try { if (typeof window.openSkinModal!=='function') window.openSkinModal = openSkinModal; } catch(_){ }
+
+  // ======= Shop UI injection =======
+  function ensureSkinModal(){
+    var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+    
+    if (document.getElementById('skinModal')) return;
+    var modal = document.createElement('div');
+    modal.id = 'skinModal';
+    modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:2147483646; align-items:center; justify-content:center;';
+    modal.innerHTML = ''
+      + '<div id="skinBox" style="background:#111;border:1px solid #222;max-width: min(92vw, 540px); color:#eee; box-shadow:0 10px 30px #000a;">'
+      + '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">'
+      + '    <div style="font-weight:800;font-size:18px;">' + ((T.customizeCharacter||'Customize character')) + '</div>'
+      + '    <button id="skinClose" style="background:#333;color:#fff;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;">✕</button>'
+      + '  </div>'
+      + '  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">'
+      + '    <div style="flex:1;min-width:200px;text-align:center;">'
+      + '      <canvas id="skinPreview" width="96" height="96" style="width:160px;height:160px;border:1px solid #333;border-radius:8px;background:#222;"></canvas>'
+      + '      <div style="margin-top:8px;font-size:12px;color:#9ab;">' + ((T.preview||'Preview')) + '</div>'
+      + '    </div>'
+      + '    <div style="flex:1;min-width:240px;">'
+      + '      <div style="display:flex;flex-direction:column;gap:10px;">'
+      + '        <label>' + ((T.hair||'Hair')) + ' <input id="hairColor" type="color" value="#6b4d2e" style="margin-left:8px;"></label>'
+      + '        <label>' + ((T.skin||'Skin')) + ' <input id="skinColor" type="color" value="#f4c2c2" style="margin-left:8px;"></label>'
+      + '        <label>' + ((T.clothes||'Clothes')) + ' <input id="clothesColor" type="color" value="#2aa84a" style="margin-left:8px;"></label>'
+      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '        <div id="skinMsg" style="min-height:18px;font-size:12px;color:#9ab;"></div>'
+      + '        <div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      + '          <button id="skinBuy" style="flex:1;background:#ff8800;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.buy||'Buy')) + '</button>'
+      + '          <button id="skinCancel" style="flex:1;background:#222;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.cancel||'Cancel')) + '</button>'
+      + '        </div>'
+      + '      </div>'
+      + '    </div>'
+      + '  </div>'
+      + '</div>';
+    document.body.appendChild(modal);
+try { modal.addEventListener('click', function(ev){ if (ev.target && (ev.target.id==='skinCancel' || ev.target.id==='skinClose')) { modal.style.display='none'; } }, {passive:true}); } catch(_){ }
+function close(){ modal.style.display='none'; }
+    modal.addEventListener('click', function(ev){ if (ev.target===modal) close(); }, { passive:true });
+    modal.querySelector('#skinClose').addEventListener('click', close, { passive:true });
+    modal.querySelector('#skinCancel').addEventListener('click', close, { passive:true });
+  }
+
+  function openSkinModal(){
+    var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+    
+    ensureSkinModal();
+    var modal = document.getElementById('skinModal');
+    var canvas = document.getElementById('skinPreview');
+    var ctx = canvas.getContext('2d');
+    try { ctx.imageSmoothingEnabled = false; }catch(_){}
+
+    var hairInp = document.getElementById('hairColor');
+    var skinInp = document.getElementById('skinColor');
+    var clothesInp = document.getElementById('clothesColor');
+    var msg = document.getElementById('skinMsg');
+
+    
+    
+    // --- Custom in-DOM color palette with "Valider" inside (replaces native popup) ---
+    (function(){
+      var overlay, svCanvas, svCtx, hueCanvas, hueCtx, okBtn, rIn, gIn, bIn, activeInput = null;
+      function clamp(v,min,max){ return v<min?min: (v>max?max:v); }
+      function hsv2rgb(h,s,v){
+        h = (h%360+360)%360; s = clamp(s,0,1); v = clamp(v,0,1);
+        var c = v*s, x = c*(1-Math.abs((h/60)%2-1)), m=v-c, r=0,g=0,b=0;
+        if (h<60){ r=c; g=x; b=0; } else if (h<120){ r=x; g=c; b=0; }
+        else if (h<180){ r=0; g=c; b=x; } else if (h<240){ r=0; g=x; b=c; }
+        else if (h<300){ r=x; g=0; b=c; } else { r=c; g=0; b=x; }
+        return { r: Math.round((r+m)*255), g: Math.round((g+m)*255), b: Math.round((b+m)*255) };
+      }
+      function rgb2hsv(r,g,b){
+        r/=255; g/=255; b/=255;
+        var max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min, h=0, s=max===0?0:d/max, v=max;
+        if(d!==0){
+          switch(max){
+            case r: h = 60*(((g-b)/d)%6); break;
+            case g: h = 60*(((b-r)/d)+2); break;
+            case b: h = 60*(((r-g)/d)+4); break;
+          }
+        }
+        if (h<0) h+=360;
+        return {h:h, s:s, v:v};
+      }
+      function hex2rgb(hex){
+        hex = (hex||'').toString().trim();
+        if (hex[0]==='#') hex = hex.slice(1);
+        if (hex.length===3) hex = hex.split('').map(function(c){return c+c;}).join('');
+        var n = parseInt(hex,16);
+        if (isNaN(n) || hex.length!==6) return {r:0,g:0,b:0};
+        return { r: (n>>16)&255, g: (n>>8)&255, b: n&255 };
+      }
+      function rgb2hex(r,g,b){ function h(x){ return (x|0).toString(16).padStart(2,'0'); } return '#' + h(r)+h(g)+h(b); }
+
+      var hue = 240, sat = 1, val = 1;
+
+      function ensureOverlay(){
+        if (overlay) return;
+        overlay = document.createElement('div');
+        overlay.id = 'colorPaletteOverlay';
+        overlay.style.position = 'fixed';
+        overlay.style.zIndex = '2147483647';
+        overlay.style.background = '#111';
+        overlay.style.border = '1px solid #333';
+        overlay.style.borderRadius = '10px';
+        overlay.style.boxShadow = '0 10px 30px rgba(0,0,0,.5)';
+        overlay.style.padding = '10px';
+        overlay.style.display = 'none';
+        overlay.style.width = '260px';
+
+        var title = document.createElement('div');
+        title.textContent = (T.color||'Color');
+        title.style.color='#fff';
+        title.style.fontWeight='700';
+        title.style.margin='0 0 6px';
+        overlay.appendChild(title);
+
+        svCanvas = document.createElement('canvas');
+        svCanvas.width = 240; svCanvas.height = 150;
+        svCanvas.style.display = 'block';
+        svCanvas.style.border = '1px solid #222';
+        svCanvas.style.borderRadius = '8px';
+        overlay.appendChild(svCanvas);
+        svCtx = svCanvas.getContext('2d');
+
+        hueCanvas = document.createElement('canvas');
+        hueCanvas.width = 240; hueCanvas.height = 16;
+        hueCanvas.style.display='block';
+        hueCanvas.style.margin = '8px 0';
+        hueCanvas.style.borderRadius = '8px';
+        hueCanvas.style.border = '1px solid #222';
+        overlay.appendChild(hueCanvas);
+        hueCtx = hueCanvas.getContext('2d');
+
+        var rgbWrap = document.createElement('div');
+        rgbWrap.style.display='grid';
+        rgbWrap.style.gridTemplateColumns='1fr 1fr 1fr';
+        rgbWrap.style.gap='8px';
+        function mkNum(label){
+          var wrap=document.createElement('div');
+          var i=document.createElement('input');
+          i.type='number'; i.min='0'; i.max='255'; i.step='1';
+          i.style.width='100%'; i.style.boxSizing='border-box';
+          i.style.padding='6px 8px';
+          i.style.borderRadius='6px'; i.style.border='1px solid #222'; i.style.background='#000'; i.style.color='#fff';
+          var l=document.createElement('div');
+          l.textContent=label; l.style.color='#9ab'; l.style.fontSize='12px'; l.style.marginTop='4px'; l.style.textAlign='center';
+          wrap.appendChild(i); wrap.appendChild(l);
+          return {wrap:wrap,input:i};
+        }
+        var nr=mkNum('R'), ng=mkNum('G'), nb=mkNum('B');
+        rIn = nr.input; gIn = ng.input; bIn = nb.input;
+        rgbWrap.appendChild(nr.wrap); rgbWrap.appendChild(ng.wrap); rgbWrap.appendChild(nb.wrap);
+        overlay.appendChild(rgbWrap);
+
+        var actions = document.createElement('div');
+        actions.style.display='flex'; actions.style.gap='8px'; actions.style.marginTop='10px';
+        okBtn = document.createElement('button');
+        okBtn.textContent=(T.validate||'Apply');
+        okBtn.style.flex='1';
+        okBtn.style.background='#2a6aff'; okBtn.style.color='#fff'; okBtn.style.border='none';
+        okBtn.style.padding='10px 14px'; okBtn.style.borderRadius='8px'; okBtn.style.cursor='pointer';
+        actions.appendChild(okBtn);
+overlay.appendChild(actions);
+
+        document.body.appendChild(overlay);
+document.addEventListener('keydown', function(e){ if (e.key==='Escape') hide(); }, {passive:true});
+        document.addEventListener('mousedown', function(e){ try { if (overlay && overlay.style.display!=='none' && !overlay.contains(e.target) && e.target!==activeInput) { overlay.hide(); } } catch(_){ } }, true);
+
+        function hide(){ overlay.style.display='none'; activeInput = null; }
+        overlay.hide = hide;
+
+        function drawHue(){
+          var grd = hueCtx.createLinearGradient(0,0,hueCanvas.width,0);
+          grd.addColorStop(0,'#f00'); grd.addColorStop(1/6,'#ff0');
+          grd.addColorStop(2/6,'#0f0'); grd.addColorStop(3/6,'#0ff');
+          grd.addColorStop(4/6,'#00f'); grd.addColorStop(5/6,'#f0f'); grd.addColorStop(1,'#f00');
+          hueCtx.fillStyle = grd; hueCtx.fillRect(0,0,hueCanvas.width,hueCanvas.height);
+        }
+        function drawSV(){
+          var w=svCanvas.width,h=svCanvas.height;
+          var rgb=hsv2rgb(hue,1,1);
+          svCtx.fillStyle = 'rgb('+rgb.r+','+rgb.g+','+rgb.b+')';
+          svCtx.fillRect(0,0,w,h);
+          var g1=svCtx.createLinearGradient(0,0,w,0);
+          g1.addColorStop(0,'#fff'); g1.addColorStop(1,'rgba(255,255,255,0)');
+          svCtx.fillStyle=g1; svCtx.fillRect(0,0,w,h);
+          var g2=svCtx.createLinearGradient(0,0,0,h);
+          g2.addColorStop(0,'rgba(0,0,0,0)'); g2.addColorStop(1,'#000');
+          svCtx.fillStyle=g2; svCtx.fillRect(0,0,w,h);
+          var x = clamp(sat,0,1)*w, y = (1-clamp(val,0,1))*h;
+          svCtx.beginPath(); svCtx.arc(x,y,6,0,Math.PI*2);
+          svCtx.lineWidth=2; svCtx.strokeStyle='#fff'; svCtx.stroke();
+          svCtx.beginPath(); svCtx.arc(x,y,5,0,Math.PI*2);
+          svCtx.strokeStyle='#000'; svCtx.stroke();
+        }
+        function updateInputs(){
+          var rgb=hsv2rgb(hue,sat,val);
+          rIn.value=rgb.r; gIn.value=rgb.g; bIn.value=rgb.b;
+        }
+        function setFromRGB(r,g,b){
+          r=clamp(+r||0,0,255); g=clamp(+g||0,0,255); b=clamp(+b||0,0,255);
+          var hsv=rgb2hsv(r,g,b); hue=hsv.h; sat=hsv.s; val=hsv.v;
+          drawHue(); drawSV(); updateInputs(); pushPreview();
+        }
+        function pushPreview(){
+          var hex = window.__sanitizeHex(rgb2hex(+rIn.value||0, +gIn.value||0, +bIn.value||0));
+          if (activeInput===hairInp) { applied.hair = hex; schedulePreview(); }
+          else if (activeInput===skinInp) { applied.skin = hex; schedulePreview(); }
+          else if (activeInput===clothesInp) { applied.clothes = hex; schedulePreview(); }
+        }
+
+        hueCanvas.addEventListener('mousedown', function(e){
+          var rect=hueCanvas.getBoundingClientRect();
+          function move(ev){
+            var x = clamp((ev.clientX-rect.left)/rect.width,0,1);
+            hue = x*360; drawSV(); updateInputs(); pushPreview();
+          }
+          function up(){ window.removeEventListener('mousemove',move); window.removeEventListener('mouseup',up); }
+          move(e); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+        });
+        svCanvas.addEventListener('mousedown', function(e){
+          var rect=svCanvas.getBoundingClientRect();
+          function move(ev){
+            var x = clamp((ev.clientX-rect.left)/rect.width,0,1);
+            var y = clamp((ev.clientY-rect.top)/rect.height,0,1);
+            sat = x; val = 1-y; drawSV(); updateInputs(); pushPreview();
+          }
+          function up(){ window.removeEventListener('mousemove',move); window.removeEventListener('mouseup',up); }
+          move(e); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+        });
+        [rIn,gIn,bIn].forEach(function(inp){
+          inp.addEventListener('input', function(){ setFromRGB(rIn.value,gIn.value,bIn.value); }, {passive:true});
+        });
+
+        okBtn.addEventListener('click', function(){
+          try {
+            var hex = window.__sanitizeHex(rgb2hex(+rIn.value||0, +gIn.value||0, +bIn.value||0));
+            if (activeInput){ activeInput.value = hex; }
+            pushPreview();
+            overlay.hide();
+          } catch(_){}
+        }, {passive:true});
+      }
+
+      function openPickerFor(input){
+        ensureOverlay();
+        activeInput = input;
+        var rect = input.getBoundingClientRect();
+        overlay.style.left = Math.min(window.innerWidth-280, rect.left) + 'px';
+        overlay.style.top  = Math.min(window.innerHeight-260, rect.bottom + 6) + 'px';
+        overlay.style.display='block';
+        var rgb = hex2rgb(input.value||'#000000');
+        var hsv = rgb2hsv(rgb.r, rgb.g, rgb.b);
+        hue=hsv.h; sat=hsv.s; val=hsv.v;
+        (function renderStart(){
+          // draw hue
+          var grd = hueCtx.createLinearGradient(0,0,hueCanvas.width,0);
+          grd.addColorStop(0,'#f00'); grd.addColorStop(1/6,'#ff0');
+          grd.addColorStop(2/6,'#0f0'); grd.addColorStop(3/6,'#0ff');
+          grd.addColorStop(4/6,'#00f'); grd.addColorStop(5/6,'#f0f'); grd.addColorStop(1,'#f00');
+          hueCtx.fillStyle = grd; hueCtx.fillRect(0,0,hueCanvas.width,hueCanvas.height);
+          // draw SV and inputs
+          var w=svCanvas.width,h=svCanvas.height;
+          var base=hsv2rgb(hue,1,1);
+          svCtx.fillStyle='rgb('+base.r+','+base.g+','+base.b+')'; svCtx.fillRect(0,0,w,h);
+          var g1=svCtx.createLinearGradient(0,0,w,0);
+          g1.addColorStop(0,'#fff'); g1.addColorStop(1,'rgba(255,255,255,0)');
+          svCtx.fillStyle=g1; svCtx.fillRect(0,0,w,h);
+          var g2=svCtx.createLinearGradient(0,0,0,h);
+          g2.addColorStop(0,'rgba(0,0,0,0)'); g2.addColorStop(1,'#000');
+          svCtx.fillStyle=g2; svCtx.fillRect(0,0,w,h);
+          rIn.value=rgb.r; gIn.value=rgb.g; bIn.value=rgb.b;
+          var x = clamp(sat,0,1)*w, y = (1-clamp(val,0,1))*h;
+          svCtx.beginPath(); svCtx.arc(x,y,6,0,Math.PI*2); svCtx.lineWidth=2; svCtx.strokeStyle='#fff'; svCtx.stroke();
+          svCtx.beginPath(); svCtx.arc(x,y,5,0,Math.PI*2); svCtx.strokeStyle='#000'; svCtx.stroke();
+        })();
+      }
+
+      function intercept(input){
+        function handler(ev){ try { ev.preventDefault(); ev.stopPropagation(); input.blur(); openPickerFor(input); } catch(_){ } return false; }
+        input.addEventListener('mousedown', handler, true);
+        input.addEventListener('focus', function(ev){ handler(ev); }, true);
+        input.addEventListener('click', handler, true);
+      }
+      intercept(hairInp); intercept(skinInp); intercept(clothesInp);
+    })();
+    // --- end custom color palette ---
+// Floating 'Valider' overlay near native color picker (cannot inject inside OS picker)
+    var __colorOverlay;
+    function hideColorOverlay(){ try { if(__colorOverlay) __colorOverlay.style.display='none'; } catch(_){}}
+    function showColorOverlay(target){
+      var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+       try {
+      if(!__colorOverlay){
+        __colorOverlay = document.createElement('div');
+        __colorOverlay.id = 'colorValidateOverlay';
+        __colorOverlay.style.position = 'fixed';
+        __colorOverlay.style.zIndex = '999999';
+        __colorOverlay.style.padding = '6px';
+        __colorOverlay.style.background = '#111';
+        __colorOverlay.style.border = '1px solid #333';
+        __colorOverlay.style.borderRadius = '8px';
+        __colorOverlay.style.boxShadow = '0 6px 18px rgba(0,0,0,.35)';
+        var __btn = document.createElement('button');
+        __btn.id = 'skinApplyAllInline';
+        __btn.textContent = ((T.validate||'Apply'));
+        __btn.style.background = '#2a6aff';
+        __btn.style.color = '#fff';
+        __btn.style.border = 'none';
+        __btn.style.borderRadius = '6px';
+        __btn.style.padding = '8px 12px';
+        __btn.style.cursor = 'pointer';
+        __btn.onclick = function(){ try { applied.hair = hairInp.value; applied.skin = skinInp.value; applied.clothes = clothesInp.value; drawPreview(); } catch(_){ } hideColorOverlay(); };
+        __colorOverlay.appendChild(__btn);
+        document.body.appendChild(__colorOverlay);
+      }
+      var r = target.getBoundingClientRect();
+      var left = Math.min(window.innerWidth - 160, Math.max(8, r.right + 8));
+      var top = Math.min(window.innerHeight - 48, Math.max(8, r.top));
+      __colorOverlay.style.left = left + 'px';
+      __colorOverlay.style.top = top + 'px';
+      __colorOverlay.style.display = 'block';
+    } catch(_){}}
+    ;[hairInp, skinInp, clothesInp].forEach(function(inp){
+      try {
+        inp.addEventListener('focus', function(){ showColorOverlay(inp); }, {passive:true});
+        inp.addEventListener('click', function(){ showColorOverlay(inp); }, {passive:true});
+        inp.addEventListener('blur', function(){ setTimeout(hideColorOverlay, 150); }, {passive:true});
+      } catch(_){ }
+    });
+// Throttled live preview bookkeeping
+    var previewToken = 0;
+    var _rafPending = false;
+    function schedulePreview(){
+      if (_rafPending) return;
+      _rafPending = true;
+      requestAnimationFrame(function(){
+        _rafPending = false;
+        drawPreview();
+      });
+    }
+
+
+    // Applied colors state (validated by the user)
+    var applied = { hair: hairInp.value, skin: skinInp.value, clothes: clothesInp.value };
+    try {
+      if (__mySkin) {
+        if (__mySkin.hair) { applied.hair = __mySkin.hair; hairInp.value = __mySkin.hair; }
+        if (__mySkin.skin) { applied.skin = __mySkin.skin; skinInp.value = __mySkin.skin; }
+        if (__mySkin.clothes) { applied.clothes = __mySkin.clothes; clothesInp.value = __mySkin.clothes; }
+      }
+    } catch(_){}
+
+
+    
+function drawPreview(){
+      if (!__basePlayerImg || !__basePlayerImg.complete) { 
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        return;
+      }
+      // Token to drop stale async renders
+      previewToken++;
+      var myToken = previewToken;
+      recolorPlayerImage(__basePlayerImg, applied, function(img){
+        // drop outdated renders that finished later
+        if (myToken !== previewToken) return;
+        try {
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          var s = Math.min(canvas.width / (__basePlayerImg.width||64), canvas.height / (__basePlayerImg.height||64));
+          var w = (__basePlayerImg.width||64) * s;
+          var h = (__basePlayerImg.height||64) * s;
+          var x = (canvas.width - w)/2, y = (canvas.height - h)/2;
+          ctx.drawImage(img||__basePlayerImg, x, y, w, h);
+        } catch(_){}
+      });
+    }
+
+
+    // Prefill from saved skin if any
+    if (__mySkin){
+      try { if (__mySkin.hair) hairInp.value = __mySkin.hair; }catch(_){}
+      try { if (__mySkin.skin) skinInp.value = __mySkin.skin; }catch(_){}
+      try { if (__mySkin.clothes) clothesInp.value = __mySkin.clothes; }catch(_){}
+    }
+    // Live preview while picking (even before clicking “Valider”)
+    hairInp.oninput = function(){ hairInp.value = window.__sanitizeHex(hairInp.value); applied.hair = hairInp.value; schedulePreview(); };
+    skinInp.oninput = function(){ skinInp.value = window.__sanitizeHex(skinInp.value); applied.skin = skinInp.value; schedulePreview(); };
+    clothesInp.oninput = function(){ clothesInp.value = window.__sanitizeHex(clothesInp.value); applied.clothes = clothesInp.value; schedulePreview(); };
+
+    function buyNow(){
+      msg.textContent = '';
+      fetch('/api/skin/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
+      }).then(function(r){ return r.json(); })
+        .then(function(j){
+          if (j && j.ok){
+            __mySkin = j.skin || { hair: hairInp.value, skin: skinInp.value, clothes: clothesInp.value };
+            // Bust my cached sprite
+            try { if (__myUser) __spriteCache[String(__myUser).toLowerCase()] = null; } catch(_){}
+            // Update shop gold value if present
+            try { var gv = document.getElementById('shopGoldVal'); if (gv) gv.textContent = String(j.gold|0); } catch(_){}
+            msg.style.color = '#9f9';
+            msg.textContent = (T.saved||'Saved!');
+            setTimeout(function(){ try { document.getElementById('skinModal').style.display='none'; }catch(_){ } }, 500);
+          } else {
+            msg.style.color = '#f99';
+            if (j && j.code === 'not_enough_gold') msg.textContent = 'Not enough gold.';
+            else if (j && j.code === 'bad_colors') msg.textContent = 'Pick valid colors.';
+            else msg.textContent = 'Action impossible.';
+          }
+        }).catch(function(){
+          msg.style.color = '#f99'; msg.textContent = 'Server unavailable.';
+        });
+    }
+document.getElementById('skinBuy').onclick = buyNow;
+
+    
+// Style Buy button based on Gold
+(function(){
+  var btn = document.getElementById('skinBuy');
+  if (!btn) return;
+  var PRICE = 5;
+  function getGold(){ try{ var t = document.getElementById('shopGoldVal'); return t ? (+t.textContent||0) : 0; }catch(_){ return 0; } }
+  function applyStyle(){ var g = getGold(); if (g >= PRICE){ btn.disabled=false; btn.style.background='#ff8800'; btn.style.opacity='1'; btn.style.cursor='pointer'; } else { btn.disabled=true; btn.style.background='#ff8800'; btn.style.opacity='0.6'; btn.style.cursor='not-allowed'; } }
+  applyStyle();
+  try{ var gv=document.getElementById('shopGoldVal'); if (gv && window.MutationObserver){ var mo=new MutationObserver(applyStyle); mo.observe(gv,{childList:true,characterData:true,subtree:true}); } }catch(_){}
+  // Also re-apply style after any click in modal (safety)
+  try{ var modal=document.getElementById('skinModal'); if (modal){ modal.addEventListener('click', function(){ setTimeout(applyStyle,0); }, {passive:true}); } }catch(_){ }
+})();
+// Ensure base image ready
+    if (!__basePlayerImg) { __basePlayerImg = new Image(); try{ __basePlayerImg.onerror=function(){ try{ this.onerror=null; this.src='/sprites/player.png'; }catch(_){}}; }catch(_){} __basePlayerImg.src='public/sprites/player.png'; }
+    if (__basePlayerImg.complete) { drawPreview(); } else { __basePlayerImg.onload = drawPreview; }
+
+    modal.style.display = 'flex';
+  }
+  try { window.openSkinModal = openSkinModal; } catch(_){}
+  try { if (!window.fetchMe) window.fetchMe = fetchMe; } catch(_){}
+
+
+  function injectSkinItem(){
+    // also handle account modal variant
+    try{
+      var wrap = document.getElementById('shopUpgradesLobby');
+      if (wrap && !wrap.querySelector('[data-skin-item="1"]')){
+        // Always ensure any existing Customize buttons are bound
+        try{ Array.prototype.slice.call(wrap.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
+
+        var div = document.createElement('div');
+        div.setAttribute('data-skin-item','1');
+        div.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
+        div.innerHTML = ''
+          + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
+          + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+          + '  </div>'
+          + '  <div style="flex:1;">'
+          + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
+          + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
+          + '  </div>'
+          + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
+          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+          + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
+          + '    <div style="min-height:16px;"></div>'
+          + '  </div>';
+        wrap.appendChild(div);
+        var b = div.querySelector('.skinOpenBtn'); if (b && !b.__bound){ b.__bound=true;
+        try { if (b) { b.removeAttribute('style'); b.classList.add('skinOpenBtn'); } } catch(_){}
+ b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
+      }
+    }catch(_){ }
+
+    try{
+      var cont = document.getElementById('shopPanelContent');
+      if (!cont) return;
+      if (cont.querySelector('[data-skin-item="1"]')) return;
+
+      // Always ensure any existing Customize buttons are bound
+      try{ Array.prototype.slice.call(cont.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
+
+      var item = document.createElement('div');
+      item.setAttribute('data-skin-item', '1');
+      item.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
+      item.innerHTML = ''
+        + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
+        + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+        + '  </div>'
+        + '  <div style="flex:1;">'
+        + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
+        + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
+        + '  </div>'
+        + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
+        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+        + '    <button id="btnOpenSkin" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
+        + '    <div style="min-height:16px;"></div>'
+        + '  </div>';
+      cont.appendChild(item);
+      var o = document.getElementById('btnOpenSkin');
+      if (o && !o.__bound){ o.__bound=true;
+      try { if (o) { o.removeAttribute('style'); o.classList.add('skinOpenBtn'); } } catch(_){}
+ o.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
+    }catch(_){}
+  }
+
+  // Hook into refreshShopPanel to insert the item after default upgrades are rendered
+  (function hook(){
+    try{
+      var orig = window.refreshShopPanel;
+      window.refreshShopPanel = function(){
+        try{ if (typeof orig==='function') orig.apply(this, arguments); }catch(_){}
+        try{ injectSkinItem(); }catch(_){}
+      };
+    }catch(_){
+      // If not yet defined, retry
+      setTimeout(hook, 80);
+      return;
+    }
+  })();
+
+  // Initial fetch (lazy) to learn username + saved skin
+  try { setTimeout(fetchMe, 0); } catch(_){}
+
+  // Ensure injection even if shop is already open at startup
+  try {
+    var __obs = new MutationObserver(function(){ try{ injectSkinItem(); }catch(_){} });
+    __obs.observe(document.body, { childList:true, subtree:true });
+    // Also attempt a few times on a timer (idempotent)
+    var __tries=0; var __tm = setInterval(function(){ try{ injectSkinItem(); }catch(_){} if(++__tries>20) clearInterval(__tm); }, 250);
+  } catch(_){}
+
+
+  // Global, resilient opener (works even if openSkinModal not yet defined)
+  try {
+    if (typeof window.__openCharacterSkin !== 'function') {
+      window.__openCharacterSkin = function(){
+        try {
+          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
+          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
+          if (typeof openSkinModal === 'function') return openSkinModal();
+          var tries = 0;
+          var id = setInterval(function(){
+            tries++;
+            try {
+              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
+              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
+            } catch(_){}
+            if (tries > 40) clearInterval(id);
+          }, 50);
+        } catch(_){}
+      };
+    }
+    // Document-level capture listener (works even if inner containers stop propagation)
+    document.addEventListener('click', function(ev){
+      try {
+        var t = ev.target;
+        if (!t) return;
+        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
+        if (!btn) return;
+        ev.preventDefault();
+        window.__openCharacterSkin();
+      } catch(_){}
+    }, true);
+  } catch(_){}
+
+})();
+</script>
+<!-- /[PATCH] character-skin shop & recolor v1 -->

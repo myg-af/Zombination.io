@@ -5,10 +5,10 @@
       "usernameLower": "myg",
       "passHash": "pbkdf2$sha256$120000$018002089f00e82027182bc6d985215c$11322a6a419888231b192e6026aabfa150c721bfb16316305687d359849d6718",
       "createdAt": 1755979158368,
-      "gold": 18,
+      "gold": 559,
       "shopUpgrades": {
-        "hp": 61,
-        "dmg": 5
+        "hp": 62,
+        "dmg": 6
       }
     },
     "test": {
@@ -16,6 +16,17 @@
       "usernameLower": "test",
       "passHash": "pbkdf2$sha256$120000$197fffe977c2d0a7404d645ea8d21967$d49d19e1d93df29d58d21d8ac4188d8f9ec59cc512f63326ef2cd23b5eeb5a19",
       "createdAt": 1755989590049,
+      "gold": 0,
+      "shopUpgrades": {
+        "hp": 0,
+        "dmg": 0
+      }
+    },
+    "test2": {
+      "username": "test2",
+      "usernameLower": "test2",
+      "passHash": "pbkdf2$sha256$120000$8297d7687d7853f724534537f45a889e$7850b33897d1f198102613fe378c3e26541cf7071300b61aec44f8a795892ad0",
+      "createdAt": 1756092479838,
       "gold": 0,
       "shopUpgrades": {
         "hp": 0,
