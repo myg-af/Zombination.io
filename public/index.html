@@ -520,6 +520,24 @@ body.menu-hide-ui #fpsCounter,
 }
 .skin-apply:hover { filter: brightness(1.08); }
 </style>
+
+<script>
+// Early global stub to avoid ReferenceError if called before the late skin patch loads
+if (!window.ensureMySkinLoaded) {
+  window.ensureMySkinLoaded = async function(timeoutMs){
+    try {
+      // Already loaded?
+      if (window.__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
+      // Try to fetch profile if available
+      try { if (typeof window.fetchMe==='function') await fetchMe(); } catch(_){}
+      if (window.__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
+      // Small grace delay
+      await new Promise(function(r){ setTimeout(r, 200); });
+      return !!(window.__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes);
+    } catch(_){ return false; }
+  };
+}
+</script>
 </head>
 <body>
 <!-- top-message helper -->
@@ -748,7 +766,7 @@ body.menu-hide-ui #fpsCounter,
     <div id="authModalTitle" style="font-weight:700; font-size:20px; margin-bottom:10px;">Auth</div>
     <div id="authModalBody"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
-      <button id="authCancel" style="padding:8px 14px; border:0; border-radius:8px; background:#555; color:#fff; cursor:pointer;">' + ((T.cancel||'Cancel')) + '</button>
+      <button id="authCancel" style="padding:8px 14px; border:0; border-radius:8px; background:#555; color:#fff; cursor:pointer;">Cancel</button>
       <button id="authSubmit" style="padding:8px 14px; border:0; border-radius:8px; background:#2a6aff; color:#fff; cursor:pointer;">Submit</button>
     </div>
   </div>
@@ -1547,7 +1565,7 @@ const langSelectRow = document.getElementById('langSelectRow');
         img.alt = lang.label;
         img.title = lang.label;
         img.className = 'langFlag' + (lang.code === currentLang ? ' selected' : '');
-        img.onclick = () => {
+        img.onclick = async () => {
           if (currentLang !== lang.code) {
             currentLang = lang.code;
             window.currentLang = currentLang; renderLangFlags(); updateUITexts(); try { if (typeof translateEmptySlotsInManualLobby === 'function') translateEmptySlotsInManualLobby(); } catch(e){} try { if (typeof renderManualPlayers === 'function') renderManualPlayers(); } catch(e) {}; drawHUD();
@@ -1898,7 +1916,7 @@ const UPGRADES = [
     label: "+10% Vie max",
     desc: "Augmente les PV max.",
     icon: "/icons/heart.svg",
-    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.hp|0))*1); },
+    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.hp|0))*10); },
     baseValue: 100,
     statLabel: "PV max",
     format: v => v + " PV"
@@ -2745,7 +2763,7 @@ function drawPlayers() {
     ctx.save();
     ctx.translate(screenX, screenY);
     ctx.rotate(angle + (window.SPRITE_BASE_ROT||0));
-    var __img = (typeof getPlayerSpriteFor==='function') ? getPlayerSpriteFor(p && p.pseudo) : playerImg;
+    var __img = (typeof getPlayerSpriteFor==='function') ? getPlayerSpriteFor(p && p.pseudo, p && p.skin) : playerImg;
     ctx.drawImage(__img || playerImg, -half, -half, size, size);
     ctx.restore();
 
@@ -3554,7 +3572,7 @@ if (btnSpectate) {
   btnSpectate.textContent = (tr.spectate || 'Spectate');
 }
 if (spectateReplayBtn) {
-  spectateReplayBtn.onclick = () => { location.reload(); };
+  spectateReplayBtn.onclick = async () => { location.reload(); };
 }
 function enterSpectatorMode() {
   try { if (window.socket) { socket.emit('enterSpectator'); } } catch(e){}
@@ -3577,7 +3595,7 @@ function enterSpectatorMode() {
 }
 // Config bouton Spectate (seulement si la partie est encore en cours)
 if (btnSpectate) {
-  btnSpectate.onclick = () => {
+  btnSpectate.onclick = async () => {
     if (btnSpectate.style.display !== 'none') enterSpectatorMode();
   };
 }
@@ -3641,14 +3659,14 @@ function gameLoop(timestamp = 0) {
 if (lobbyJoin)       lobbyJoin.textContent = tr.join;
     });
 
-    if (lobbyJoin) lobbyJoin.onclick = () => {
+    if (lobbyJoin) lobbyJoin.onclick = async () => {
       if (!pseudoInput.value.trim()) {
         pseudoInput.focus();
         pseudoInput.style.background = "#fdd";
         setTimeout(() => pseudoInput.style.background = "", 600);
         return;
       }
-      socket.emit('setPseudoAndReady', pseudoInput.value.trim()); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
+      ensureMySkinLoaded().then(() => socket.emit('setPseudoAndReady', pseudoInput.value.trim())); try { localStorage.setItem('zombi_last_pseudo', String(pseudoInput.value.trim())); } catch(_) {}lobbyJoined = true;
       window.lobbyJoined = true;
       if (lobbyJoin) lobbyJoin.disabled = true;
       pseudoInput.readOnly = true;
@@ -4329,7 +4347,7 @@ function renderShopUpgrades() {
   try {
     const turretBtns = el.querySelectorAll('.btn-turret-up');turretBtns.forEach(btn => {
       const type = btn.getAttribute('data-type');
-      btn.onclick = () => {  socket.emit('upgradeTurret', { type }); };
+      btn.onclick = async () => {  socket.emit('upgradeTurret', { type }); };
     });
   } catch(e) { console.error('[UI] late-bind turret error', e); }
 
@@ -4405,14 +4423,14 @@ el.innerHTML += `
   });
 }
 
-	shopBtn.onclick = () => {
+	shopBtn.onclick = async () => {
 	  renderShopUpgrades();
 	  shopModal.style.display = 'block';
 	  // Recalage à l’ouverture (tailles DOM connues)
 	  positionShopUI();
 	};
 
-	shopClose.onclick = () => {
+	shopClose.onclick = async () => {
 	  shopModal.style.display = 'none';
 	};
 
@@ -4672,7 +4690,7 @@ try {
 
   
 if (btnCreate) {
-    btnCreate.addEventListener('click', function(){
+    btnCreate.addEventListener('click', async function(){
       try {
         if (!window.pseudoInput) window.pseudoInput = document.getElementById('pseudoInput');
         const hasPseudo = !!(window.pseudoInput && window.pseudoInput.value && window.pseudoInput.value.trim());
@@ -4720,7 +4738,7 @@ if (btnCreate) {
   }
 
   if (btnJoinList) {
-    btnJoinList.addEventListener('click', function(){
+    btnJoinList.addEventListener('click', async function(){
       if (!pseudoInput.value.trim() || btnJoinList.disabled) return;
       showList();
       requestLobbies();
@@ -4730,7 +4748,7 @@ if (btnCreate) {
   }
 
   if (btnBackList) {
-    btnBackList.addEventListener('click', function(){
+    btnBackList.addEventListener('click', async function(){
       showMain();
       try{
         if (pseudoInput){
@@ -4759,7 +4777,7 @@ if (btnCreate) {
   }
 
   if (btnBackManual) {
-    btnBackManual.addEventListener('click', function(){
+    btnBackManual.addEventListener('click', async function(){
       try {
         const isHost = !!(window.lobbyData && window.lobbyData.hostId && socket && socket.id && window.lobbyData.hostId === socket.id);
         if (isHost) {
@@ -4776,10 +4794,10 @@ if (btnCreate) {
     }, { passive: true });
   }
 if (btnStartManual) {
-    btnStartManual.addEventListener('click', function(){
-      socket.emit('startManualLobby', function(res){
+    btnStartManual.addEventListener('click', async function(){
+      ensureMySkinLoaded().then(() => socket.emit('startManualLobby', function(res){
         // if not host, ignore; server will no-op
-      });
+      }));
     }, { passive: true });
   }
 
@@ -4837,7 +4855,7 @@ socket.on('lobbiesList', function(list){
           return;
           }
         } catch(_){}
-        socket.emit('joinLobbyById', { gameId: lob.id, pseudo: p }, function(res){
+        ensureMySkinLoaded().then(() => socket.emit('joinLobbyById', { gameId: lob.id, pseudo: p }, function(res){
           if (res && res.ok) {
             myPseudo = p; window.myPseudo = p;
             window.lobbyJoined = true;
@@ -4871,7 +4889,7 @@ socket.on('lobbiesList', function(list){
 };
             __alertPseudoTaken(); } catch(_){}
           }
-        });
+        }));
       };
 
       item.appendChild(btn);
@@ -5000,7 +5018,7 @@ function renderManualPlayers() {
           if (pseudoInput){ pseudoInput.focus(); pseudoInput.style.background = '#fdd'; setTimeout(function(){ pseudoInput.style.background=''; }, 600); }
           return;
         }
-        socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim()); try { localStorage.setItem('zombi_last_pseudo', String((pseudoInput && pseudoInput.value || '').trim())); } catch(_) {}
+        ensureMySkinLoaded().then(() => socket.emit('setPseudoAndReady', (pseudoInput && pseudoInput.value || '').trim())); try { localStorage.setItem('zombi_last_pseudo', String((pseudoInput && pseudoInput.value || '').trim())); } catch(_) {}
         window.lobbyJoined = true;
         try { if (lobbyJoin) lobbyJoin.disabled = true; if (pseudoInput) pseudoInput.readOnly = true; 
           try { pseudoInput.style.background = '#c7f7c7'; pseudoInput.style.color = '#000'; pseudoInput.style.border = '1px solid #49c749'; } catch(_){ }} catch(_){}
@@ -5417,8 +5435,8 @@ function renderManualPlayers() {
 
   try { if (typeof window.updateButtonsDisabled === 'function') window.updateButtonsDisabled(); } catch(_){}
   // Toggle / expand handlers
-  if (toggle) toggle.addEventListener('click', function(){ setCollapsed(true); }, {passive:true});
-  if (collapsedBtn) collapsedBtn.addEventListener('click', function(){ setCollapsed(false); }, {passive:true});
+  if (toggle) toggle.addEventListener('click', async function(){ setCollapsed(true); }, {passive:true});
+  if (collapsedBtn) collapsedBtn.addEventListener('click', async function(){ setCollapsed(false); }, {passive:true});
 
   // -- Helper: position collapsed button above HUD (best-effort)
   function positionCollapsedBtn(){
@@ -5538,8 +5556,8 @@ function renderManualPlayers() {
     try { if (window.socket) window.socket.emit('chat:join', { channel: ch }); } catch(_){ }
     applyChatI18n();
   }
-  if (tabWorld) tabWorld.addEventListener('click', function(){ selectChannel('world'); });
-  if (tabLobby) tabLobby.addEventListener('click', function(){ selectChannel('lobby'); });
+  if (tabWorld) tabWorld.addEventListener('click', async function(){ selectChannel('world'); });
+  if (tabLobby) tabLobby.addEventListener('click', async function(){ selectChannel('lobby'); });
 
   // Send
   function send(){
@@ -6404,7 +6422,7 @@ return true;
   function showModal(kind, payload){
     overlay.style.display = 'flex';
     modal.style.display = 'flex';
-if (kind === 'login') {
+    try { if (document.getElementById('authCancel')) document.getElementById('authCancel').textContent = trAuth('cancel','Cancel'); if (document.getElementById('authSubmit')) document.getElementById('authSubmit').textContent = trAuth('submit','Submit'); } catch(_){}if (kind === 'login') {
       modalTitle.textContent = trAuth('login','Log in');
       var __shopHtml = ''
         + '<div style="display:flex;flex-direction:column;gap:8px;">'
@@ -6450,13 +6468,13 @@ if (kind === 'login') {
             try { window.accountShop = up; } catch(_){}
             try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
     const hpLv = up.hp|0, dmgLv = up.dmg|0;
-          const hpMax = 200, dmgMax = 20, HP_PRICE = 5, DMG_PRICE = 200;
+          const hpMax = 20, dmgMax = 20, HP_PRICE = 50, DMG_PRICE = 200;
           function item(id, title, desc, level, max, price){
             const disabled = level>=max || gold < price;
             const note = (level>=max) ? '<div style="color:#9ab; font-size:12px;">'+(T.maxLevel||'Max level reached')+'</div>' : '';
             return (
               '<div style="display:flex;align-items:center;gap:12px;background:#232834;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
-            + '  <div id="badge-' + id + '" style="width:40px;height:40px;border-radius:10px;background:#ffa00022;border:2px solid #ffb300;display:flex;align-items:center;justify-content:center;font-weight:700;">' + (id==='hp' ? (100 + (level|0)*1) : (10 + (level|0)*1)) + '</div>'
+            + '  <div id="badge-' + id + '" style="width:40px;height:40px;border-radius:10px;background:#ffa00022;border:2px solid #ffb300;display:flex;align-items:center;justify-content:center;font-weight:700;">' + (id==='hp' ? (100 + (level|0)*10) : (10 + (level|0)*1)) + '</div>'
             + '  <div style="flex:1;">'
             + '    <div style="font-size:17px;font-weight:700;">'+title+'</div>'
             + '    <div style="color:#9ab;font-size:13px;">'+desc+'</div>'
@@ -6470,8 +6488,8 @@ if (kind === 'login') {
             + '</div>'
             );
           }
-          const hpTitle = T.hpUpgTitle || 'HP +1';
-          const hpDesc  = T.hpUpgDesc  || 'Start each game with +1 HP per level (up to +200).';
+          const hpTitle = T.hpUpgTitle || 'HP +10';
+          const hpDesc  = T.hpUpgDesc  || 'Start each game with +10 HP per level (up to +200).';
           const dmgTitle= T.dmgUpgTitle|| 'Damage +1';
           const dmgDesc = T.dmgUpgDesc || 'Start each game with +1 damage per level (up to +20).';
           modalBody.innerHTML = ''
@@ -6612,9 +6630,9 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
     checkTimer = setTimeout(validatePseudoBlocking, 200);
   }, { passive:true });
 
-  if (btnLogin) btnLogin.addEventListener('click', function(){ showModal('login'); }, { passive:true });
-  if (btnShop) btnShop.addEventListener('click', function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
-  if (btnSignup) btnSignup.addEventListener('click', function(){ showModal('signup'); }, { passive:true });
+  if (btnLogin) btnLogin.addEventListener('click', async function(){ showModal('login'); }, { passive:true });
+  if (btnShop) btnShop.addEventListener('click', async function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
+  if (btnSignup) btnSignup.addEventListener('click', async function(){ showModal('signup'); }, { passive:true });
   if (btnLogout) btnLogout.addEventListener('click', async function(){
     try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ }
     try { if (typeof setAuthUI === 'function') setAuthUI(false); } catch(_){ }
@@ -6628,7 +6646,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       else window.location = window.location;
     } catch(_){ /* swallow to avoid breaking UI */ }
   }, { passive:true });
-  if (btnSettings) btnSettings.addEventListener('click', function(){ showModal('settings'); }, { passive:true });
+  if (btnSettings) btnSettings.addEventListener('click', async function(){ showModal('settings'); }, { passive:true });
   if (overlay) overlay.addEventListener('click', hideModal, { passive:true });
   if (btnCancel) btnCancel.addEventListener('click', hideModal, { passive:true });
 // Intercept clicks to block reserved pseudo
@@ -6880,8 +6898,8 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
     });
   }
 
-  if (btnLadder) btnLadder.addEventListener('click', function(){ showLadder(); }, { passive: true });
-  if (btnBack) btnBack.addEventListener('click', function(){
+  if (btnLadder) btnLadder.addEventListener('click', async function(){ showLadder(); }, { passive: true });
+  if (btnBack) btnBack.addEventListener('click', async function(){
     showMainFromLadder();
     try{
       if (typeof pseudoInput!=='undefined' && pseudoInput){
@@ -6982,21 +7000,21 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
   try {
     if (shopSoloBtn && !shopSoloBtn.__bound) {
       shopSoloBtn.__bound = true;
-      shopSoloBtn.addEventListener('click', function(){
+      shopSoloBtn.addEventListener('click', async function(){
         try { hideShopPanel(); } catch(_){}
         try { var el = document.getElementById('lobbyJoin'); if (el) el.click(); } catch(_){}
       }, { passive:true });
     }
     if (shopJoinList && !shopJoinList.__bound) {
       shopJoinList.__bound = true;
-      shopJoinList.addEventListener('click', function(){
+      shopJoinList.addEventListener('click', async function(){
         try { hideShopPanel(); } catch(_){}
         try { var el = document.getElementById('btnJoinLobbyList'); if (el) el.click(); } catch(_){}
       }, { passive:true });
     }
     if (shopCreate && !shopCreate.__bound) {
       shopCreate.__bound = true;
-      shopCreate.addEventListener('click', function(){
+      shopCreate.addEventListener('click', async function(){
         try { hideShopPanel(); } catch(_){}
         try { var el = document.getElementById('btnCreateLobby'); if (el) el.click(); } catch(_){}
       }, { passive:true });
@@ -7030,7 +7048,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
 
       const hpLv = up.hp|0, dmgLv = up.dmg|0;
-      const hpMax = 200, dmgMax = 20, HP_PRICE = 5, DMG_PRICE = 200;
+      const hpMax = 20, dmgMax = 20, HP_PRICE = 50, DMG_PRICE = 200;
 
       function item(id, title, desc, level, max, price){
   const disabled = level>=max || gold < price;
@@ -7038,7 +7056,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
   return (
     '<div style="display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
   + '  <div id="badge-' + id + '" style="width:40px;height:40px;border-radius:10px;border:2px solid #ffb300;display:flex;align-items:center;justify-content:center;font-weight:700;">'
-  +        String((id==='hp') ? (100 + (level|0)*1) : (10 + (level|0)*1))
+  +        String((id==='hp') ? (100 + (level|0)*10) : (10 + (level|0)*1))
   + '  </div>'
   + '  <div style="flex:1;">'
   + '    <div style="font-size:17px;font-weight:700;">'+title+'</div>'
@@ -7056,8 +7074,8 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
 // Assemble list
       let html = '';
       html += '<div style="margin-bottom:8px;"><b>'+(T.gold||'Gold')+'</b>: <span id="shopGoldVal">'+gold+'</span></div>';
-      const hpTitle = T.hpUpgTitle || 'HP +1';
-      const hpDesc  = T.hpUpgDesc  || 'Start each game with +1 HP per level (up to +200).';
+      const hpTitle = T.hpUpgTitle || 'HP +10';
+      const hpDesc  = T.hpUpgDesc  || 'Start each game with +10 HP per level (up to +200).';
       const dmgTitle= T.dmgUpgTitle|| 'Damage +1';
       const dmgDesc = T.dmgUpgDesc || 'Start each game with +1 damage per level (up to +20).';
       html += item('hp',  hpTitle,  hpDesc,  hpLv,  hpMax,  HP_PRICE);
@@ -7073,7 +7091,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
       + '  </div>'
       + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:160px;width:160px;">'
-      + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
       + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
       + '    <div style="min-height:16px;"></div>'
       + '  </div>'
@@ -7139,7 +7157,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         Array.prototype.slice.call(content.querySelectorAll('.skinOpenBtn')).forEach(function(b){
           if (!b.__bound){
             b.__bound = true;
-            b.addEventListener('click', function(){
+            b.addEventListener('click', async function(){
               try {
                 if (typeof window.fetchMe==='function' && typeof window.openSkinModal==='function') { (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }
                 else { setTimeout(function(){ try{ if (typeof window.fetchMe==='function' && typeof window.openSkinModal==='function') (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){} }, 50); }
@@ -7182,7 +7200,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
     renderShopPanel();
   }
 
-  if (btnBack) btnBack.addEventListener('click', function(){
+  if (btnBack) btnBack.addEventListener('click', async function(){
     // go back to list panel
     hideShopPanel();
     try {
@@ -7199,7 +7217,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       var el = document.getElementById(id);
       if (!el || el.__closeShopBound) return;
       el.__closeShopBound = true;
-      el.addEventListener('click', function(){
+      el.addEventListener('click', async function(){
         try { if (panelShop && panelShop.style.display === 'block') hideShopPanel(); } catch(_){}
         // also close account Shop modal if open
         try {
@@ -7289,8 +7307,8 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
     window.debugLog = function(){ try { console.log.apply(console, arguments); } catch(_){} write('LOG', Array.prototype.slice.call(arguments)); };
     window.debugWarn = function(){ try { console.warn.apply(console, arguments); } catch(_){} write('WARN', Array.prototype.slice.call(arguments)); };
     window.debugError = function(){ try { console.error.apply(console, arguments); } catch(_){} write('ERR', Array.prototype.slice.call(arguments)); };
-    if (toggle) toggle.addEventListener('click', function(){ dc.style.display = (dc.style.display === 'block') ? 'none' : 'block'; });
-    if (clearBtn) clearBtn.addEventListener('click', function(){ dc.innerHTML = ''; });
+    if (toggle) toggle.addEventListener('click', async function(){ dc.style.display = (dc.style.display === 'block') ? 'none' : 'block'; });
+    if (clearBtn) clearBtn.addEventListener('click', async function(){ dc.innerHTML = ''; });
     if (copyBtn) copyBtn.addEventListener('click', async function(){
       try {
         var parts = [];
@@ -7913,7 +7931,7 @@ e.preventDefault(); e.stopPropagation();
   // clics dans le conteneur
   try {
     var cont = document.getElementById('buildTiles');
-    if (cont) cont.addEventListener('click', function(){ setTimeout(applyBuildTileHighlight, 0); }, true);
+    if (cont) cont.addEventListener('click', async function(){ setTimeout(applyBuildTileHighlight, 0); }, true);
   } catch(_){}
 
   // patch non intrusif
@@ -8226,7 +8244,7 @@ e.preventDefault(); e.stopPropagation();
         btn.style.pointerEvents = 'auto';
       }
       if (!btn.__shopBound){
-        btn.addEventListener('click', function(){ try{ if (typeof showModal==='function') (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e); } }, { passive:true });
+        btn.addEventListener('click', async function(){ try{ if (typeof showModal==='function') (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e); } }, { passive:true });
         btn.__shopBound = true;
       }
     }catch(e){}
@@ -9263,6 +9281,29 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
   window.__skinShopInstalled = true;
 
   // ======= State & helpers =======
+
+// Robust: ensure my skin is loaded before joining/starting a game (handles reconnect timing)
+async function ensureMySkinLoaded(timeoutMs = 1200){
+  try {
+    if (__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
+    // Fire a fetch; don't throw if it fails
+    try { await fetchMe(); } catch(_){}
+    if (__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
+    // Wait a tiny bit for any in-flight /api/me
+    await new Promise(r => setTimeout(r, 200));
+    return !!(__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes);
+  } catch(_){ return false; }
+}
+try {
+  // On initial socket connect, refresh my profile+skin and bust cached sprite
+  if (window.socket && typeof socket.on==='function'){
+    socket.on('connect', function(){
+      try { if (__myUser) __spriteCache[String(__myUser).toLowerCase()] = null; } catch(_){}
+      try { fetchMe(); } catch(_){}
+    });
+  }
+} catch(_){}
+
   var __basePlayerImg = (typeof playerImg !== 'undefined') ? playerImg : null;
   var __myUser = null;
   var __mySkin = null; // { hair, skin, clothes }
@@ -9319,7 +9360,8 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
   
 
 function classifyRegion(r,g,b,a){
-    if (a < 10) return 'none';
+    // Ignore near-transparent pixels entirely (anti-aliased halo)
+    if (a < 64) return 'none';
     var hsl = rgbToHsl(r,g,b);
     var h = hsl.h*360, s = hsl.s, l = hsl.l;
 
@@ -9327,7 +9369,7 @@ function classifyRegion(r,g,b,a){
     // Ignore outlines/eyes and fully transparent
     // Previous: l-extremes OR low saturation were skipped, which blocked near‑white/near‑black highlights.
     // Keep ignoring truly gray/outline pixels, but allow colored extremes so gradients with white/black apply correctly.
-    if (s <= 0.03 || (l <= 0.06 && s <= 0.10) || (l >= 0.97 && s <= 0.10)) return 'none';
+    if (s <= 0.06 || l <= 0.10 || l >= 0.94) return 'none';
 
     // Clothes: greens/cyans from the base sprite. Wider band to catch all shades.
     if (s > 0.12 && h >= 70 && h <= 190) return 'clothes';
@@ -9389,22 +9431,53 @@ function classifyRegion(r,g,b,a){
         var out = applyTintPreserveLight(target, hsl);
         d[i]=out.r; d[i+1]=out.g; d[i+2]=out.b; // keep alpha
       }
-      ctx.putImageData(id,0,0);
+      
+      // Post-process: clear near-transparent noise / isolated speckles
+      // 1) Normalize ultra-low alpha to 0
+      for (var j=0;j<d.length;j+=4){ if (d[j+3] <= 16) d[j+3] = 0; }
+      // 2) Remove isolated 1px dots with weak alpha (4-neighbour check)
+      var pxW = w, pxH = h;
+      for (var y=1; y<pxH-1; y++){
+        for (var x=1; x<pxW-1; x++){
+          var k = (y*pxW + x) * 4;
+          var a0 = d[k+3];
+          if (a0 > 0 && a0 <= 80){
+            var aL = d[k-4+3], aR = d[k+4+3], aT = d[k-4*pxW+3], aB = d[k+4*pxW+3];
+            var aTL = d[k-4*pxW-4+3], aTR = d[k-4*pxW+4+3], aBL = d[k+4*pxW-4+3], aBR = d[k+4*pxW+4+3];
+            var neigh = 0; if (aL>0) neigh++; if (aR>0) neigh++; if (aT>0) neigh++; if (aB>0) neigh++;
+            if (aTL>0) neigh++; if (aTR>0) neigh++; if (aBL>0) neigh++; if (aBR>0) neigh++;
+            if (neigh <= 1) { d[k+3] = 0; }
+          }
+        }
+      }
+ctx.putImageData(id,0,0);
       var url = canvas.toDataURL('image/png');
       var im = new Image(); im.src = url; im.decoding='async'; im.style.imageRendering='pixelated';
       if (cb) { if (im.complete) cb(im); else im.onload=function(){ cb(im); }; }
     }catch(e){ if (cb) cb(null); }
   }
 
-  function getPlayerSpriteFor(pseudo){
+  function getPlayerSpriteFor(pseudo, skinOpt){
     try{
       if (!pseudo) return __basePlayerImg;
       var key = String(pseudo||'').toLowerCase();
       if (__spriteCache[key]) return __spriteCache[key];
-      // Local user skin only (others default) to avoid heavy lookups
-      if (__myUser && key === String(__myUser||'').toLowerCase() && __mySkin && __basePlayerImg){
-        // Build synchronously? We kick an async build and return base for this frame
-        recolorPlayerImage(__basePlayerImg, __mySkin, function(img){ __spriteCache[key] = img || __basePlayerImg; });
+      var s = null;
+      // Prefer explicit skin info from state payload
+      if (skinOpt && typeof skinOpt==='object') {
+        var hex = /^#[0-9a-fA-F]{6}$/;
+        var h = hex.test(skinOpt.hair)? String(skinOpt.hair).toLowerCase() : null;
+        var sk = hex.test(skinOpt.skin)? String(skinOpt.skin).toLowerCase() : null;
+        var c = hex.test(skinOpt.clothes)? String(skinOpt.clothes).toLowerCase() : null;
+        if (h && sk && c) { s = { hair:h, skin:sk, clothes:c }; }
+      }
+      // Fallback: local user skin (for ourselves) if not provided
+      if (!s && __myUser && key === String(__myUser||'').toLowerCase() && __mySkin) {
+        s = __mySkin;
+      }
+      if (s && __basePlayerImg){
+        // async recolor; cache per pseudo
+        recolorPlayerImage(__basePlayerImg, s, function(img){ __spriteCache[key] = img || __basePlayerImg; });
       }
       return __basePlayerImg;
     }catch(_){ return __basePlayerImg; }
@@ -9437,7 +9510,7 @@ function classifyRegion(r,g,b,a){
       + '        <label>' + ((T.hair||'Hair')) + ' <input id="hairColor" type="color" value="#6b4d2e" style="margin-left:8px;"></label>'
       + '        <label>' + ((T.skin||'Skin')) + ' <input id="skinColor" type="color" value="#f4c2c2" style="margin-left:8px;"></label>'
       + '        <label>' + ((T.clothes||'Clothes')) + ' <input id="clothesColor" type="color" value="#2aa84a" style="margin-left:8px;"></label>'
-      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
       + '        <div id="skinMsg" style="min-height:18px;font-size:12px;color:#9ab;"></div>'
       + '        <div style="display:flex;gap:8px;flex-wrap:wrap;">'
       + '          <button id="skinBuy" style="flex:1;background:#ff8800;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.buy||'Buy')) + '</button>'
@@ -9647,7 +9720,7 @@ document.addEventListener('keydown', function(e){ if (e.key==='Escape') hide(); 
           inp.addEventListener('input', function(){ setFromRGB(rIn.value,gIn.value,bIn.value); }, {passive:true});
         });
 
-        okBtn.addEventListener('click', function(){
+        okBtn.addEventListener('click', async function(){
           try {
             var hex = window.__sanitizeHex(rgb2hex(+rIn.value||0, +gIn.value||0, +bIn.value||0));
             if (activeInput){ activeInput.value = hex; }
@@ -9739,7 +9812,7 @@ document.addEventListener('keydown', function(e){ if (e.key==='Escape') hide(); 
     ;[hairInp, skinInp, clothesInp].forEach(function(inp){
       try {
         inp.addEventListener('focus', function(){ showColorOverlay(inp); }, {passive:true});
-        inp.addEventListener('click', function(){ showColorOverlay(inp); }, {passive:true});
+        inp.addEventListener('click', async function(){ showColorOverlay(inp); }, {passive:true});
         inp.addEventListener('blur', function(){ setTimeout(hideColorOverlay, 150); }, {passive:true});
       } catch(_){ }
     });
@@ -9837,13 +9910,13 @@ document.getElementById('skinBuy').onclick = buyNow;
 (function(){
   var btn = document.getElementById('skinBuy');
   if (!btn) return;
-  var PRICE = 5;
+  var PRICE = 20;
   function getGold(){ try{ var t = document.getElementById('shopGoldVal'); return t ? (+t.textContent||0) : 0; }catch(_){ return 0; } }
   function applyStyle(){ var g = getGold(); if (g >= PRICE){ btn.disabled=false; btn.style.background='#ff8800'; btn.style.opacity='1'; btn.style.cursor='pointer'; } else { btn.disabled=true; btn.style.background='#ff8800'; btn.style.opacity='0.6'; btn.style.cursor='not-allowed'; } }
   applyStyle();
   try{ var gv=document.getElementById('shopGoldVal'); if (gv && window.MutationObserver){ var mo=new MutationObserver(applyStyle); mo.observe(gv,{childList:true,characterData:true,subtree:true}); } }catch(_){}
   // Also re-apply style after any click in modal (safety)
-  try{ var modal=document.getElementById('skinModal'); if (modal){ modal.addEventListener('click', function(){ setTimeout(applyStyle,0); }, {passive:true}); } }catch(_){ }
+  try{ var modal=document.getElementById('skinModal'); if (modal){ modal.addEventListener('click', async function(){ setTimeout(applyStyle,0); }, {passive:true}); } }catch(_){ }
 })();
 // Ensure base image ready
     if (!__basePlayerImg) { __basePlayerImg = new Image(); try{ __basePlayerImg.onerror=function(){ try{ this.onerror=null; this.src='/sprites/player.png'; }catch(_){}}; }catch(_){} __basePlayerImg.src='public/sprites/player.png'; }
@@ -9861,7 +9934,7 @@ document.getElementById('skinBuy').onclick = buyNow;
       var wrap = document.getElementById('shopUpgradesLobby');
       if (wrap && !wrap.querySelector('[data-skin-item="1"]')){
         // Always ensure any existing Customize buttons are bound
-        try{ Array.prototype.slice.call(wrap.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
+        try{ Array.prototype.slice.call(wrap.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
 
         var div = document.createElement('div');
         div.setAttribute('data-skin-item','1');
@@ -9875,14 +9948,14 @@ document.getElementById('skinBuy').onclick = buyNow;
           + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
           + '  </div>'
           + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
           + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
           + '    <div style="min-height:16px;"></div>'
           + '  </div>';
         wrap.appendChild(div);
         var b = div.querySelector('.skinOpenBtn'); if (b && !b.__bound){ b.__bound=true;
         try { if (b) { b.removeAttribute('style'); b.classList.add('skinOpenBtn'); } } catch(_){}
- b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
+ b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
       }
     }catch(_){ }
 
@@ -9892,7 +9965,7 @@ document.getElementById('skinBuy').onclick = buyNow;
       if (cont.querySelector('[data-skin-item="1"]')) return;
 
       // Always ensure any existing Customize buttons are bound
-      try{ Array.prototype.slice.call(cont.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
+      try{ Array.prototype.slice.call(cont.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
 
       var item = document.createElement('div');
       item.setAttribute('data-skin-item', '1');
@@ -9906,7 +9979,7 @@ document.getElementById('skinBuy').onclick = buyNow;
         + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
         + '  </div>'
         + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b> ' + ((T.gold||'Gold')) + '</div>'
+        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
         + '    <button id="btnOpenSkin" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
         + '    <div style="min-height:16px;"></div>'
         + '  </div>';
@@ -9914,7 +9987,7 @@ document.getElementById('skinBuy').onclick = buyNow;
       var o = document.getElementById('btnOpenSkin');
       if (o && !o.__bound){ o.__bound=true;
       try { if (o) { o.removeAttribute('style'); o.classList.add('skinOpenBtn'); } } catch(_){}
- o.addEventListener('click', function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
+ o.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
     }catch(_){}
   }
 

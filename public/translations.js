@@ -909,70 +909,70 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
   function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
   add('en', {
     shopMain:'Shop', gold:'Gold', needLoginShop:'You must be logged in to access the shop.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Start each game with +1 HP per level (up to +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Start each game with +10 HP per level (up to +200).',
     dmgUpgTitle:'Damage +1', dmgUpgDesc:'Start each game with +1 damage per level (up to +20).',
     level:'Level', price:'Price', buy:'Buy', maxLevel:'Max level reached', notEnoughGold:'Not enough gold.',
     goldHowTo:'Earn gold by clearing waves from 5 onward: wave 5=+1, 6=+2, 7=+3, etc.'
   , purchaseOk:'Purchase successful.' });
   add('fr', {
     shopMain:'Boutique', gold:'Or', needLoginShop:'Vous devez être connecté pour accéder à la boutique.',
-    hpUpgTitle:'PV +1', hpUpgDesc:'Commence chaque partie avec +1 PV par niveau (jusqu’à +200).',
+    hpUpgTitle:'PV +10', hpUpgDesc:'Commence chaque partie avec +10 PV par niveau (jusqu’à +200).',
     dmgUpgTitle:'Dégâts +1', dmgUpgDesc:'Commence chaque partie avec +1 dégât par niveau (jusqu’à +20).',
     level:'Niveau', price:'Prix', buy:'Acheter', maxLevel:'Niveau max atteint', notEnoughGold:'Pas assez de gold.',
     goldHowTo:'Gagne des golds à partir de la vague 5 : vague 5=+1, 6=+2, 7=+3, etc.'
   , purchaseOk:'Achat réussi.' });
   add('es', {
     shopMain:'Tienda', gold:'Oro', needLoginShop:'Debes iniciar sesión para acceder a la tienda.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Empiezas cada partida con +1 HP por nivel (hasta +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Empiezas cada partida con +10 HP por nivel (hasta +200).',
     dmgUpgTitle:'Daño +1', dmgUpgDesc:'Empiezas cada partida con +1 de daño por nivel (hasta +20).',
     level:'Nivel', price:'Precio', buy:'Comprar', maxLevel:'Nivel máximo alcanzado', notEnoughGold:'No hay suficiente oro.',
     goldHowTo:'Gana oro superando oleadas desde la 5: oleada 5=+1, 6=+2, 7=+3, etc.'
   , purchaseOk:'Compra realizada.' });
   add('pt', {
     shopMain:'Loja', gold:'Ouro', needLoginShop:'Você precisa estar conectado para acessar a loja.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Comece cada partida com +1 HP por nível (até +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Comece cada partida com +10 HP por nível (até +200).',
     dmgUpgTitle:'Dano +1', dmgUpgDesc:'Comece cada partida com +1 de dano por nível (até +20).',
     level:'Nível', price:'Preço', buy:'Comprar', maxLevel:'Nível máximo atingido', notEnoughGold:'Ouro insuficiente.',
     goldHowTo:'Ganhe ouro ao completar ondas a partir da 5: onda 5=+1, 6=+2, 7=+3, etc.'
   , purchaseOk:'Compra concluída.' });
   add('de', {
     shopMain:'Shop', gold:'Gold', needLoginShop:'Du musst eingeloggt sein, um den Shop zu nutzen.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Starte jedes Spiel mit +1 HP pro Stufe (bis +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Starte jedes Spiel mit +10 HP pro Stufe (bis +200).',
     dmgUpgTitle:'Schaden +1', dmgUpgDesc:'Starte jedes Spiel mit +1 Schaden pro Stufe (bis +20).',
     level:'Stufe', price:'Preis', buy:'Kaufen', maxLevel:'Maximalstufe erreicht', notEnoughGold:'Nicht genug Gold.',
     goldHowTo:'Verdiene Gold ab Welle 5: Welle 5=+1, 6=+2, 7=+3, usw.'
   , purchaseOk:'Kauf erfolgreich.' });
   add('ru', {
     shopMain:'Магазин', gold:'Золото', needLoginShop:'Нужно войти в аккаунт, чтобы открыть магазин.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Начинайте игру с +1 HP за уровень (до +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Начинайте игру с +10 HP за уровень (до +200).',
     dmgUpgTitle:'Урон +1', dmgUpgDesc:'Начинайте игру с +1 урона за уровень (до +20).',
     level:'Уровень', price:'Цена', buy:'Купить', maxLevel:'Достигнут макс. уровень', notEnoughGold:'Недостаточно золота.',
     goldHowTo:'Получайте золото с 5‑й волны: волна 5=+1, 6=+2, 7=+3 и т.д.'
   , purchaseOk:'Покупка успешна.' });
   add('cn', {
     shopMain:'商店', gold:'金币', needLoginShop:'需要登录才能进入商店。',
-    hpUpgTitle:'生命值 +1', hpUpgDesc:'每级开局 +1 生命（最多 +200）。',
+    hpUpgTitle:'生命值 +10', hpUpgDesc:'每级开局 +10 生命（最多 +200）。',
     dmgUpgTitle:'伤害 +1', dmgUpgDesc:'每级开局 +1 伤害（最多 +20）。',
     level:'等级', price:'价格', buy:'购买', maxLevel:'已达最高等级', notEnoughGold:'金币不足。',
     goldHowTo:'从第 5 波开始通关即可得金币：第5波+1，第6波+2，第7波+3，依此类推。'
   , purchaseOk:'购买成功。' });
   add('jp', {
     shopMain:'ショップ', gold:'ゴールド', needLoginShop:'ショップを利用するにはログインが必要です。',
-    hpUpgTitle:'HP +1', hpUpgDesc:'各レベルにつき初期HP+1（最大+200）。',
+    hpUpgTitle:'HP +10', hpUpgDesc:'各レベルにつき初期HP+10（最大+200）。',
     dmgUpgTitle:'ダメージ +1', dmgUpgDesc:'各レベルにつき初期ダメージ+1（最大+20）。',
     level:'レベル', price:'価格', buy:'購入', maxLevel:'最大レベルに到達', notEnoughGold:'ゴールドが足りません。',
     goldHowTo:'ウェーブ5以降をクリアしてゴールド獲得：5=+1, 6=+2, 7=+3...'
   , purchaseOk:'購入に成功しました。' });
   add('pl', {
     shopMain:'Sklep', gold:'Złoto', needLoginShop:'Musisz być zalogowany, aby wejść do sklepu.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'Zaczynasz grę z +1 HP na poziom (do +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'Zaczynasz grę z +10 HP na poziom (do +200).',
     dmgUpgTitle:'Obrażenia +1', dmgUpgDesc:'Zaczynasz grę z +1 obrażeniem na poziom (do +20).',
     level:'Poziom', price:'Cena', buy:'Kup', maxLevel:'Osiągnięto maks. poziom', notEnoughGold:'Za mało złota.',
     goldHowTo:'Zarabiaj złoto od fali 5: fala 5=+1, 6=+2, 7=+3 itd.'
   , purchaseOk:'Zakup udany.' });
   add('kr', {
     shopMain:'상점', gold:'골드', needLoginShop:'상점에 들어가려면 로그인해야 합니다.',
-    hpUpgTitle:'HP +1', hpUpgDesc:'레벨당 시작 HP +1 (최대 +200).',
+    hpUpgTitle:'HP +10', hpUpgDesc:'레벨당 시작 HP +10 (최대 +200).',
     dmgUpgTitle:'데미지 +1', dmgUpgDesc:'레벨당 시작 데미지 +1 (최대 +20).',
     level:'레벨', price:'가격', buy:'구매', maxLevel:'최대 레벨 도달', notEnoughGold:'골드가 부족합니다.',
     goldHowTo:'웨이브 5부터 클리어 시 골드 획득: 5=+1, 6=+2, 7=+3 등'

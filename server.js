@@ -297,6 +297,7 @@ function getPlayersHealthStateFiltered(game, cx, cy, r) {
         pseudo: p.pseudo,
         money: p.money,
         maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
+        skin: (function(s){ try{ if(!s||typeof s!=='object') return null; const hex=/^#[0-9a-fA-F]{6}$/; const hair=(hex.test(s.hair)?s.hair.toLowerCase():null); const skin=(hex.test(s.skin)?s.skin.toLowerCase():null); const clothes=(hex.test(s.clothes)?s.clothes.toLowerCase():null); return (hair&&skin&&clothes)?{hair,skin,clothes}:null; }catch(_){return null; } })(p.skin),
       };
     }
   }
@@ -783,6 +784,8 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       viewY: null,
       _lastSpectateMoveAt: 0,
     };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
     // Attach account shop upgrades (hp/dmg) to player if logged-in
     try {
       const authUser = getSessionUsernameBySocketId(sid);
@@ -1222,6 +1225,8 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
           damage:10, speed:40, goldGain:10, regen:0,
           lastShot:0, pseudo, kills:0, money:0, spectator:false
         };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
       }
     }
   } catch(e) { console.error('[launchGame] post-spawn sanity failed', e); }
@@ -1239,6 +1244,8 @@ try {
         lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
         kills:0, money:0, spectator:false
       };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
     }
   }
 } catch(e) {
@@ -2316,7 +2323,7 @@ function getPlayerStats(player) {
     goldGain: Math.round(base.goldGain * Math.pow(1.1, u.goldGain || 0)),
   };
   // Apply account-level additive bonuses
-  baseStats.maxHp += (acc.hp|0) * 1;
+  baseStats.maxHp += (acc.hp|0) * 10;
   baseStats.damage += (acc.dmg|0) * 1;
   return baseStats;
 }
@@ -3265,21 +3272,53 @@ function stepOnce(dt) {
         const cx = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
           const cy = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
 
+        
         const zSnap  = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
 
         const last = game._lastNetSend[sid] || 0;
         if (now - last >= sendInterval) {
+          // --- Robust fix: remap bullet.owner to the SAME aliases used in playersHealth for this recipient ---
+          const hostId = (game.lobby && game.lobby.hostId) || null;
+          const ownerAliasMap = {};
+          let __idx = 0;
+          for (const k in phSnap) {
+            if (k === sid) {
+              ownerAliasMap[k] = k; // keep self under real sid
+            } else {
+              if (hostId && hostId !== sid && k === hostId) {
+                // host will be exposed separately as 'host' (do not consume a pX slot)
+                continue;
+              }
+              ownerAliasMap[k] = 'p' + (++__idx);
+            }
+          }
+          if (hostId && hostId !== sid && phSnap[hostId]) {
+            ownerAliasMap[hostId] = 'host';
+          }
+          const bPub = {};
+          for (const bid in bSnap) {
+            const b = bSnap[bid];
+            if (!b) continue;
+            const alias = ownerAliasMap[b.owner] || b.owner;
+            if (alias === b.owner) {
+              bPub[bid] = b; // no change
+            } else {
+              // shallow clone to avoid mutating shared snapshot
+              bPub[bid] = { id: b.id, owner: alias, x: b.x, y: b.y, dx: b.dx, dy: b.dy, createdAt: b.createdAt, lifeFrames: b.lifeFrames };
+            }
+          }
+
           io.to(sid).volatile.emit('stateUpdate', {
             zombies: zSnap,
-            bullets: bSnap,
-            playersHealth: buildPublicMapForRecipient(sid, phSnap, (game.lobby && game.lobby.hostId) || null),
+            bullets: bPub,
+            playersHealth: buildPublicMapForRecipient(sid, phSnap, hostId),
             round: game.currentRound
           });
           game._lastNetSend[sid] = now;
         }
-      }
+}
     }
 
     // Régénération
@@ -3372,8 +3411,11 @@ ensureUsersFile();
 /* === PLAYER SKINS (players.json) === */
 const PLAYERS_FILE = path.join(__dirname, 'data', 'players.json');
 function ensurePlayersFile(){
-  try { const dir = path.dirname(PLAYERS_FILE); if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(_){}
-  try { if (!fs.existsSync(PLAYERS_FILE)) fs.writeFileSync(PLAYERS_FILE, JSON.stringify({ players: {} }, null, 2)); } catch(_){}
+  try {
+    const dir = path.dirname(PLAYERS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch(_) {}
+  // Note: do NOT create PLAYERS_FILE automatically anymore; legacy file is optional.
 }
 function loadPlayersMap(){
   try {
@@ -3401,18 +3443,58 @@ function getPlayerSkin(username){
     const name = sanitizeUsername(username);
     if (!name) return null;
     const key = normalizeKey(name);
-    const map = loadPlayersMap();
-    const rec = map[key];
-    if (rec && rec.skin && typeof rec.skin === 'object') {
-      const { hair, skin, clothes } = rec.skin;
-      return { hair, skin, clothes };
-    }
+
+    // 1) Prefer skin stored directly in users.json (account-associated)
+    try {
+      const users = loadUsers();
+      const u = users[key];
+      if (u && u.skin && typeof u.skin === 'object') {
+        const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+        const hair = hexOk(u.skin.hair) ? u.skin.hair.toLowerCase() : null;
+        const skin = hexOk(u.skin.skin) ? u.skin.skin.toLowerCase() : null;
+        const clothes = hexOk(u.skin.clothes) ? u.skin.clothes.toLowerCase() : null;
+        if (hair && skin && clothes) return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
+    // 2) Backward-compat: fallback to legacy players.json if present
+    try {
+      const map = loadPlayersMap();
+      const rec = map[key];
+      if (rec && rec.skin && typeof rec.skin === 'object') {
+        const { hair, skin, clothes } = rec.skin;
+        return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
     return null;
   } catch(_){ return null; }
 }
 
 
 
+
+// --- Skin helpers (normalize, resolve by socket) ---
+function _validateSkinObject(s) {
+  try {
+    if (!s || typeof s !== 'object') return null;
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const hair = hexOk(s.hair) ? s.hair.toLowerCase() : null;
+    const skin = hexOk(s.skin) ? s.skin.toLowerCase() : null;
+    const clothes = hexOk(s.clothes) ? s.clothes.toLowerCase() : null;
+    if (hair && skin && clothes) return { hair, skin, clothes };
+    return null;
+  } catch(_) { return null; }
+}
+function resolvePlayerSkinForSocket(sid, fallbackPseudo) {
+  try {
+    // Prefer account-bound skin if logged in
+    const sessUser = getSessionUsernameBySocketId(sid);
+    let skin = sessUser ? getPlayerSkin(sessUser) : null;
+    if (!skin && fallbackPseudo) skin = getPlayerSkin(fallbackPseudo);
+    return _validateSkinObject(skin);
+  } catch(_) { return null; }
+}
 function loadUsers() {
   try {
     const raw = fs.readFileSync(USERS_FILE, 'utf8');
@@ -3828,8 +3910,8 @@ try {
     const users = loadUsers();
     const key = normalizeKey(uname);
     const rec = users[key] || (users[key]={ username: uname, usernameLower:key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
-    const price = (type === 'hp') ? 5 :  200;
-    const maxLv = (type === 'hp') ? 200 :  20;
+    const price = (type === 'hp') ? 50 :  200;
+    const maxLv = (type === 'hp') ? 20 :  20;
     const lv = (rec.shopUpgrades && rec.shopUpgrades[type]|0) || 0;
     if (lv >= maxLv) return res.json({ ok:false, code:'max_level' });
     if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
@@ -3843,7 +3925,7 @@ try {
 
 /* buy & save custom skin (requires login) */
 app.post('/api/skin/buy', (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
   if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
   try {
     const uname = getSessionUsernameByReq(req);
@@ -3854,18 +3936,23 @@ app.post('/api/skin/buy', (req,res)=>{
 
     const users = loadUsers();
     const ukey = normalizeKey(uname);
-    const urec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
-    const price = 5;
-    if ((urec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
-    urec.gold = (urec.gold|0) - price;
+    const now = Date.now();
+    const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
+
+    // Price & balance
+    const price = 20;
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+
+    // Persist skin directly in users.json (account-associated)
+    rec.skin = { hair: hair.toLowerCase(), skin: skin.toLowerCase(), clothes: clothes.toLowerCase(), updatedAt: now };
+
     if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
 
-    const map = loadPlayersMap();
-    map[ukey] = map[ukey] || { username: uname, usernameLower: ukey, createdAt: Date.now(), updatedAt: Date.now(), skin: { hair:'#6b4d2e', skin:'#f4c2c2', clothes:'#2aa84a' } };
-    map[ukey].skin = { hair, skin, clothes };
-    map[ukey].updatedAt = Date.now();
-    if (!savePlayersMap(map)) return res.status(500).json({ ok:false, code:'save_failed' });
-
-    return res.json({ ok:true, gold: urec.gold|0, skin: { hair, skin, clothes } });
+    return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
+
+
+
+
