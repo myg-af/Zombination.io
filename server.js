@@ -275,7 +275,7 @@ const socketToGame = {};
 const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 // === Interest management (zone de vue par joueur) ===
-const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
+const SERVER_VIEW_RADIUS = 800; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
 const BUILD_VIEW_RADIUS = 420; // rayon de halo autorisant le placement
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
@@ -340,7 +340,10 @@ function getZombiesFiltered(game, cx, cy, r) {
     const z = game.zombies[zid];
     if (!z) continue;
     const dx = z.x - cx, dy = z.y - cy;
-    if (dx*dx + dy*dy <= r2) out[zid] = z;
+    if (dx*dx + dy*dy <= r2) {
+      // N'exporter que les champs nécessaires côté client pour réduire la charge réseau/JSON
+      out[zid] = { id: z.id || zid, x: z.x, y: z.y, hp: z.hp, maxHp: z.maxHp || z.hp };
+    }
   }
   return out;
 }
@@ -937,7 +940,7 @@ function computePathfindBudget(game) {
 }
 
 
-const NET_SEND_HZ = 30;
+const NET_SEND_HZ = 20;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 
 // --- Modes basse consommation ---
@@ -949,7 +952,7 @@ const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
 let _lastTickAtMs = 0;
 
 
-const TICK_HZ = 60;
+const TICK_HZ = 30;
 const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
 const MAX_STEPS = 5;              // anti-spirale si gros retard
 // Budget courant de pathfinding pour CE tick (réinitialisé dans stepOnce)
