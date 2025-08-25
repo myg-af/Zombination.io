@@ -1,0 +1,21 @@
+{
+  "users": {
+    "myg": {
+      "username": "Myg",
+      "usernameLower": "myg",
+      "passHash": "pbkdf2$sha256$120000$c79ad822b6ec06de75786e45fece17ac$645e98efbaefbe5a6317acbefc83def8fbd17e3b410d1a5ca904ba59356b6955",
+      "createdAt": 1756109064754,
+      "gold": 1,
+      "shopUpgrades": {
+        "hp": 20,
+        "dmg": 20
+      },
+      "skin": {
+        "hair": "#6b4d2e",
+        "skin": "#f4c2c2",
+        "clothes": "#2aa84a",
+        "updatedAt": 1756112191738
+      }
+    }
+  }
+}

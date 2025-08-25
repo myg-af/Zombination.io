@@ -12,19 +12,63 @@ const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
 const compression = require('compression');
+const fs = require('fs');
+const crypto = require('crypto');
 
 const gameMapModule = require('./game/gameMap');
 
 const app = express();
 app.use(compression());
+app.use(express.json({ limit: '1mb' }));
 const server = http.createServer(app);
 const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
-  transports: ['websocket'],
+  transports: ['polling','websocket'],
 });
 
+// --- Chat globals ---
+let worldChatHistory = [];
+
+// Keep last known pseudo per socket to label chat messages even before game context is attached
+const lastPseudoBySocket = new Map();
+
+
+
+const chatLastByIp = new Map(); // per-IP cooldown
+// === Helper: normalize client IP (supports proxies) ===
+function getClientIP(socket) {
+  try {
+    // Prefer the real remote peer address provided by the transport
+    let peer = (socket && socket.conn && socket.conn.remoteAddress)
+            || (socket && socket.handshake && socket.handshake.address)
+            || '';
+    if (Array.isArray(peer)) peer = peer[0] || '';
+    if (typeof peer === 'string' && peer.startsWith('::ffff:')) peer = peer.slice(7);
+    let ip = String(peer || '').trim();
+
+    // Only honor X-Forwarded-For if the immediate peer is a trusted proxy
+    const headers = (socket && socket.handshake && socket.handshake.headers) || {};
+    const xff = headers['x-forwarded-for'];
+    if (xff) {
+      const TRUSTED = (process.env.TRUSTED_PROXIES || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+      const peerCmp = (String(peer || '').replace(/^::ffff:/, '')).trim();
+      const isTrusted = TRUSTED.includes(peerCmp);
+      if (isTrusted) {
+        let f = String(xff).split(',')[0].trim();
+        if (f.startsWith('::ffff:')) f = f.slice(7);
+        if (f) ip = f;
+      }
+    }
+    return ip;
+  } catch (e) {
+    return '';
+  }
+}
 
 const {
   MAP_ROWS,
@@ -54,12 +98,15 @@ const SHOP_CONST = {
 
 // --- Prix d'achat des structures (serveur autoritatif) ---
 const SHOP_BUILD_PRICES = {
-  T: 1000, // Tourelle
-  t: 250,  // Mini-tourelle
-  G: 5000, // Big-tourelle
-  B: 100,  // Mur
-  D: 200   // Porte
+  T: 2000, // Tourelle
+  t: 500,  // Mini-tourelle
+  G: 10000, // Big-tourelle
+  B: 250,  // Mur
+  D: 500   // Porte
 };
+
+// Cooldown for placing walls/doors (applies to both types)
+const BLOCK_PLACE_COOLDOWN_MS = 5000;
 
 
 function getUpgradePrice(nextLevel) {
@@ -75,15 +122,52 @@ function getUpgradePrice(nextLevel) {
 let activeGames = [];
 let nextGameId = 1;
 
+// === Helper: check global nickname uniqueness (case-insensitive) ===
+function isPseudoTaken(name, exceptSocketId) {
+  try {
+    const target = String(name || '').trim().toLowerCase();
+    if (!target) return false;
+    const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+    for (const g of activeGames) {
+      if (!g) continue;
+      // Lobby players — ignore stale/disconnected socket entries
+      try {
+        const lp = (g.lobby && g.lobby.players) ? g.lobby.players : {};
+        for (const sid in lp) {
+          if (exceptSocketId && sid === exceptSocketId) continue;
+          if (socketsMap && !socketsMap.get(sid)) continue; // skip stale
+          const p = lp[sid];
+          if (p && typeof p.pseudo === 'string' && p.pseudo.toLowerCase() === target) return true;
+        }
+      } catch(_){}
+      // In‑game players (exclude bots) — also ensure socket is alive
+      try {
+        const pl = g.players || {};
+        for (const sid in pl) {
+          if (exceptSocketId && sid === exceptSocketId) continue;
+          if (socketsMap && !socketsMap.get(sid)) continue; // skip stale
+          const p = pl[sid];
+          if (p && !p.isBot && typeof p.pseudo === 'string' && p.pseudo.toLowerCase() === target) return true;
+        }
+      } catch(_){}
+    }
+  } catch(_){}
+  return false;
+}
+
 function createNewGame() {
   let game = {
     structures: null,
     id: nextGameId++,
-    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null },
+    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null, kickedUntilByIp: {} },
+    // map: ip -> timestamp until which the ip is blocked from rejoining this lobby
+    // only relevant for manual lobbies
+    kickedUntilByIp: {},
     players: {},
     bots: {},
     zombies: {},
     bullets: {},
+    chatHistory: [],
     currentRound: 1,
     totalZombiesToSpawn: MAX_ZOMBIES_PER_WAVE,
     zombiesSpawnedThisWave: 0,
@@ -105,7 +189,6 @@ function createNewGame() {
   activeGames.push(game);
   return game;
 }
-
 
 
 function buildCentralEnclosure(game, spacingTiles = 1) {
@@ -165,8 +248,6 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
 }
 
 
-
-
 function cleanupEmptyManualLobbies() {
   // Remove manual lobbies with no players and not started
   activeGames = activeGames.filter(g => {
@@ -180,7 +261,6 @@ function getAvailableLobby() {
   if (!game) game = createNewGame();
   return game;
 }
-
 
 
 function getAvailableAutoLobby() {
@@ -217,11 +297,41 @@ function getPlayersHealthStateFiltered(game, cx, cy, r) {
         pseudo: p.pseudo,
         money: p.money,
         maxHealth: p.maxHealth || getPlayerStats(p).maxHp,
+        skin: (function(s){ try{ if(!s||typeof s!=='object') return null; const hex=/^#[0-9a-fA-F]{6}$/; const hair=(hex.test(s.hair)?s.hair.toLowerCase():null); const skin=(hex.test(s.skin)?s.skin.toLowerCase():null); const clothes=(hex.test(s.clothes)?s.clothes.toLowerCase():null); return (hair&&skin&&clothes)?{hair,skin,clothes}:null; }catch(_){return null; } })(p.skin),
       };
     }
   }
   return out;
 }
+
+// Build a public map for a specific recipient: keep self under real sid, others as p1, p2...
+// If hostId is provided and differs from self, also include 'host' alias for the host player's entry.
+function buildPublicMapForRecipient(selfSid, fullMap, hostId) {
+  const out = {};
+  if (!fullMap || typeof fullMap !== 'object') return out;
+  let idx = 0;
+  for (const k in fullMap) {
+    if (Object.prototype.hasOwnProperty.call(fullMap, k)) {
+      if (k === selfSid) {
+        out[k] = fullMap[k];
+      } else {
+        // Do not alias the host as pX for non-host recipients;
+        // it will be exposed once under 'host' below.
+        if (hostId && hostId !== selfSid && k === hostId) {
+          continue;
+        }
+        const alias = 'p' + (++idx);
+        out[alias] = fullMap[k];
+      }
+    }
+  }
+  if (hostId && hostId !== selfSid && fullMap[hostId]) {
+    out['host'] = fullMap[hostId];
+  }
+  return out;
+}
+
+
 
 function getZombiesFiltered(game, cx, cy, r) {
   const r2 = r * r;
@@ -246,7 +356,6 @@ function getBulletsFiltered(game, cx, cy, r) {
   }
   return out;
 }
-
 
 
 // ======= Structures (barricades/portes) helpers =======
@@ -326,7 +435,6 @@ function canPlaceStructureAt(game, tx, ty, buyerId) {
 
   return true;
 }
-
 
 
 function isSolidForPlayer(struct) {
@@ -452,14 +560,14 @@ function tickTurrets(game) {
       s.lastShot = now;
       s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
 
-      let baseDmg = (s.type === 't') ? 10 : (s.type === 'T' ? 20 : (s.type === 'G' ? 50 : 5));
+      let baseDmg = (s.type === 't') ? 5 : (s.type === 'T' ? 10 : (s.type === 'G' ? 25 : 5));
       // Upgrades bonus per owner: sum of geometric series (+10% per level on the added amount)
       let bonus = 0;
       if (s.placedBy && game.players[s.placedBy]) {
         const up = game.players[s.placedBy].turretUpgrades || {};
         const lvl = (s.type === 't') ? (up['t']||0) : (s.type === 'T' ? (up['T']||0) : (up['G']||0));
         if (lvl > 0) {
-          const baseAdd = (s.type === 't') ? 10 : (s.type === 'T' ? 20 : 50);
+          const baseAdd = (s.type === 't') ? 5 : (s.type === 'T' ? 10 : 25);
           // sum_{i=0..lvl-1} baseAdd * 1.1^i
           bonus = baseAdd * (Math.pow(1.1, lvl) - 1) / 0.1;
         }
@@ -531,8 +639,6 @@ function losBlockedForZombie(game, x0, y0, x1, y1) {
 }
 
 
-
-
 // LOS des tourelles : bloquée uniquement par les murs de la MAP (pas par barricades/portes)
 function losBlockedForTurret(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
@@ -599,7 +705,6 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   } while (isCollision(game.map, spawnX, spawnY));
   return { x: spawnX, y: spawnY, hp: hp, maxHp: hp, lastAttack: 0, speed: speed };
 }
-
 
 
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
@@ -679,6 +784,19 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       viewY: null,
       _lastSpectateMoveAt: 0,
     };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
+    // Attach account shop upgrades (hp/dmg) to player if logged-in
+    try {
+      const authUser = getSessionUsernameBySocketId(sid);
+      if (authUser) {
+        const urec = loadUsers()[normalizeKey(authUser)] || null;
+        if (urec) {
+          game.players[sid].accountShop = { hp: (urec.shopUpgrades&&urec.shopUpgrades.hp|0)||0, dmg: (urec.shopUpgrades&&urec.shopUpgrades.dmg|0)||0 };
+        }
+      }
+    } catch(_){}
+
 
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
@@ -687,10 +805,6 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     usedPos.push({ x: spawnX, y: spawnY });
   }
 }
-
-
-
-
 
 
 function isNearObstacle(map, cx, cy, radius, tileSize) {
@@ -846,17 +960,45 @@ let accumulator = 0;
 
 
 function broadcastLobby(game) {
-  io.to('lobby' + game.id).emit('lobbyUpdate', {
-    players: game.lobby.players,
-    count: Object.keys(game.lobby.players).length,
-    max: MAX_PLAYERS,
-    timeLeft: game.lobby.timeLeft,
-    started: game.lobby.started,
-    manual: !!(game.lobby && game.lobby.manual),
-    hostId: (game.lobby && game.lobby.hostId) || null,
-  });
+  try {
+    const playersOrig = (game && game.lobby && game.lobby.players) ? game.lobby.players : {};
+    const count = Object.keys(playersOrig).length;
+    const manual = !!(game.lobby && game.lobby.manual);
+    const started = !!(game.lobby && game.lobby.started);
+    const timeLeft = game.lobby.timeLeft;
+    const max = MAX_PLAYERS;
+    const hostIdReal = (game.lobby && game.lobby.hostId) || null;
+    for (const sid in playersOrig) {
+      const pub = {};
+      let idx = 0;
+      for (const otherId in playersOrig) {
+        if (otherId === sid) { pub[otherId] = playersOrig[otherId]; }
+        else {
+          // Avoid duplicating the host: if the recipient is NOT the host,
+          // we expose the host only under the 'host' alias (not as pX).
+          if (hostIdReal && hostIdReal !== sid && otherId === hostIdReal) {
+            continue;
+          }
+          pub['p' + (++idx)] = playersOrig[otherId];
+        }
+      }
+      let hostOut = (hostIdReal === sid) ? sid : 'host';
+      if (hostOut === 'host' && hostIdReal && playersOrig[hostIdReal]) {
+        // Provide a single 'host' entry so the UI can show the crown,
+        // without adding another pX alias for the host.
+        pub['host'] = playersOrig[hostIdReal];
+      }
+      io.to(sid).emit('lobbyUpdate', {
+        id: game.id,
+        players: pub,
+        count, max, timeLeft, started, manual,
+        hostId: hostOut
+      });
+    }
+  } catch(e) {
+    try { console.error('[broadcastLobby error]', e && e.message); } catch(_){}
+  }
 }
-
 function startLobbyTimer(game) {
   if (game.lobby.timer) return;
   game.lobby.timeLeft = LOBBY_TIME / 1000;
@@ -915,9 +1057,43 @@ function spawnZombies(game, count) {
 
 function checkWaveEnd(game) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && game._zombieCount === 0) {
+    const prevRound = game.currentRound;
     game.currentRound++;
     game.zombiesSpawnedThisWave = 0;
     game.zombiesKilledThisWave = 0;
+    // GOLD AWARD: starting from wave 5, award (prevRound-4) gold
+    try {
+      if (prevRound >= 5 && game._lastAwardedRound !== prevRound) {
+        const bonus = prevRound - 4;
+        const users = loadUsers();
+        const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+        // Group sockets by account username to award once per account
+        const perUserSids = {};
+        for (const sid in game.players) {
+          try {
+            const auth = getSessionUsernameBySocketId(sid);
+            if (!auth) continue;
+            const key = normalizeKey(auth);
+            if (!perUserSids[key]) perUserSids[key] = { username: auth, sids: [] };
+            perUserSids[key].sids.push(sid);
+          } catch(_){}
+        }
+        for (const key in perUserSids) {
+          try {
+            const rec = users[key] || (users[key] = { username: perUserSids[key].username, createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+            rec.gold = (rec.gold|0) + bonus;
+            // emit to all sockets of this account if connected
+            if (socketsMap) {
+              for (const sid of perUserSids[key].sids) {
+                if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: rec.gold|0 }); } catch(_){ } }
+              }
+            }
+          } catch(_){}
+        }
+        saveUsers(users);
+        game._lastAwardedRound = prevRound;
+      }
+    } catch(_){ }
     const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
     game.totalZombiesToSpawn = Math.min(_nextTotal, MAX_ZOMBIES_PER_WAVE);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
@@ -925,11 +1101,8 @@ function checkWaveEnd(game) {
     io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
     io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
 
-    console.log(`---- Nouvelle vague : vague ${game.currentRound}`);
   }
 }
-
-
 
 
 function startSpawning(game) {
@@ -951,7 +1124,29 @@ function stopSpawning(game) {
 }
 
 function launchGame(game, readyPlayersArr = null) {
-  Object.keys(game.players).forEach(id => delete game.players[id]);
+  
+  try{ console.log('[LAUNCH] game', game && game.id, 'readyCount=', (game && game.lobby && Object.values(game.lobby.players||{}).filter(p=>p&&p.ready).length)); }catch(_){ }
+// === ROBUST START FIX ===
+  // Some clients may reconnect right before the game starts, changing their socket.id.
+  // To avoid spawning "ghost" players that don't match current connections, we reconstruct
+  // the readyPlayers list from the CURRENT room membership intersected with lobby.ready.
+  try {
+    const roomNow = io.sockets.adapter.rooms.get('lobby' + game.id);
+    const cidsNow = roomNow ? Array.from(roomNow) : [];
+    const reconstructed = [];
+    for (const cid of cidsNow) {
+      const entry = game.lobby && game.lobby.players ? game.lobby.players[cid] : null;
+      if (entry && entry.ready) reconstructed.push([cid, entry]);
+    }
+    if (reconstructed.length > 0) {
+      readyPlayersArr = reconstructed;
+    }
+  } catch (e) {
+    console.error('[launchGame] ready reconstruction failed', e);
+  }
+  // === ROBUST START FIX END ===
+
+Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
 
@@ -1017,18 +1212,64 @@ function launchGame(game, readyPlayersArr = null) {
 
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
 
-  io.to('lobby' + game.id).emit('gameStarted', {
-    map: game.map,
-    players: game.players,
-    round: game.currentRound,
-    structures: game.structures,
-    structurePrices: SHOP_BUILD_PRICES
-  });
+  // === SANITY: ensure all sockets in socketsArr have a player object ===
+  try {
+    for (const sid of socketsArr) {
+      if (!game.players[sid]) {
+        const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+        const x = cC * TILE_SIZE + TILE_SIZE/2;
+        const y = cR * TILE_SIZE + TILE_SIZE/2;
+        const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
+        game.players[sid] = {
+          x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+          damage:10, speed:40, goldGain:10, regen:0,
+          lastShot:0, pseudo, kills:0, money:0, spectator:false
+        };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
 
-  io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
+      }
+    }
+  } catch(e) { console.error('[launchGame] post-spawn sanity failed', e); }
+// 🔒 ROBUST: Sanity—ensure every ready socket has a player object
+try {
+  for (const sid of socketsArr) {
+    if (!game.players[sid]) {
+      // Fallback spawn near center (safe)
+      const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+      const x = cC * TILE_SIZE + TILE_SIZE/2;
+      const y = cR * TILE_SIZE + TILE_SIZE/2;
+      game.players[sid] = {
+        x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+        damage:10, speed:40, goldGain:10, regen:0,
+        lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
+        kills:0, money:0, spectator:false
+      };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
+    }
+  }
+} catch(e) {
+  console.error('[launchGame] post-spawn sanity failed', e);
+}
+
+
+  try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
+  for (const sid in (game.players||{})) {
+    try {
+      const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
+      io.to(sid).emit('gameStarted', { gameId: game.id,
+        map: game.map,
+        players: pubPlayers,
+        round: game.currentRound,
+        structures: game.structures,
+        structurePrices: SHOP_BUILD_PRICES
+      });
+    } catch(_){}
+  }
+io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
   io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
 
-  console.log(`---- Partie lancée : ${pseudosArr.length} joueur(s) dans la partie !`);
+  console.log(`---- Partie lancée : ${nbPlayers} joueur(s) dans la partie !`);
   startSpawning(game);
  // --- Reset du temps pour éviter l'accélération initiale après le lobby ---
 lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
@@ -1037,72 +1278,313 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 }
 
 
-
-
 io.on('connection', socket => {
+    // Detect if the client is mobile from User-Agent (used to avoid sending chat to mobile in-game)
+    try {
+      const ua = (socket && socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
+      socket.__isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(String(ua));
+    } catch(_){ socket.__isMobile = false; }
 
   // Ultra-aggressive: host cleanup BEFORE disconnect completes
-  socket.on('disconnecting', () => {
+    // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
+  socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
+
+  console.log('[CONNECT]', socket.id);
+
+  // Token-based reclaim is now handled via 'reclaimHost' event from client after connect.
+  let __reclaimed = false;
+
+      if (!__reclaimed) {
+// Attache tout de suite le joueur à un lobby pour avoir "game" dispo
+    const game = getAvailableLobby();
+    socketToGame[socket.id] = game.id;
+    socket.join('lobby' + game.id);
+  }
+
+  // Allow non-host players to reclaim their previous lobby seat after a reconnect (by gameId + pseudo)
+  socket.on('reclaimPlayer', (payload, cb) => {
     try {
-      const mappedId = socketToGame[socket.id];
-      let game = activeGames.find(g => g && g.id === mappedId) || null;
-      if (!game) {
-        game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
-      }
-      if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
-        // Notify all clients in the lobby and force them out
-        try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
-        const room = io.sockets.adapter.rooms.get('lobby' + game.id);
-        const ids = room ? Array.from(room) : [];
-        for (const cid of ids) {
-          try {
-            if (cid !== socket.id) {
-              const s = io.sockets.sockets.get(cid);
-              if (s) { try { s.leave('lobby' + game.id); } catch(_){} }
-              if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
-              if (game.players && game.players[cid]) delete game.players[cid];
-              if (game._lastNetSend) delete game._lastNetSend[cid];
-              try { delete socketToGame[cid]; } catch (_) {}
-            }
-          } catch (_){}
+      payload = payload || {};
+      const targetId = Number(payload.gameId) || 0;
+      let pseudo = String(payload.pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+      if (!targetId || !pseudo) { try { if (cb) cb({ ok:false, reason:'invalid' }); } catch(_){} return; }
+      const currentGid = socketToGame[socket.id];
+      const target = activeGames.find(g => g && g.id === targetId);
+      if (!target || !target.lobby || target.lobby.started) { try { if (cb) cb({ ok:false, reason:'not_joinable' }); } catch(_){} return; }
+
+      // Find a stale roster entry matching this pseudo (socket no longer connected)
+      const roster = (target.lobby && target.lobby.players) || {};
+      const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+      let oldSid = null;
+      for (const sid in roster) {
+        const entry = roster[sid];
+        if (!entry) continue;
+        if (String(entry.pseudo || '') === pseudo) {
+          const alive = socketsMap && socketsMap.get(sid);
+          if (!alive) { oldSid = sid; break; }
         }
-        try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
-        try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_){}
       }
-    } catch (e) {
-      console.error('[disconnecting host cleanup] error', e);
+      if (!oldSid) { try { if (cb) cb({ ok:false, reason:'no_match' }); } catch(_){} return; }
+
+      // Move the roster entry to this new socket id
+      try {
+        roster[socket.id] = roster[oldSid];
+        delete roster[oldSid];
+      } catch(_) {}
+
+      // Move the socket to the right room and update mapping
+      try {
+        const prev = activeGames.find(g => g && g.id === currentGid);
+        if (prev && prev.id !== target.id) { try { socket.leave('lobby' + prev.id); } catch(_){} }
+      } catch(_) {}
+      try { socket.join('lobby' + target.id); } catch(_) {}
+      socketToGame[socket.id] = target.id;
+
+      broadcastLobby(target);
+      try { if (cb) cb({ ok:true, gameId: target.id }); } catch(_) {}
+    } catch(e) {
+      try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
     }
   });
 
-  console.log('[CONNECT]', socket.id, socket.handshake.headers['user-agent']);
-
-  // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
-  const game = getAvailableLobby();
-  socketToGame[socket.id] = game.id;
-  socket.join('lobby' + game.id);
-
-  socket.on('clientPing', () => {});
-
-  socket.emit('lobbyUpdate', {
-    players: game.lobby.players,
-    count: Object.keys(game.lobby.players).length,
-    max: MAX_PLAYERS,
-    timeLeft: game.lobby.timeLeft,
-    started: game.lobby.started,
+  // Client asked for an explicit lobby state snapshot
+  socket.on('requestLobbyState', () => {
+    try {
+      const gid = socketToGame[socket.id];
+      const g = activeGames.find(x => x && x.id === gid);
+      if (g) {
+        io.to(socket.id).emit('lobbyUpdate', {
+          id: g.id,
+          players: g.lobby.players,
+          count: Object.keys(g.lobby.players||{}).length,
+          max: MAX_PLAYERS,
+          timeLeft: g.lobby.timeLeft,
+          started: g.lobby.started,
+          manual: !!(g.lobby && g.lobby.manual),
+          hostId: (g.lobby && g.lobby.hostId) || null,
+        });
+      }
+    } catch(_) {}
   });
+socket.on('clientPing', () => {});
+
+  
+  // Emit initial lobby state for this socket's current lobby
+  try {
+    const __gid = socketToGame[socket.id];
+    const __g = activeGames.find(g => g && g.id === __gid);
+    if (__g) {
+      socket.emit('lobbyUpdate', { id: __g.id, players: __g.lobby.players, count: Object.keys(__g.lobby.players).length, max: MAX_PLAYERS, timeLeft: __g.lobby.timeLeft, started: __g.lobby.started, hostId: __g.lobby.hostId });
+    }
+  } catch(e) { console.error('emit lobbyUpdate failed', e); }
+// ====== ULTRA-AGGRESSIVE CHAT HANDLERS ======
+  try { socket.join('world'); } catch(_) {}
+
+  // Client asks history for a channel
+  socket.on('chat:join', (payload) => {
+    try {
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+      if (channel === 'world') {
+        const history = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-50) : [];
+        io.to(socket.id).emit('chat:history', { channel, history });
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (!game) return;
+        const history = Array.isArray(game.chatHistory) ? game.chatHistory.slice(-50) : [];
+        io.to(socket.id).emit('chat:history', { channel, history });
+      }
+    } catch(e){}
+  });
+
+  // Fallback pull (explicit request)
+  socket.on('chat:pull', (payload, cb) => {
+    try {
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+      let arr = [];
+      if (channel === 'world') {
+        arr = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-50) : [];
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (game && Array.isArray(game.chatHistory)) arr = game.chatHistory.slice(-50);
+      }
+      if (cb) cb({ ok:true, channel, history: arr });
+      else io.to(socket.id).emit('chat:history', { channel, history: arr });
+    } catch(e){ if (cb) cb({ ok:false }); }
+  });
+
+  // Send a message
+  socket.on('chat:send', (payload) => {
+    try {
+      const now = Date.now();
+      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+
+      // basic sanitize
+      let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
+      if (!text) return;
+      if (text.length > 50) text = text.slice(0,50);
+
+      // cooldown per IP (2s)
+      {
+        const ip = getClientIP(socket) || 'unknown';
+        const last = chatLastByIp.get(ip) || 0;
+        if (now - last < 2000) {
+          try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - last) }); } catch(_){}
+          return;
+        }
+        chatLastByIp.set(ip, now);
+      }
+
+      // resolve pseudo
+
+      let pseudo = 'player';
+      try {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (game) {
+          pseudo = (game.players && game.players[socket.id] && game.players[socket.id].pseudo)
+                || (game.lobby && game.lobby.players && game.lobby.players[socket.id] && game.lobby.players[socket.id].pseudo)
+                || 'player';
+        }
+      } catch(_){}
+      if (!pseudo || pseudo === 'player') {
+        const lp = lastPseudoBySocket.get(socket.id);
+        if (lp) pseudo = lp;
+      }
+      
+      // Allow using client-provided display name ONLY as a fallback, sanitized,
+      // and without letting users impersonate registered accounts.
+      if ((!pseudo || pseudo === 'player') && payload && typeof payload.name === 'string') {
+        try {
+          let candidate = sanitizeUsername(payload.name);
+          if (candidate) {
+            const sessUser = getSessionUsernameBySocketId(socket.id);
+            if (!isRegisteredUsername(candidate) || sessUser === candidate) {
+              pseudo = candidate;
+              try { lastPseudoBySocket.set(socket.id, candidate); } catch(_){}
+            }
+          }
+        } catch(_){}
+      }
+if (!pseudo || pseudo === 'player') {
+        try {
+          const ip2 = getClientIP(socket) || '';
+          const h = require('crypto').createHash('md5').update(String(ip2||socket.id)).digest('hex').slice(0,4).toUpperCase();
+          pseudo = 'Guest' + h;
+        } catch(_){ pseudo = 'Guest'; }
+      }
+
+      
+            
+      // Enforce pseudo uniqueness for chat (same policy as lobby joins)
+      try {
+        if (isPseudoTaken(pseudo, socket.id)) {
+          try { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); } catch(_){}
+          return;
+        }
+      } catch(_){}
+const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+
+      if (channel === 'world') {
+        worldChatHistory.push(msg);
+        if (worldChatHistory.length > 500) worldChatHistory.shift();
+        // Global broadcast: everyone receives world chat regardless of room state
+        // Echo to sender, then send to others in 'world' excluding mobile clients that are in-game
+        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+        try {
+          const nsp = io.of('/');
+          nsp.in('world').fetchSockets().then(clients => {
+            clients.forEach(cl => {
+              try {
+                const gid = socketToGame[cl.id];
+                const g = activeGames.find(gg => gg && gg.id === gid);
+                const inGameNow = !!(g && g.lobby && g.lobby.started);
+                if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow)) {
+                  cl.emit('chat:msg', msg);
+                }
+              } catch(_){}
+            });
+          }).catch(_=>{});
+        } catch(_){}
+
+      } else {
+        const gid = socketToGame[socket.id];
+        const game = activeGames.find(g => g && g.id === gid);
+        if (!game) return;
+        game.chatHistory = game.chatHistory || [];
+        game.chatHistory.push(msg);
+        if (game.chatHistory.length > 200) game.chatHistory.shift();
+        // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
+        // Echo to sender, then broadcast to other lobby members (excluding mobile clients that are currently in-game)
+        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+        try {
+          const nsp = io.of('/');
+          nsp.in('lobby' + game.id).fetchSockets().then(clients => {
+            clients.forEach(cl => {
+              try {
+                const gid2 = socketToGame[cl.id];
+                const g2 = activeGames.find(gg => gg && gg.id === gid2);
+                const inGameNow2 = !!(g2 && g2.lobby && g2.lobby.started);
+                if (!(cl.id === socket.id) ) {
+                  cl.emit('chat:msg', msg);
+                }
+              } catch(_){}
+            });
+          }).catch(_=>{});
+        } catch(_){}
+
+      }
+    } catch(e){}
+  });
+  // ====== END CHAT HANDLERS ======
+
+
 
   // ====== Manual lobby system (create/join/start) ======
   socket.on('createLobby', (pseudo, cb) => {
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
-    pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    
+      // Reserved username enforcement: if pseudo is a registered account, only the authenticated owner can use it
+      {
+        const sessUser = getSessionUsernameBySocketId(socket.id);
+        if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+          if (cb) cb({ ok:false, reason:'reserved' });
+          return;
+        }
+      }
+if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
+
+// Enforce limit: up to two manual lobbies per public IP at the same time (as founder)
+    const __hostIp = getClientIP(socket);
+    // Count existing manual lobbies for this IP whose host is currently connected (not started)
+    let __hostingCount = 0;
+    try {
+      for (const g of activeGames) {
+        if (
+          g && g.lobby && g.lobby.manual && !g.lobby.started &&
+          g.lobby.hostIp && g.lobby.hostIp === __hostIp &&
+          g.lobby.hostId && io.sockets.sockets.get(g.lobby.hostId)
+        ) { __hostingCount++; if (__hostingCount >= 2) break; }
+      }
+    } catch(_){}
+    if (__hostingCount >= 2) { if (cb) cb({ ok:false, reason:'ip_limit' }); return; }
+
     const oldGameId = socketToGame[socket.id];
     const oldGame = activeGames.find(g => g.id === oldGameId);
 
     const newGame = createNewGame();
     newGame.lobby.manual = true;
     newGame.lobby.hostId = socket.id;
+    newGame.lobby.hostIp = __hostIp;
+    // Generate a host token for secure reclaim
+    newGame.lobby.hostToken = crypto.randomBytes(16).toString('hex');
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
+    try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
+
 
     // Move socket room + mapping
     if (oldGame) { try { socket.leave('lobby' + oldGame.id); } catch(_){} }
@@ -1110,7 +1592,42 @@ io.on('connection', socket => {
     socket.join('lobby' + newGame.id);
 
     broadcastLobby(newGame);
-    if (cb) cb({ ok:true, gameId:newGame.id });
+    if (cb) cb({ ok:true, gameId:newGame.id , hostToken: newGame.lobby.hostToken});
+  });
+
+  // === Secure host reclaim by token ===
+  socket.on('reclaimHost', (payload, cb) => {
+    try {
+      payload = payload || {};
+      const gameId = Number(payload.gameId) || 0;
+      const token = String(payload.token || '');
+      const g = activeGames.find(x => x && x.id === gameId);
+      if (!g || !g.lobby || !g.lobby.manual || g.lobby.started) { if (cb) cb({ ok:false }); return; }
+      if (!token || token !== g.lobby.hostToken) { if (cb) cb({ ok:false }); return; }
+
+      // Transfer host to this socket
+      const prevHostId = g.lobby.hostId;
+      let pseudo = 'Player';
+      try {
+        if (g.lobby.players && g.lobby.players[prevHostId] && g.lobby.players[prevHostId].pseudo) {
+          pseudo = g.lobby.players[prevHostId].pseudo;
+          delete g.lobby.players[prevHostId];
+        }
+      } catch(_) {}
+
+      g.lobby.hostId = socket.id;
+      g.lobby.players[socket.id] = { pseudo, ready: true };
+      socketToGame[socket.id] = g.id;
+      try { socket.join('lobby' + g.id); } catch(_) {}
+
+      // Cancel any grace timers if they exist
+      try { if (g.lobby._hostGraceTimer) { clearTimeout(g.lobby._hostGraceTimer); g.lobby._hostGraceTimer = null; } } catch(_){}
+
+      broadcastLobby(g);
+      if (cb) cb({ ok:true });
+    } catch(e) {
+      try { if (cb) cb({ ok:false, err: String(e && e.message || e) }); } catch(_) {}
+    }
   });
 
   socket.on('requestLobbies', () => {
@@ -1130,12 +1647,32 @@ io.on('connection', socket => {
   socket.on('joinLobbyById', (data, cb) => {
     const targetId = data && data.gameId;
     let pseudo = (data && data.pseudo) || '';
-    pseudo = (pseudo || '').trim().substring(0, 15).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
+    
+      // Reserved username enforcement
+      {
+        const sessUser = getSessionUsernameBySocketId(socket.id);
+        if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+          if (cb) cb({ ok:false, reason:'reserved' });
+          return;
+        }
+      }
+if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
     const target = activeGames.find(g => g.id === targetId);
     if (!target || !target.lobby.manual || target.lobby.started) { if (cb) cb({ ok:false, reason:'not_joinable' }); return; }
     const count = Object.keys(target.lobby.players||{}).length;
     if (count >= MAX_PLAYERS) { if (cb) cb({ ok:false, reason:'full' }); return; }
+    // Refuse join if this IP was recently kicked from this lobby
+    try {
+      const ip = getClientIP(socket);
+      const until = target && target.lobby && target.lobby.kickedUntilByIp ? target.lobby.kickedUntilByIp[ip] : 0;
+      if (until && until > Date.now()) {
+        if (cb) cb({ ok:false, reason:'kicked', wait: Math.ceil((until - Date.now())/1000) });
+        return;
+      }
+    } catch(_) {}
 
     const currentId = socketToGame[socket.id];
     const current = activeGames.find(g => g.id === currentId);
@@ -1154,7 +1691,63 @@ io.on('connection', socket => {
   });
 
   
-socket.on('startManualLobby', (cb) => {
+
+
+// Host-only: kick a player from the manual lobby and block their IP for 30s
+
+// Host-only: kick a player from the manual lobby and block their IP for 30s
+socket.on('kickPlayer', (data, cb) => {
+  try {
+    const gameId = socketToGame[socket.id];
+    const game = activeGames.find(g => g.id === gameId);
+    if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) { if (cb) cb && cb({ ok:false, reason:'not_in_manual' }); return; }
+    if (game.lobby.hostId !== socket.id) { if (cb) cb && cb({ ok:false, reason:'not_host' }); return; }
+        // Resolve target; accept real socket.id or host-view aliases like 'p1','p2'
+    let targetId = data && data.targetId;
+    if (!targetId) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+    if (targetId === socket.id) { if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return; }
+    if (typeof targetId === 'string') {
+      const m = targetId.match(/^p(\d+)$/);
+      if (m) {
+        try {
+          const idx = Math.max(0, parseInt(m[1], 10) - 1);
+          const otherIds = Object.keys(game.lobby.players).filter(id => id !== socket.id);
+          if (otherIds[idx]) targetId = otherIds[idx];
+        } catch(_){}
+      } else if (targetId === 'host') {
+        if (cb) cb && cb({ ok:false, reason:'invalid_target' }); return;
+      }
+    }
+    if (!game.lobby.players[targetId]) { if (cb) cb && cb({ ok:false, reason:'not_in_lobby' }); return; }
+
+
+    // compute IP of target socket
+    const targetSock = io.sockets.sockets.get(targetId);
+    const ip = targetSock ? getClientIP(targetSock) : null;
+    const until = Date.now() + 30000; // 30s
+    if (!game.lobby.kickedUntilByIp) game.lobby.kickedUntilByIp = {};
+    if (ip) game.lobby.kickedUntilByIp[ip] = until;
+
+    // Remove from this lobby
+    try { delete game.lobby.players[targetId]; } catch(_){}
+    try { if (targetSock) targetSock.leave('lobby' + game.id); } catch(_){}
+
+    // Clear mapping so the client is effectively "in menu"
+    try { delete socketToGame[targetId]; } catch(_){}
+
+    // Notify the kicked client; client will show main menu
+    try { if (targetSock) io.to(targetId).emit('kicked', { gameId: game.id, until }); } catch(_){}
+
+    // Update the original lobby for everyone else
+    broadcastLobby(game);
+    if (cb) cb({ ok:true, until });
+
+  } catch (e) {
+    try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
+  }
+});
+
+  socket.on('startManualLobby', (cb) => {
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual) { if (cb) cb({ ok:false }); return; }
@@ -1199,33 +1792,28 @@ socket.on('hostBackManual', (cb) => {
 // --- Turret upgrades (t/T/G) ---
 socket.on('upgradeTurret', ({ type }) => {
   try {
-    console.log('[upgradeTurret] recv', { sid: socket.id, type });
     const gameId = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gameId);
-    if (!game) { console.log('[upgradeTurret] no game'); return; }
-    if (!['t','T','G'].includes(type)) { console.log('[upgradeTurret] invalid type', type); return; }
+    if (!game) { return; }
+    if (!['t','T','G'].includes(type)) { return; }
     const player = game.players[socket.id];
-    if (!player) { console.log('[upgradeTurret] no player'); return; }
+    if (!player) { return; }
     player.turretUpgrades = player.turretUpgrades || {};
     const current = player.turretUpgrades[type] || 0;
-    const basePrice = (type === 't') ? 500 : (type === 'T' ? 2000 : 5000);
+    const basePrice = (type === 't') ? 500 : (type === 'T' ? 2000 : 10000);
     const growth = (type === 'G') ? 1.20 : 1.30; // G 20%, others 30%
     const price = Math.round(basePrice * Math.pow(growth, current));
     if ((player.money||0) < price) {
-      console.log('[upgradeTurret] not enough money', { have: player.money, need: price });
       socket.emit('upgradeTurretResult', { ok:false, reason:'not_enough_money' });
       return;
     }
     player.money -= price;
     player.turretUpgrades[type] = current + 1;
-    console.log('[upgradeTurret] OK', { type, newLevel: player.turretUpgrades[type], newMoney: player.money });
     socket.emit('upgradeTurretResult', { ok:true, type, level: player.turretUpgrades[type], newMoney: player.money });
   } catch(e) {
-    console.error('[upgradeTurret] error', e);
     socket.emit('upgradeTurretResult', { ok:false, reason:'server_error' });
   }
 });
-
 
 
   socket.on('giveMillion', () => {
@@ -1257,10 +1845,22 @@ socket.on('skipRound', () => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
-  pseudo = (pseudo || '').trim().substring(0, 15);
+  pseudo = (pseudo || '').trim().substring(0, 10);
   pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
   if (!pseudo) pseudo = 'Joueur';
+  
+    // Reserved username enforcement
+    {
+      const sessUser = getSessionUsernameBySocketId(socket.id);
+      if (isRegisteredUsername(pseudo) && normalizeKey(sessUser||'') !== normalizeKey(pseudo)) {
+        try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'reserved' }); } catch(_){}
+        return;
+      }
+    }
+if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'pseudo_taken' }); } catch(_) {} return; }
+
   game.lobby.players[socket.id] = { pseudo, ready: true };
+  try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
   broadcastLobby(game);
   if (!game.lobby.manual) {
   try {
@@ -1274,6 +1874,51 @@ socket.on('skipRound', () => {
   }
   return;
 }
+});
+
+socket.on('renamePseudo', (data, cb) => {
+  try {
+    // Accept either a string or an object: { pseudo: '...' }
+    let p = (typeof data === 'string') ? data : (data && data.pseudo) || '';
+    p = String(p || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    if (!p) { 
+      try { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); } catch(_){}
+      try { io.to(socket.id).emit('renameResult', { ok:false, reason:'invalid_pseudo' }); } catch(_){}
+      return;
+    }
+
+    
+    // Reserved username enforcement
+    {
+      const sessUser = getSessionUsernameBySocketId(socket.id);
+      if (isRegisteredUsername(p) && normalizeKey(sessUser||'') !== normalizeKey(p)) {
+        try { if (cb) cb({ ok:false, reason:'reserved' }); } catch(_){}
+        try { io.to(socket.id).emit('renameResult', { ok:false, reason:'reserved' }); } catch(_){}
+        return;
+      }
+    }
+if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_taken' }); } catch(_){} try { io.to(socket.id).emit('renameResult', { ok:false, reason:'pseudo_taken' }); } catch(_){} return; }
+    const gid = socketToGame[socket.id];
+    const game = activeGames.find(g => g && g.id === gid);
+
+    if (game) {
+      // Update pseudo in both lobby roster and active players if present
+      try { if (game.lobby && game.lobby.players && game.lobby.players[socket.id]) game.lobby.players[socket.id].pseudo = p; } catch(_){}
+      try { if (game.players && game.players[socket.id]) game.players[socket.id].pseudo = p; } catch(_){}
+      try { lastPseudoBySocket.set(socket.id, p); } catch(_){ }
+
+      // Notify lobby UIs
+      try { broadcastLobby(game); } catch(_){}
+      // Also refresh health/name overlays for clients already in-game
+      try { for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl) continue; const _cx = (_pl.spectator && _pl.viewX != null) ? _pl.viewX : (_pl.x || 0); const _cy = (_pl.spectator && _pl.viewY != null) ? _pl.viewY : (_pl.y || 0); io.to(sid).emit('playersHealthUpdate', getPlayersHealthStateFiltered(game, _cx, _cy, SERVER_VIEW_RADIUS)); } } catch(_){}
+    }
+
+    try { if (cb) cb({ ok:true, pseudo: p }); } catch(_){}
+    try { io.to(socket.id).emit('renameResult', { ok:true, pseudo: p }); } catch(_){}
+  } catch(e) {
+    try { if (cb) cb({ ok:false, reason:'server_error' }); } catch(_){}
+    try { io.to(socket.id).emit('renameResult', { ok:false, reason:'server_error' }); } catch(_){}
+  }
 });
 
   
@@ -1302,59 +1947,107 @@ socket.on('skipRound', () => {
   });
 
 
+  
   socket.on('disconnect', () => {
-  console.log('[DISCONNECT]', socket.id, socket.handshake.headers['user-agent']);
+    try { lastPseudoBySocket.delete(socket.id); } catch(_){}
 
-  // Try to resolve the game from mapping
-  const mappedId = socketToGame[socket.id];
-  let game = activeGames.find(g => g && g.id === mappedId) || null;
+    console.log('[DISCONNECT]', socket.id);
 
-  // Fallback: direct lookup by hostId (covers cases where mapping was lost)
-  if (!game) {
-    game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
-  }
+    // Try to resolve the game from mapping
+    const mappedId = socketToGame[socket.id];
+    let game = activeGames.find(g => g && g.id === mappedId) || null;
 
-  // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> close & delete the lobby
-  if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
-    try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_) {}
+    // Fallback: direct lookup by hostId (covers cases where mapping was lost)
+    if (!game) {
+      game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
+    }
 
-    const room = io.sockets.adapter.rooms.get('lobby' + game.id);
-    const cids = room ? Array.from(room) : [];
 
-    for (const cid of cids) {
-      const sock = io.sockets.sockets.get(cid);
-      if (!sock) continue;
-
+    // Immediate cleanup for NON-HOST players who are sitting in any lobby (not started)
+    // This prevents a refreshed page from leaving a ghost seat.
+    try {
+      // Find the lobby that currently contains this socket as a player
+      let _lobbyGame = activeGames.find(g => g && g.lobby && !g.lobby.started && g.lobby.players && g.lobby.players[socket.id]);
+      if (_lobbyGame) {
+        const _isHost = !!(_lobbyGame.lobby.manual && _lobbyGame.lobby.hostId === socket.id);
+        if (!_isHost) {
+          try { delete _lobbyGame.lobby.players[socket.id]; } catch(_) {}
+          try { socket.leave('lobby' + _lobbyGame.id); } catch(_) {}
+          try { broadcastLobby(_lobbyGame); } catch(_) {}
+          try { delete socketToGame[socket.id]; } catch(_) {}
+          try { cleanupEmptyManualLobbies(); } catch(_) {}
+        }
+      }
+    } catch (e) { try { console.warn('[disconnect] early non-host cleanup failed', e && (e.message||e)); } catch(_) {} }
+    // If the disconnecting socket is the HOST of a MANUAL lobby (not started) -> **do not close immediately**.
+    // Set a grace timer; if the host doesn't reconnect in time, then close the lobby.
+    if (game && game.lobby && game.lobby.manual && !game.lobby.started && game.lobby.hostId === socket.id) {
       try {
-        if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
-        if (game.players && game.players[cid]) delete game.players[cid];
-        if (game._lastNetSend) delete game._lastNetSend[cid];
-      } catch (_) {}
+        if (game.lobby._hostGraceTimer) { clearTimeout(game.lobby._hostGraceTimer); }
+        game.lobby._hostGraceTimer = setTimeout(() => {
+          try {
+            // If lobby still exists and still not started, and the host hasn't reclaimed it, close & evac players.
+            if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) return;
+            // If the current hostId is connected again, cancel.
+            const hostSock = io.sockets.sockets.get(game.lobby.hostId);
+            if (hostSock) return;
 
-      try { sock.leave('lobby' + game.id); } catch (_) {}
-      try { delete socketToGame[cid]; } catch (_) {}
+            // Notify and force everyone out of this manual lobby
+            try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
+
+            const room = io.sockets.adapter.rooms.get('lobby' + game.id);
+            const ids = room ? Array.from(room) : [];
+            for (const cid of ids) {
+              try {
+                const s = io.sockets.sockets.get(cid);
+                if (s) { try { s.leave('lobby' + game.id); } catch(_){} }
+                if (game.lobby && game.lobby.players) delete game.lobby.players[cid];
+                if (game.players && game.players[cid]) delete game.players[cid];
+                if (game._lastNetSend) delete game._lastNetSend[cid];
+                try { delete socketToGame[cid]; } catch (_){}
+              } catch(_){}
+            }
+
+    // For NON-HOST players or non-manual lobbies: immediately remove the player from the lobby on disconnect
+    // (treat as if they pressed "Back"). This prevents ghost seats when a page is refreshed.
+    try {
+      // Re-evaluate the game mapping in case previous block mutated it
+      const __gid = socketToGame[socket.id];
+      let __game = activeGames.find(g => g && g.id === __gid) || null;
+      if (!__game) {
+        // attempt to find by presence in lobby roster
+        __game = activeGames.find(g => g && g.lobby && g.lobby.players && g.lobby.players[socket.id]) || null;
+      }
+      if (__game && __game.lobby && !__game.lobby.started) {
+        // If this is a manual lobby AND the disconnecting socket is the host, we already handled grace above;
+        // skip the immediate kick here in that special case.
+        const isHost = !!(__game.lobby.manual && __game.lobby.hostId === socket.id);
+        if (!isHost) {
+          try { if (__game.lobby.players && __game.lobby.players[socket.id]) delete __game.lobby.players[socket.id]; } catch(_){}
+          try { broadcastLobby(__game); } catch(_){}
+          try { delete socketToGame[socket.id]; } catch(_){}
+          try { cleanupEmptyManualLobbies(); } catch(_){}
+        }
+      } else {
+        // If the game was already started or not found, ensure the mapping is cleared.
+        try { delete socketToGame[socket.id]; } catch(_){}
+      }
+    } catch (e) { try { console.warn('[disconnect] cleanup error', e && (e.message || e)); } catch(_){ } }
+            try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_){}
+            // Remove game entirely
+            activeGames = activeGames.filter(g => g !== game);
+          } catch (e) {
+            console.error('[disconnect host grace cleanup] error', e);
+          }
+        }, 30000); // 30s grace
+      } catch (e) {
+        console.error('[disconnect host] scheduling grace failed', e);
+      }
+    } else {
+      // Non-host or non-manual lobbies: existing cleanup (if any) continues to apply elsewhere.
     }
-
-    try { if (game.lobby && game.lobby.timer) { clearInterval(game.lobby.timer); game.lobby.timer = null; } } catch (_) {}
-    try { activeGames = activeGames.filter(g => g && g.id !== game.id); } catch (_) {}
-    return; // done
-  }
-
-  // Default path: remove only this player from its current game/lobby if any
-  if (mappedId) {
-    const g = activeGames.find(x => x && x.id === mappedId);
-    if (g) {
-      delete g.lobby.players[socket.id];
-      delete g.players[socket.id];
-      if (g._lastNetSend) delete g._lastNetSend[socket.id];
-      io.to('lobby' + g.id).emit('playerDisconnected', socket.id);
-      broadcastLobby(g);
-      io.to('lobby' + g.id).emit('playersHealthUpdate', getPlayersHealthState(g));
-    }
-    delete socketToGame[socket.id];
-  }
-});
-  socket.on('moveDir', (dir) => {
+  });
+socket.on('moveDir', (dir) => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
   if (!game || !game.lobby.started) return;
@@ -1451,6 +2144,17 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
       return;
     }
   }
+// Apply shared cooldown for walls & doors
+if (type === 'B' || type === 'D') {
+  const now = Date.now();
+  const last = player.lastBlockPlaceAt || 0;
+  const remaining = BLOCK_PLACE_COOLDOWN_MS - (now - last);
+  if (remaining > 0) {
+    io.to(socket.id).emit('blockCooldown', { until: now + remaining });
+    io.to(socket.id).emit('buildResult', { ok: false, reason: 'block_cooldown', ms: remaining });
+    return;
+  }
+}
 // Prix
   const price = SHOP_BUILD_PRICES[type] || 0;
   if ((player.money || 0) < price) {
@@ -1478,7 +2182,13 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
   // Pose
   setStruct(game, tx, ty, s);
 
-  // Grâce de collision seulement si le joueur a posé sous lui
+  // Grâce de collision
+if (type === 'B' || type === 'D') {
+  player.lastBlockPlaceAt = Date.now();
+  try { io.to(socket.id).emit('blockCooldown', { until: player.lastBlockPlaceAt + BLOCK_PLACE_COOLDOWN_MS }); } catch(_){}
+}
+// Grâce de collision
+// seulement si le joueur a posé sous lui
   const cur = worldToTile(player.x, player.y);
   if (cur.tx === tx && cur.ty === ty) {
     player.graceTile = { tx, ty };
@@ -1490,15 +2200,12 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
 });
 
 
-
-
-
 socket.on('shoot', (data) => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
   if (!game || !game.lobby.started) return;
   const player = game.players[socket.id];
-  if (!player || !player.alive) return;
+  if (!player || !player.alive || player.spectator) return;
   const now = Date.now();
   if (now - (player.lastShot||0) < SHOOT_INTERVAL) return;
   player.lastShot = now;
@@ -1517,6 +2224,10 @@ socket.on('requestZombies', () => {
   if (!game) return;
   const p = game.players[socket.id];
   if (!p) return;
+  const now = Date.now();
+  if (now - (p._lastZsnapAt || 0) < 200) return;
+  p._lastZsnapAt = now;
+
   const cx_req = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
   const cy_req = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
   const zSnap = getZombiesFiltered(game, cx_req, cy_req, SERVER_VIEW_RADIUS);
@@ -1529,7 +2240,15 @@ socket.on('playerDied', () => {
   if (!game) return;
   if (game.players[socket.id]) {
     game.players[socket.id].alive = false;
-    io.to('lobby' + game.id).emit('playersHealthUpdate', getPlayersHealthState(game));
+    
+    (function(){ try {
+      const _p = game.players[socket.id];
+      if (_p && !_p.isBot && !_p._ladderSubmitted) {
+        _p._ladderSubmitted = true;
+        recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
+      }
+    } catch(_e) { console.error('[LADDER] record error', _e); } })();
+for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl) continue; const _cx = (_pl.spectator && _pl.viewX != null) ? _pl.viewX : (_pl.x || 0); const _cy = (_pl.spectator && _pl.viewY != null) ? _pl.viewY : (_pl.y || 0); io.to(sid).emit('playersHealthUpdate', getPlayersHealthStateFiltered(game, _cx, _cy, SERVER_VIEW_RADIUS)); }
   }
 });
   // Enter spectator mode (keeps socket alive and continues receiving updates)
@@ -1541,6 +2260,8 @@ socket.on('playerDied', () => {
     if (!p) return;
     // Only possible if game still running and player exists
     if (!game.lobby.started) return;
+    if (p.alive) return;
+
     p.spectator = true;
     p.viewX = (p.x || 0);
     p.viewY = (p.y || 0);
@@ -1574,7 +2295,6 @@ socket.on('playerDied', () => {
   });
 
 
-
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
 socket.on('killAllZombies', () => {
   const gid = socketToGame[socket.id];
@@ -1586,34 +2306,27 @@ socket.on('killAllZombies', () => {
   game._zombieCount = 0;
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
+});
 
-// Fallback manual-lobby host cleanup on disconnect (robustness)
-socket.on('disconnect', () => {
-  try {
-    const ownedManuals = (activeGames || []).filter(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id);
-    for (const game of ownedManuals) {
-      try { io.to('lobby' + game.id).emit('lobbyClosed'); } catch (_){}
-    }
-  } catch (e) {
-    console.error('[disconnect fallback] error', e);
-  }
-});
-});
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
   const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
-  return {
+  const acc = (player && player.accountShop) || {hp:0,dmg:0};
+  const baseStats = {
     maxHp: Math.round(base.maxHp * Math.pow(1.1, u.maxHp || 0)),
     speed: +(base.speed * Math.pow(1.1, u.speed || 0)).toFixed(1),
     regen, // hp/s
     damage: Math.round(base.damage * Math.pow(1.1, u.damage || 0)),
     goldGain: Math.round(base.goldGain * Math.pow(1.1, u.goldGain || 0)),
   };
+  // Apply account-level additive bonuses
+  baseStats.maxHp += (acc.hp|0) * 10;
+  baseStats.damage += (acc.dmg|0) * 1;
+  return baseStats;
 }
-
 
 
 function getPlayersHealthState(game) {
@@ -1662,7 +2375,6 @@ function endGame(game, reason = 'no_players') {
     broadcastLobby(game);
   }, 500);
 }
-
 
 
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
@@ -1761,7 +2473,6 @@ function movePlayers(game, deltaTime) {
     }
   }
 }
-
 
 
 function moveBots(game, deltaTime) {
@@ -2218,8 +2929,6 @@ function moveZombies(game, deltaTime) {
 }
 
 
-
-
 // Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const x0 = tx * TILE_SIZE, y0 = ty * TILE_SIZE;
@@ -2277,7 +2986,12 @@ function handleZombieAttacks(game) {
             p.health = 0;
             if (p.alive) {
               p.alive = false;
-              io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound });
+              
+              if (!p.isBot && !p._ladderSubmitted) {
+                p._ladderSubmitted = true;
+                recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
+              }
+io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, gameId: game.id });
             }
           } else {
             io.to(pid).emit('healthUpdate', p.health);
@@ -2424,8 +3138,6 @@ function handleZombieAttacks(game) {
 }
 
 
-
-
 function fixHealth(p) {
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
     p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
@@ -2435,7 +3147,6 @@ function fixHealth(p) {
   }
   p.health = Math.max(0, Math.min(p.health, p.maxHealth));
 }
-
 
 
 function moveBullets(game, deltaTime) {
@@ -2561,21 +3272,53 @@ function stepOnce(dt) {
         const cx = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
           const cy = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
 
+        
         const zSnap  = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
 
         const last = game._lastNetSend[sid] || 0;
         if (now - last >= sendInterval) {
+          // --- Robust fix: remap bullet.owner to the SAME aliases used in playersHealth for this recipient ---
+          const hostId = (game.lobby && game.lobby.hostId) || null;
+          const ownerAliasMap = {};
+          let __idx = 0;
+          for (const k in phSnap) {
+            if (k === sid) {
+              ownerAliasMap[k] = k; // keep self under real sid
+            } else {
+              if (hostId && hostId !== sid && k === hostId) {
+                // host will be exposed separately as 'host' (do not consume a pX slot)
+                continue;
+              }
+              ownerAliasMap[k] = 'p' + (++__idx);
+            }
+          }
+          if (hostId && hostId !== sid && phSnap[hostId]) {
+            ownerAliasMap[hostId] = 'host';
+          }
+          const bPub = {};
+          for (const bid in bSnap) {
+            const b = bSnap[bid];
+            if (!b) continue;
+            const alias = ownerAliasMap[b.owner] || b.owner;
+            if (alias === b.owner) {
+              bPub[bid] = b; // no change
+            } else {
+              // shallow clone to avoid mutating shared snapshot
+              bPub[bid] = { id: b.id, owner: alias, x: b.x, y: b.y, dx: b.dx, dy: b.dy, createdAt: b.createdAt, lifeFrames: b.lifeFrames };
+            }
+          }
+
           io.to(sid).volatile.emit('stateUpdate', {
             zombies: zSnap,
-            bullets: bSnap,
-            playersHealth: phSnap,
+            bullets: bPub,
+            playersHealth: buildPublicMapForRecipient(sid, phSnap, hostId),
             round: game.currentRound
           });
           game._lastNetSend[sid] = now;
         }
-      }
+}
     }
 
     // Régénération
@@ -2646,10 +3389,6 @@ function gameLoop() {
 }
 
 
-
-
-
-
 gameLoop();
 
 const PORT = process.env.PORT || 3000;
@@ -2658,3 +3397,562 @@ server.listen(PORT, () => {
   console.log(`Serveur démarré sur le port ${PORT}`);
 });
 console.log('Après listen');
+
+/* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
+const USERS_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(USERS_DIR, 'users.json');
+
+function ensureUsersFile() {
+  try { if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true }); } catch(_){}
+  try { if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: {} }, null, 2)); } catch(_){}
+}
+ensureUsersFile();
+
+/* === PLAYER SKINS (players.json) === */
+const PLAYERS_FILE = path.join(__dirname, 'data', 'players.json');
+function ensurePlayersFile(){
+  try {
+    const dir = path.dirname(PLAYERS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch(_) {}
+  // Note: do NOT create PLAYERS_FILE automatically anymore; legacy file is optional.
+}
+function loadPlayersMap(){
+  try {
+    ensurePlayersFile();
+    const raw = fs.readFileSync(PLAYERS_FILE, 'utf8');
+    let obj = {};
+    if (raw && raw.trim()) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.players && typeof parsed.players === 'object') obj = parsed.players;
+    }
+    return obj;
+  } catch(_){ return {}; }
+}
+function savePlayersMap(map){
+  try {
+    ensurePlayersFile();
+    const tmp = PLAYERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ players: map }, null, 2));
+    fs.renameSync(tmp, PLAYERS_FILE);
+    return true;
+  } catch(e){ console.error('[PLAYERS] save failed', e); return false; }
+}
+function getPlayerSkin(username){
+  try {
+    const name = sanitizeUsername(username);
+    if (!name) return null;
+    const key = normalizeKey(name);
+
+    // 1) Prefer skin stored directly in users.json (account-associated)
+    try {
+      const users = loadUsers();
+      const u = users[key];
+      if (u && u.skin && typeof u.skin === 'object') {
+        const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+        const hair = hexOk(u.skin.hair) ? u.skin.hair.toLowerCase() : null;
+        const skin = hexOk(u.skin.skin) ? u.skin.skin.toLowerCase() : null;
+        const clothes = hexOk(u.skin.clothes) ? u.skin.clothes.toLowerCase() : null;
+        if (hair && skin && clothes) return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
+    // 2) Backward-compat: fallback to legacy players.json if present
+    try {
+      const map = loadPlayersMap();
+      const rec = map[key];
+      if (rec && rec.skin && typeof rec.skin === 'object') {
+        const { hair, skin, clothes } = rec.skin;
+        return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
+    return null;
+  } catch(_){ return null; }
+}
+
+
+
+
+// --- Skin helpers (normalize, resolve by socket) ---
+function _validateSkinObject(s) {
+  try {
+    if (!s || typeof s !== 'object') return null;
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const hair = hexOk(s.hair) ? s.hair.toLowerCase() : null;
+    const skin = hexOk(s.skin) ? s.skin.toLowerCase() : null;
+    const clothes = hexOk(s.clothes) ? s.clothes.toLowerCase() : null;
+    if (hair && skin && clothes) return { hair, skin, clothes };
+    return null;
+  } catch(_) { return null; }
+}
+function resolvePlayerSkinForSocket(sid, fallbackPseudo) {
+  try {
+    // Prefer account-bound skin if logged in
+    const sessUser = getSessionUsernameBySocketId(sid);
+    let skin = sessUser ? getPlayerSkin(sessUser) : null;
+    if (!skin && fallbackPseudo) skin = getPlayerSkin(fallbackPseudo);
+    return _validateSkinObject(skin);
+  } catch(_) { return null; }
+}
+function loadUsers() {
+  try {
+    const raw = fs.readFileSync(USERS_FILE, 'utf8');
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && obj.users && typeof obj.users === 'object') return obj.users;
+  } catch(_){}
+  return {};
+}
+function saveUsers(users) {
+  try {
+    const tmp = USERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ users }, null, 2));
+    fs.renameSync(tmp, USERS_FILE);
+    return true;
+  } catch(e){ console.error('[AUTH] saveUsers failed', e); return false; }
+}
+function sanitizeUsername(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_) { return ''; }
+}
+function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
+
+
+function isRegisteredUsername(name){ try { const users = loadUsers(); return !!users[normalizeKey(String(name||''))]; } catch(_){ return false; } }
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const iterations = 120000;
+  const keylen = 32;
+  const digest = 'sha256';
+  const hash = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+  return `pbkdf2$${digest}$${iterations}$${salt}$${hash}`;
+}
+function verifyPassword(password, stored) {
+  try {
+    const parts = String(stored||'').split('$');
+    if (parts.length !== 5) return false;
+    const [scheme, digest, iterStr, salt, hashHex] = parts;
+    if (scheme !== 'pbkdf2') return false;
+    const iterations = parseInt(iterStr,10);
+    const keylen = 32;
+    const comp = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+    const a = Buffer.from(comp,'hex'); const b = Buffer.from(hashHex,'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a,b);
+  } catch(_){ return false; }
+}
+
+function parseCookies(req) {
+  const out = {};
+  const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
+  if (!header) return out;
+  header.split(';').forEach(part => {
+    const i = part.indexOf('=');
+    if (i> -1) out[part.slice(0,i).trim()] = decodeURIComponent(part.slice(i+1).trim());
+  });
+  return out;
+}
+
+const sessions = new Map();
+const SESSION_MAX_AGE_MS = 7*24*60*60*1000;
+function createSession(username) {
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions.set(token, { username, createdAt: Date.now() });
+  return token;
+}
+
+
+function getSessionUsernameBySocketId(sid){
+  try {
+    // Fast path: explicit link
+    const sock = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets.get(sid) : null;
+    if (sock && typeof sock.__accountUser === 'string') return sock.__accountUser;
+    if (!sock) return null;
+    const header = (sock.request && sock.request.headers && sock.request.headers.cookie) ? sock.request.headers.cookie
+                  : (sock.handshake && sock.handshake.headers && sock.handshake.headers.cookie) ? sock.handshake.headers.cookie
+                  : '';
+    if (!header) return null;
+    const parts = header.split(';');
+    let token = '';
+    for (const part of parts){
+      const i = part.indexOf('=');
+      const k = (i>-1?part.slice(0,i):part).trim();
+      const v = (i>-1?part.slice(i+1):'').trim();
+      if (k === 'auth') { token = decodeURIComponent(v); break; }
+    }
+    if (!token) return null;
+    const sObj = sessions.get(token);
+    if (!sObj) return null;
+    if ((Date.now() - sObj.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return sObj.username || null;
+  } catch(_){ return null; }
+}
+
+
+
+function getSessionUsernameByReq(req){
+  try {
+    const cookies = parseCookies(req);
+    const token = cookies['auth'] || '';
+    if (!token) return null;
+    const s = sessions.get(token);
+    if (!s) return null;
+    if ((Date.now() - s.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return s.username || null;
+  } catch(_){ return null; }
+}
+function setAuthCookie(res, token){
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
+    const parts = [
+      `auth=${token}`,
+      'Path=/',
+      'HttpOnly',
+      `Max-Age=${maxAge}`,
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
+}
+function clearAuthCookie(res){
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const parts = [
+      'auth=',
+      'Path=/',
+      'HttpOnly',
+      'Max-Age=0',
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
+}
+setInterval(()=>{
+  try {
+    const now = Date.now();
+    for (const [t,s] of sessions) if ((now - (s.createdAt||0)) > SESSION_MAX_AGE_MS) sessions.delete(t);
+  } catch(_){}
+}, 60*60*1000);
+
+
+
+/* === LADDER JSON (Top 100) === */
+const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
+
+function ensureLadderFile() {
+  try {
+    const dir = path.dirname(LADDER_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (_e) { /* ignore */ }
+  try {
+    if (!fs.existsSync(LADDER_FILE)) fs.writeFileSync(LADDER_FILE, '');
+  } catch (_e) { /* ignore */ }
+}
+
+function sanitizePlayerName(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
+}
+
+function loadLadder() {
+  try {
+    const raw = fs.readFileSync(LADDER_FILE, 'utf8');
+    if (!raw || !raw.trim()) return [];
+    const obj = JSON.parse(raw);
+    let arr = [];
+    if (Array.isArray(obj)) arr = obj;
+    else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
+    // sanitize
+    arr = arr.filter(e => e && typeof e.player === 'string' &&
+                          Number.isFinite(e.wave) &&
+                          Number.isFinite(e.kills) &&
+                          Number.isFinite(e.ts));
+    return arr;
+  } catch (_e) { return []; }
+}
+
+function saveLadder(arr) {
+  try {
+    const tmp = LADDER_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
+    fs.renameSync(tmp, LADDER_FILE);
+    return true;
+  } catch (e) { console.error('[LADDER] save failed', e); return false; }
+}
+
+// ---- Server-authoritative ladder insert (no client trust) ----
+function recordLadderScoreServer(playerName, wave, kills) {
+  try {
+    ensureLadderFile();
+    const name = sanitizePlayerName(playerName);
+    const w = Number(wave) || 0;
+    const k = Number(kills) || 0;
+    if (!name) return false;
+    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
+
+    let ladder = loadLadder();
+    const idx = ladder.findIndex(e => e && e.player === name);
+    const now = Date.now();
+    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
+
+    if (idx >= 0) {
+      const cur = ladder[idx];
+      const better = (incoming.wave|0) > (cur.wave|0) ||
+                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) > (cur.kills|0)) ||
+                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) === (cur.kills|0) && (incoming.ts|0) < (cur.ts|0));
+      if (better) ladder[idx] = incoming;
+    } else {
+      ladder.push(incoming);
+    }
+
+    // Deduplicate best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+
+    // Sort & keep top 100
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
+    ladder = ladder.slice(0, 100);
+
+    saveLadder(ladder);
+    return true;
+  } catch (e) {
+    console.error('[LADDER] server-authoritative insert failed', e);
+    return false;
+  }
+}
+
+app.get('/api/ladder', (req,res)=>{
+  try {
+    ensureLadderFile();
+    let ladder = loadLadder();
+    // Deduplicate: keep best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+    // Exclude bots from ladder (bots use pseudo like [BOTi] → sanitized as 'BOTi')
+    ladder = ladder.filter(e => !(e && typeof e.player === 'string' && /^BOT\d+$/i.test(e.player)));
+
+    // sort: wave desc, kills desc, ts asc
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
+    const top = ladder.slice(0, 100);
+    return res.json({ ok:true, ladder: top });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+// POST disabled explicitly (security hardening)
+app.post('/api/ladder', (req,res)=> res.status(410).json({ ok:false, code:'ladder_post_disabled' }));
+/* username taken checker (for unauthenticated pseudo) */
+app.get('/api/username-taken', (req,res)=>{
+  try {
+    const q = sanitizeUsername((req.query && req.query.u) || '');
+    if (!q) return res.json({ ok:true, taken:false });
+    const users = loadUsers();
+    const exists = !!users[normalizeKey(q)];
+    return res.json({ ok:true, taken: exists });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* current session */
+app.get('/api/me', (req,res)=>{
+  try {
+    const u = getSessionUsernameByReq(req);
+    if (u) {
+      const users = loadUsers(); const key = normalizeKey(u); const rec = users[key] || {}; const gold = rec.gold|0; const shopUpgrades = Object.assign({hp:0,dmg:0}, rec.shopUpgrades||{});
+      return res.json({ ok:true, username: u, gold, shopUpgrades, skin: getPlayerSkin(u) });
+    }
+    return res.json({ ok:false });
+  } catch(e){ return res.json({ ok:false }); }
+});
+
+/* signup */
+
+// === Simple in-memory rate limiter (per-IP, per-key) ===
+const __rateBuckets = new Map();
+/**
+ * rateLimitAllow(ip, key, max, windowMs) -> { ok: boolean, retryAfterMs: number }
+ */
+function rateLimitAllow(ip, key, max, windowMs) {
+  try {
+    const now = Date.now();
+    const mapKey = String(ip||'') + '|' + String(key||'');
+    let b = __rateBuckets.get(mapKey);
+    if (!b || now >= b.resetAt) {
+      b = { count: 1, resetAt: now + windowMs };
+      __rateBuckets.set(mapKey, b);
+      return { ok: true, retryAfterMs: 0 };
+    }
+    if (b.count < max) {
+      b.count++;
+      return { ok: true, retryAfterMs: 0 };
+    }
+    return { ok: false, retryAfterMs: Math.max(0, b.resetAt - now) };
+  } catch(_) { return { ok: true, retryAfterMs: 0 }; }
+}
+// Periodic cleanup to avoid unbounded growth
+setInterval(()=>{ 
+  try { 
+    const now = Date.now();
+    for (const [k,v] of __rateBuckets) { if (!v || now >= v.resetAt) __rateBuckets.delete(k); }
+  } catch(_){}
+}, 10*60*1000);
+
+app.post('/api/signup', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
+    ensureUsersFile();
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    if (!user || user.length < 3) return res.status(400).json({ ok:false, code:'invalid_username' });
+    if (pass.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(user);
+    if (users[key]) return res.status(409).json({ ok:false, code:'exists' });
+    users[key] = { username: user, usernameLower: key, passHash: hashPassword(pass), createdAt: Date.now(), gold: 0, shopUpgrades: { hp:0, dmg:0 } };
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    return res.json({ ok:true });
+  } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* login */
+
+// === Basic CSRF protection for authenticated POSTs ===
+function passesCsrf(req){
+  try {
+    const host = String((req.headers && req.headers.host) || '').toLowerCase();
+    const origin = String((req.headers && req.headers.origin) || '').toLowerCase();
+    const referer = String((req.headers && req.headers.referer) || '').toLowerCase();
+    const allowList = new Set(String(process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+    if (host) { allowList.add('http://' + host); allowList.add('https://' + host); }
+    if (origin) return allowList.has(origin);
+    if (referer) { for (const a of allowList) { if (referer === a || referer.startsWith(a + '/')) return true; } }
+    return false;
+  } catch(_){ return false; }
+}
+
+app.post('/api/login', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    const users = loadUsers();
+    const u = users[normalizeKey(user)];
+    if (!u || !verifyPassword(pass, u.passHash)) return res.status(401).json({ ok:false, code:'invalid' });
+    const token = createSession(u.username);
+    setAuthCookie(res, token);
+    return res.json({ ok:true, username: u.username });
+  } catch(e){ console.error('[login]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* logout */
+app.post('/api/logout', (req,res)=>{
+    if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const token = (parseCookies(req)['auth'] || '');
+    if (token) { try { sessions.delete(token); } catch(_){ } }
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* change password (requires login) */
+app.post('/api/change-password', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { currentPassword, newPassword } = req.body || {};
+    const curr = String(currentPassword || ''); const next = String(newPassword || '');
+    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const u = users[key];
+    if (!u || !verifyPassword(curr, u.passHash)) return res.status(401).json({ ok:false, code:'invalid_current' });
+    u.passHash = hashPassword(next);
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    for (const [t,s] of Array.from(sessions.entries())) if (s && s.username === u.username) sessions.delete(t);
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* shop buy (requires login) */
+app.post('/api/shop/buy', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { type } = req.body || {};
+    if (type !== 'hp' && type !== 'dmg') return res.status(400).json({ ok:false, code:'bad_request' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const rec = users[key] || (users[key]={ username: uname, usernameLower:key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+    const price = (type === 'hp') ? 50 :  200;
+    const maxLv = (type === 'hp') ? 20 :  20;
+    const lv = (rec.shopUpgrades && rec.shopUpgrades[type]|0) || 0;
+    if (lv >= maxLv) return res.json({ ok:false, code:'max_level' });
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+    rec.shopUpgrades = rec.shopUpgrades || { hp:0, dmg:0 };
+    rec.shopUpgrades[type] = lv + 1;
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+  } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* buy & save custom skin (requires login) */
+app.post('/api/skin/buy', (req,res)=>{
+  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+  try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { hair, skin, clothes } = req.body || {};
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    if (!hexOk(hair) || !hexOk(skin) || !hexOk(clothes)) return res.status(400).json({ ok:false, code:'bad_colors' });
+
+    const users = loadUsers();
+    const ukey = normalizeKey(uname);
+    const now = Date.now();
+    const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
+
+    // Price & balance
+    const price = 20;
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+
+    // Persist skin directly in users.json (account-associated)
+    rec.skin = { hair: hair.toLowerCase(), skin: skin.toLowerCase(), clothes: clothes.toLowerCase(), updatedAt: now };
+
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+
+    return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
+  } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+
+
+
