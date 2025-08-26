@@ -5,7 +5,7 @@
       "usernameLower": "myg",
       "passHash": "pbkdf2$sha256$120000$b505f8e3b50655b5bd8f606bb4a35473$08460e1baee3ed7af2331057e4d13fb5623713813918708ed13132da4fe500fb",
       "createdAt": 1756112451449,
-      "gold": 0,
+      "gold": 10000,
       "shopUpgrades": {
         "hp": 0,
         "dmg": 0
@@ -16,7 +16,7 @@
       "usernameLower": "opiumdead",
       "passHash": "pbkdf2$sha256$120000$4cf495740fa4de2c0cd6687a54250f55$9ee9ae1b23df65cfaf896d5eeae49bb3c4a4449368cfd3d6ebda55e2210417e0",
       "createdAt": 1756112495985,
-      "gold": 5000,
+      "gold": 10000,
       "shopUpgrades": {
         "hp": 0,
         "dmg": 0
