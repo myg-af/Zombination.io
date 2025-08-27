@@ -1,3 +1,297 @@
+// Variant: for WORLD chat only — allow reclaiming a guest pseudo when the only conflict
+// is another *connected* socket from the same IP and not a logged-in account.
+// This avoids the "Nickname already in use" trap after a quick page refresh.
+function isPseudoTakenForWorldChat(name, currentSocketId) {
+  try {
+    const target = String(name || '').trim().toLowerCase();
+    if (!target) return false;
+    const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+    const curSock = socketsMap ? socketsMap.get(currentSocketId) : null;
+    const curIp = curSock ? getClientIP(curSock) : '';
+    const curUser = getSessionUsernameBySocketId(currentSocketId) || null;
+
+    // If the candidate is a registered username (reserved) and not owned by this session, treat as taken.
+    if (isRegisteredUsername(name) && (!curUser || normalizeKey(curUser) !== normalizeKey(name))) {
+      return true;
+    }
+
+    for (const g of activeGames) {
+      if (!g) continue;
+      // Check lobby roster
+      try {
+        const lp = (g.lobby && g.lobby.players) ? g.lobby.players : {};
+        for (const sid in lp) {
+          if (sid === currentSocketId) continue;
+          const ps = lp[sid] && lp[sid].pseudo;
+          if (!ps || String(ps).trim().toLowerCase() !== target) continue;
+          if (socketsMap && !socketsMap.get(sid)) continue; // skip stale
+          // If the other socket is the same account, allow
+          const otherUser = getSessionUsernameBySocketId(sid) || null;
+          if (otherUser && curUser && normalizeKey(otherUser) === normalizeKey(curUser)) continue;
+          // If both are guests from the same IP, allow (refresh case)
+          const otherSock = socketsMap ? socketsMap.get(sid) : null;
+          const otherIp = otherSock ? getClientIP(otherSock) : '';
+          if (curIp && otherIp && curIp === otherIp && !otherUser && !curUser) continue;
+          return true;
+        }
+      } catch(_) {}
+      // Check in-game players (ignore bots)
+      try {
+        const pl = g.players || {};
+        for (const sid in pl) {
+          if (sid === currentSocketId) continue;
+          const p = pl[sid];
+          if (!p || p.isBot) continue;
+          if (typeof p.pseudo !== 'string' || p.pseudo.trim().toLowerCase() !== target) continue;
+          if (socketsMap && !socketsMap.get(sid)) continue; // skip stale
+          const otherUser = getSessionUsernameBySocketId(sid) || null;
+          if (otherUser && curUser && normalizeKey(otherUser) === normalizeKey(curUser)) continue;
+          const otherSock = socketsMap ? socketsMap.get(sid) : null;
+          const otherIp = otherSock ? getClientIP(otherSock) : '';
+          if (curIp && otherIp && curIp === otherIp && !otherUser && !curUser) continue;
+          return true;
+        }
+      } catch(_) {}
+    }
+    return false;
+  } catch(_) { return true; } // be conservative on unexpected errors
+}
+
+// === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
+// === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
+/*__MULTIWORKER_BOOTSTRAP__*/
+(function __multiWorkerBootstrap(){
+  const cluster = require('cluster');
+  const net = require('net');
+  const os = require('os');
+
+  // Parse WORKERS env (PowerShell example: $env:WORKERS = 6; node server.js)
+  const WORKERS = Math.max(1, parseInt(process.env.WORKERS || '1', 10) || 1);
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+
+  if (cluster.isPrimary && WORKERS > 1) {
+    console.log('[Master] starting with', WORKERS, 'workers on port', PORT);
+
+    // Spawn workers with explicit index (1..N)
+    const workerList = [];
+    const metaById = new Map(); // id -> { index, players }
+    const sidToWorker = new Map();
+    const zidToWorker = new Map();
+
+    function spawn(idx){
+      const env = Object.assign({}, process.env, {
+        WORKERS: String(WORKERS),
+        WORKER_INDEX: String(idx + 1),
+        IS_CLUSTER_WORKER: '1',
+      });
+      const w = cluster.fork(env);
+      workerList.push(w);
+      metaById.set(w.id, { index: idx + 1, players: 0 });
+      w.on('message', (m) => {
+        try{
+          if (!m || typeof m !== 'object') return;
+          if (m.type === 'player:delta') {
+            const meta = metaById.get(w.id);
+            if (meta) { meta.players = Math.max(0, (meta.players|0) + (m.delta|0)); }
+          } else if (m.type === 'player:count') {
+            const meta = metaById.get(w.id);
+            if (meta) { meta.players = Math.max(0, m.count|0); }
+          }
+        }catch(_){}
+      });
+      w.on('exit', (code, sig) => {
+        console.warn('[Master] worker', (metaById.get(w.id) || {}).index, 'exited', code, sig);
+        const meta = metaById.get(w.id);
+        metaById.delete(w.id);
+        const pos = workerList.indexOf(w);
+        if (pos >= 0) workerList.splice(pos, 1);
+        if (meta && Number.isFinite(meta.index)) spawn(meta.index - 1);
+      });
+    }
+    for (let i = 0; i < WORKERS; i++) spawn(i);
+
+    // IP -> last assigned worker index (1..N) to split same-IP across workers
+    const lastByIp = new Map();
+
+    function normalizeIp(ip){
+      try {
+        let s = String(ip||'').trim();
+        if (s.startsWith('::ffff:')) s = s.slice(7);
+        return s;
+      } catch(_){ return String(ip||''); }
+    }
+
+    function parseXFFFromData(buf){
+      try {
+        const str = buf.toString('utf8');
+        const headEnd = str.indexOf('\\r\\n\\r\\n');
+        const head = headEnd >= 0 ? str.slice(0, headEnd) : str;
+        const lines = head.split('\\r\\n');
+        for (const ln of lines) {
+          const i = ln.indexOf(':');
+          if (i > -1) {
+            const key = ln.slice(0,i).trim().toLowerCase();
+            if (key === 'x-forwarded-for') {
+              const val = ln.slice(i+1).trim();
+              const first = val.split(',')[0].trim();
+              return normalizeIp(first);
+            }
+          }
+        }
+        return '';
+      } catch(_){ return ''; }
+    }
+
+    function parseCookiesFromHead(buf){
+      try {
+        const str = buf.toString('utf8');
+        const headEnd = str.indexOf('\\r\\n\\r\\n');
+        const head = headEnd >= 0 ? str.slice(0, headEnd) : str;
+        const m = head.match(/\\r\\ncookie:\\s*([^\\r\\n]+)/i);
+        if (!m) return {};
+        const raw = m[1];
+        const out = {};
+        raw.split(';').forEach(p=>{
+          const idx = p.indexOf('=');
+          if (idx>0){
+            const k = p.slice(0,idx).trim();
+            const v = p.slice(idx+1).trim();
+            out[k] = decodeURIComponent(v);
+          }
+        });
+        return out;
+      } catch(_){ return {}; }
+    }
+
+    function parsePathQuery(buf){
+      try{
+        const str = buf.toString('utf8');
+        const line = str.split('\\r\\n')[0] || '';
+        const sp = line.split(' ');
+        const url = (sp[1] || '');
+        return url;
+      }catch(_){ return ''; }
+    }
+    function parseQueryParam(url, key){
+      try{
+        const qIdx = url.indexOf('?');
+        if (qIdx < 0) return '';
+        const qs = url.slice(qIdx+1);
+        const params = qs.split('&');
+        for (const p of params){
+          const i = p.indexOf('=');
+          if (i>-1){
+            const k = decodeURIComponent(p.slice(0,i));
+            if (k === key) return decodeURIComponent(p.slice(i+1));
+          } else if (decodeURIComponent(p) === key) {
+            return '';
+          }
+        }
+        return '';
+      }catch(_){ return ''; }
+    }
+
+    // Pick least-loaded worker; if tie, choose randomly; prefer not repeating last IP worker
+    function chooseWorker(ip, sid, zid){
+      const metas = Array.from(metaById.entries()).map(([id, m]) => ({ id, index: m.index, players: m.players|0 }));
+      if (!metas.length) return null;
+
+      // 1) Strong sticky: if we know the socket.io SID or our own ZID, keep using that worker.
+      if (sid && sidToWorker.has(sid)) {
+        const idx = sidToWorker.get(sid);
+        const existing = metas.find(m => m.index === idx);
+        if (existing) return existing;
+      }
+      if (zid && zidToWorker.has(zid)) {
+        const idx = zidToWorker.get(zid);
+        const existing = metas.find(m => m.index === idx);
+        if (existing) return existing;
+      }
+
+      // 2) Deterministic fallback BEFORE SID exists: consistent ip-hash to one worker.
+      //    This avoids engine.io 400 errors due to non-sticky polling requests between workers.
+      function hash32(str){
+        try {
+          let h = 2166136261 >>> 0; // FNV-1a basis
+          for (let i = 0; i < str.length; i++){
+            h ^= str.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+          }
+          return h >>> 0;
+        } catch(_){ return 0; }
+      }
+      const key = String(ip || '').trim() || '0.0.0.0';
+      const prefIndex = ((hash32(key) % WORKERS) + 1) | 0;
+      let pick = metas.find(m => m.index === prefIndex) || null;
+
+      // 3) If that specific index isn't present (worker restarting), pick the closest index, else least-loaded.
+      if (!pick) {
+        const byIndex = metas.slice().sort((a,b) => Math.abs(a.index - prefIndex) - Math.abs(b.index - prefIndex));
+        pick = byIndex[0] || metas[0];
+      }
+
+      // 4) Record mapping when we finally get SID/ZID on later requests.
+      if (sid) sidToWorker.set(sid, pick.index);
+      if (zid) zidToWorker.set(zid, pick.index);
+
+      return pick;
+    }const balancer = net.createServer({ pauseOnConnect: true }, (socket) => {
+      let decided = false;
+      function handoff(firstChunk){
+        if (decided) return;
+        decided = true;
+        const peer = normalizeIp(socket.remoteAddress || '');
+        let ip = peer;
+        let sid = '';
+        let zid = '';
+
+        try {
+          const url = parsePathQuery(firstChunk || Buffer.alloc(0));
+          sid = parseQueryParam(url, 'sid') || '';
+          const TRUSTED = String(process.env.TRUSTED_PROXIES || '').split(',').map(s => s.trim()).filter(Boolean);
+          if (TRUSTED.includes(peer)) {
+            const xip = parseXFFFromData(firstChunk || Buffer.alloc(0));
+            if (xip) ip = xip;
+          }
+          const cookies = parseCookiesFromHead(firstChunk || Buffer.alloc(0));
+          if (!zid) zid = cookies['zid'] || '';
+          if (!sid && cookies['io']) sid = cookies['io'];
+        } catch(_){}
+
+        const chosen = chooseWorker(ip, sid, zid) || chooseWorker('', sid, zid) || null;
+        if (!chosen) { try { socket.destroy(); } catch(_){ } return; }
+
+        try {
+          const w = cluster.workers[chosen.id];
+          if (!w) { socket.destroy(); return; }
+          lastByIp.set(ip, chosen.index);
+          w.send({ type:'sticky-connection', initialData: firstChunk }, socket);
+        } catch(e) {
+          try { socket.destroy(); } catch(_){}
+        }
+      }
+
+      socket.once('data', (chunk) => {
+        try { handoff(chunk); } catch(_){}
+      });
+      setTimeout(() => { try { handoff(Buffer.alloc(0)); } catch(_){ } }, 50);
+    });
+
+    balancer.on('error', (err)=>{
+      console.error('[Master] balancer error:', err && err.message);
+      process.exitCode = 1;
+    });
+
+    balancer.listen(PORT, () => {
+      console.log('[Master] listening on', PORT, 'and balancing across', WORKERS, 'workers');
+    });
+
+    return; // master ends here
+  }
+})();
+/*__/MULTIWORKER_BOOTSTRAP__*/
+
+
 // Ceci est le fichier server.js :
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
@@ -21,6 +315,25 @@ const app = express();
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 const server = http.createServer(app);
+
+// Sticky-connection acceptor: in cluster mode, master sends sockets here
+/*__STICKY_WORKER_HOOK__*/
+if (String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1)) {
+  process.on('message', function(msg, handle){
+    try{
+      if (msg && msg.type === 'sticky-connection' && handle) {
+        try { handle.on && handle.on('error', function(){}); } catch(_){}
+        try { server.emit('connection', handle); } catch(_){}
+        try {
+          if (msg.initialData && handle && typeof handle.unshift === 'function') {
+            handle.unshift(Buffer.isBuffer(msg.initialData) ? msg.initialData : Buffer.from(msg.initialData));
+          }
+          handle.resume && handle.resume();
+        } catch(_){}
+      }
+    }catch(_){}
+  });
+}
 const io = socketIo(server, {
   pingInterval: 10000,
   pingTimeout: 60000,
@@ -1279,7 +1592,33 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
-    // Detect if the client is mobile from User-Agent (used to avoid sending chat to mobile in-game)
+    
+  /*__WORKER_CONN_METRICS__*/
+  try {
+    if (typeof process.send === 'function') { process.send({ type:'player:delta', delta:+1 }); }
+  } catch(_){}
+  try {
+    const wid = parseInt(process.env.WORKER_INDEX||'1',10) || 1;
+    const wtot = parseInt(process.env.WORKERS||'1',10) || 1;
+    socket.emit('workerInfo', { id: wid, total: wtot });
+    // Allow client to request workerInfo in case it missed the initial emit
+    try {
+      socket.on('requestWorkerInfo', function(){
+        try {
+          const wid = parseInt(process.env.WORKER_INDEX||'1',10) || 1;
+          const wtot = parseInt(process.env.WORKERS||'1',10) || 1;
+          socket.emit('workerInfo', { id: wid, total: wtot });
+        } catch(_){}
+      });
+    } catch(_){}
+
+  } catch(_){}
+  try {
+    socket.on('disconnect', function(){
+      try { if (typeof process.send === 'function') { process.send({ type:'player:delta', delta:-1 }); } } catch(_){}
+    });
+  } catch(_){}
+// Detect if the client is mobile from User-Agent (used to avoid sending chat to mobile in-game)
     try {
       const ua = (socket && socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
       socket.__isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(String(ua));
@@ -1477,9 +1816,16 @@ if (!pseudo || pseudo === 'player') {
 
       
             
-      // Enforce pseudo uniqueness for chat (same policy as lobby joins)
+      
+      // Enforce pseudo uniqueness:
+      // - LOBBY chat: strict (use global isPseudoTaken)
+      // - WORLD chat: tolerant (allow reclaim from same IP for guests)
       try {
-        if (isPseudoTaken(pseudo, socket.id)) {
+        const _ch = channel;
+        const taken = (_ch === 'world')
+          ? isPseudoTakenForWorldChat(pseudo, socket.id)
+          : isPseudoTaken(pseudo, socket.id);
+        if (taken) {
           try { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); } catch(_){}
           return;
         }
@@ -3393,10 +3739,22 @@ gameLoop();
 
 const PORT = process.env.PORT || 3000;
 console.log('Avant listen');
-server.listen(PORT, () => {
-  console.log(`Serveur démarré sur le port ${PORT}`);
-});
-console.log('Après listen');
+/*__CONDITIONAL_LISTEN__*/
+if ((parseInt(process.env.WORKERS||'1',10) || 1) > 1) {
+  // Cluster mode: only workers should accept connections. Master does not listen here.
+  if (String(process.env.IS_CLUSTER_WORKER||'0') === '1') {
+    console.log(`[Worker ${process.env.WORKER_INDEX||'?'}] ready (port handled by master)`);
+  } else {
+    console.log('[Master] Application server is not listening here (balancer handles the port).');
+  }
+} else {
+  server.listen(PORT, () => {
+    console.log(`Serveur démarré sur le port ${PORT}`);
+  });
+}
+
+// (removed old conditional listen block)
+
 
 /* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
 const USERS_DIR = path.join(__dirname, 'data');
@@ -3952,6 +4310,7 @@ app.post('/api/skin/buy', (req,res)=>{
     return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
+
 
 
 

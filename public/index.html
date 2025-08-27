@@ -2,6 +2,24 @@
 
 <html lang="fr">
 <head>
+
+<script>
+// Set a stable client id (zid) for sticky balancing per-player even on same IP
+(function(){
+  try {
+    function getCookie(name){
+      var m = document.cookie.match(new RegExp('(?:^|; )'+name+'=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+    if (!getCookie('zid')) {
+      var rnd = (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(16).slice(2)+Date.now().toString(16));
+      var exp = new Date(Date.now() + 365*24*3600*1000).toUTCString();
+      document.cookie = 'zid='+encodeURIComponent(rnd)+'; path=/; SameSite=Lax; expires='+exp;
+    }
+  } catch(_){}
+})();
+</script>
+
 <script>
 // Safe null-object for removed #lobbyJoin (Solo) button
 (function(){
@@ -145,16 +163,9 @@
       user-select: none;
     }
     /* Version */
-    #versionBox {
-      position: fixed;
-      right: 20px;
-      bottom: 14px;
-      color: #ccc;
-      font-size: 14px;
-      opacity: 0.8;
-      z-index: 20;
-      user-select: none;
-    }
+    #versionBox { position: fixed; right: 20px; bottom: 14px; color: #ccc; font-size: 14px; opacity: 0.8; z-index: 20; user-select: none; }
+    /* Worker badge (top-right) */
+    #workerBox { position: fixed; right: 20px; top: 14px; color: #ccc; font-size: 14px; opacity: 0.9; z-index: 20; user-select: none; }
     /* Ajout des joysticks mobile */
 	.joystick-container {
 	  position: fixed;
@@ -844,7 +855,9 @@ if (!window.ensureMySkinLoaded) {
 <div style="color:#fff6; font-size:17px; margin-top:18px;">Boutique à venir : <i>Affichage des améliorations ici à l’étape 3</i></div>
 </div>
 </div>
-<div id="versionBox"></div>
+<div id=\"versionBox\"></div>
+<div id=\"workerBox\" title=\"Worker\"></div>
+<!-- workerBox inserted -->
 <script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
 <script src="/socket.io/socket.io.js"></script>
@@ -4739,12 +4752,49 @@ if (btnCreate) {
 
   if (btnJoinList) {
     btnJoinList.addEventListener('click', async function(){
+      
       if (!pseudoInput.value.trim() || btnJoinList.disabled) return;
+      var p = String(pseudoInput.value || '').trim();
+      // Server-side check identical to Create lobby semantics
+      try {
+        btnJoinList.disabled = true;
+        if (window.socket && typeof socket.emit === 'function') {
+          socket.emit('renamePseudo', p, function(res){
+            try {
+              if (!res || res.ok) {
+                // proceed to open the list
+                showList();
+                requestLobbies();
+                clearInterval(listInterval);
+                listInterval = setInterval(requestLobbies, 2000);
+              } else if (res.reason === 'pseudo_taken' || res.reason === 'reserved') {
+                var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+                if (res.reason === 'reserved') {
+                  showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.');
+                } else {
+                  if (typeof __alertPseudoTaken === 'function') __alertPseudoTaken();
+                  else showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
+                }
+              } else {
+                // Unexpected error -> do nothing special, just open list
+                showList();
+                requestLobbies();
+                clearInterval(listInterval);
+                listInterval = setInterval(requestLobbies, 2000);
+              }
+            } finally {
+              btnJoinList.disabled = false;
+            }
+          });
+          return;
+        }
+      } catch(_){ btnJoinList.disabled = false; }
+      // Fallback if socket not ready
       showList();
       requestLobbies();
       clearInterval(listInterval);
       listInterval = setInterval(requestLobbies, 2000);
-    }, { passive: true });
+}, { passive: true });
   }
 
   if (btnBackList) {
@@ -5116,7 +5166,119 @@ function renderManualPlayers() {
   // Also refresh on visibility change just in case
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) setVersionBox(); }, {passive:true});
   window.addEventListener('resize', setVersionBox, {passive:true});
+  document.addEventListener('DOMContentLoaded', function(){ try{ setVersionBox(); }catch(_){}} , {once:true, passive:true});
   window.setVersionBox = setVersionBox;
+
+
+
+try { setVersionBox(); } catch(_){}
+})();
+</script>
+<script>
+(function(){
+  function setWorkerBox(){
+    try {
+      var el = document.getElementById('workerBox');
+      if (!el) return;
+      var id = (window.__workerId|0);
+      if (!id) { el.textContent = ''; el.style.display='none'; return; }
+      el.style.display = 'block';
+      el.textContent = 'Worker #' + id;
+    } catch(_){}
+  }
+  window.setWorkerBox = setWorkerBox;
+  try { setWorkerBox(); } catch(_){}
+
+  // Ensure we never miss workerInfo even if emitted before our listener:
+  (function(){
+    function attachWorkerListener(sock){
+      try{
+        if(!sock || sock.__workerAttached) return;
+        sock.__workerAttached = true;
+        sock.on && sock.on('workerInfo', function(info){
+          try { window.__workerId = (info && info.id)|0; } catch(_){ window.__workerId = 0; }
+          try { setWorkerBox(); } catch(_){}
+        });
+        // Fallback: ask again after connect, if server supports it
+        try {
+          sock.on && sock.on('connect', function(){
+            try {
+              if (!(window.__workerId|0) && typeof sock.emit === 'function') {
+                sock.emit('requestWorkerInfo'); // server may optionally handle this
+              }
+            } catch(_){}
+          });
+        } catch(_){}
+      }catch(_){}
+    }
+    try { attachWorkerListener(window.socket); } catch(_){}
+    try {
+      if (window.io && !window.__io_patched_for_worker) {
+        var orig = window.io;
+        function patched(){
+          var s = orig.apply(this, arguments);
+          try { attachWorkerListener(s); } catch(_){}
+          return s;
+        }
+        try { for (var k in orig) { patched[k] = orig[k]; } } catch(_){}
+        window.io = patched; window.__io_patched_for_worker = true;
+      }
+    } catch(_){}
+  })();
+
+  // Listen to server marker
+      try {
+        if (window.socket && typeof socket.on === 'function') {
+          socket.on('workerInfo', function(info){
+            try { window.__workerId = (info && info.id)|0; } catch(_){ window.__workerId = 0; }
+            try { setWorkerBox(); } catch(_){}
+
+  // Ensure we never miss workerInfo even if emitted before our listener:
+  (function(){
+    function attachWorkerListener(sock){
+      try{
+        if(!sock || sock.__workerAttached) return;
+        sock.__workerAttached = true;
+        sock.on && sock.on('workerInfo', function(info){
+          try { window.__workerId = (info && info.id)|0; } catch(_){ window.__workerId = 0; }
+          try { setWorkerBox(); } catch(_){}
+        });
+        // Fallback: ask again after connect, if server supports it
+        try {
+          sock.on && sock.on('connect', function(){
+            try {
+              if (!(window.__workerId|0) && typeof sock.emit === 'function') {
+                sock.emit('requestWorkerInfo'); // server may optionally handle this
+              }
+            } catch(_){}
+          });
+        } catch(_){}
+      }catch(_){}
+    }
+    try { attachWorkerListener(window.socket); } catch(_){}
+    try {
+      if (window.io && !window.__io_patched_for_worker) {
+        var orig = window.io;
+        function patched(){
+          var s = orig.apply(this, arguments);
+          try { attachWorkerListener(s); } catch(_){}
+          return s;
+        }
+        try { for (var k in orig) { patched[k] = orig[k]; } } catch(_){}
+        window.io = patched; window.__io_patched_for_worker = true;
+      }
+    } catch(_){}
+  })();
+
+          });
+        }
+      } catch(_){}
+      // Refresh on visibility change & resize (matches version box behavior)
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) setWorkerBox(); }, {passive:true});
+  window.addEventListener('resize', setWorkerBox, {passive:true});
+})();
+</script>
+
 
   // Global, resilient opener (works even if openSkinModal not yet defined)
   try {
@@ -5593,7 +5755,7 @@ function renderManualPlayers() {
 
       // World channel duplicate pseudo pre-check using recent history
       try {
-        if (currentChannel === 'world' && (!window || !window.loggedUser)) {
+        if (false && currentChannel === 'world' && (!window || !window.loggedUser)) {
           var myId = (window.socket && socket.id) || null;
           var pInput = (window.pseudoInput || document.getElementById('pseudoInput'));
           var p = pInput && pInput.value ? String(pInput.value).trim().substring(0,10).replace(/[^a-zA-Z0-9]/g,'') : '';
@@ -5665,9 +5827,26 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
 } catch(_){ }
         pushMsg(msg);
       });window.socket.on('chat:error', function(e){
-        if (!e || e.type !== 'cooldown') return;
-        try { sendBtn.disabled = true; setTimeout(function(){ sendBtn.disabled = false; }, Math.min(1200, e.waitMs || 1000)); } catch(_){}
-      });
+  try {
+    if (!e || !e.type) return;
+    if (e.type === 'cooldown') {
+      try { sendBtn.disabled = true; setTimeout(function(){ sendBtn.disabled = false; }, Math.min(1200, e.waitMs || 1000)); } catch(_){}
+      return;
+    }
+    if (e.type === 'pseudo_taken' || e.type === 'reserved') {
+      try {
+        var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+        if (e.type === 'reserved') {
+          var msg = tr.reservedName || 'This nickname is reserved by an account. Choose another one.';
+          showTopMessage(msg);
+        } else {
+          __alertPseudoTaken();
+        }
+      } catch(_) { __alertPseudoTaken(); }
+      return;
+    }
+  } catch(_) { }
+});
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
@@ -7495,7 +7674,37 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         var origEmit = s.emit.bind(s);
         s.emit = function(ev){
           var argv = Array.prototype.slice.call(arguments,1);
-          if (ev === 'setPseudoAndReady') {
+          
+          // --- Injected: normalize callback to surface pseudo_taken/reserved like Create lobby ---
+          try {
+            var evName = ev;
+            // joinLobbyById(payload, cb)
+            if (evName === 'joinLobbyById' || evName === 'joinManualLobby') {
+              var lastArg = argv[argv.length - 1];
+              if (typeof lastArg === 'function') {
+                (function(origCb){
+                  argv[argv.length - 1] = function(res){
+                    try {
+                      if (res && !res.ok && (res.reason === 'pseudo_taken' || res.reason === 'reserved')) {
+                        try {
+                          var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+                          if (res.reason === 'reserved') {
+                            showTopMessage(tr.reservedName || 'This nickname is reserved by an account. Choose another one.');
+                          } else {
+                            if (typeof __alertPseudoTaken === 'function') __alertPseudoTaken();
+                            else showTopMessage(tr.pseudoTaken || 'Nickname already in use.');
+                          }
+                        } catch(_){}
+                      }
+                    } catch(_){}
+                    try { return origCb.apply(this, arguments); } catch(_){}
+                  };
+                })(lastArg);
+              }
+            }
+          } catch(_){}
+          // --- End injected ---
+if (ev === 'setPseudoAndReady') {
             try {
               var now = Date.now();
               if (typeof window.__lastJoinEmit === 'number' && (now - window.__lastJoinEmit) < 900) {
@@ -7574,6 +7783,8 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
 </script>
 
   <!-- <!-- <div id="renderProbeBadge" style="position:fixed;left:8px;top:8px;z-index:2147483646;background:rgba(0,0,0,0.5);color:#fff;font:11px/1.3 ui-monospace,monospace;padding:4px 6px;border-radius:6px;display:none">🧪 render-probe</div> --> -->
+
+</script>
 
 <script>
 (function(){
@@ -8842,9 +9053,94 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
+<div id="versionBox"></div>
+<div id="workerBox" title="Worker"></div>
+
+<script>
+// === Robust pseudo guard for "Join lobby" and "Send" (inspired by Create lobby) ===
+(function(){
+  try {
+    var pseudoInput = document.getElementById('pseudoInput');
+
+    // Guard for the main "Join" button on the manual/lobby screen
+    var joinBtn = document.getElementById('lobbyJoin');
+    if (joinBtn && !joinBtn.__pseudoGuardInstalled) {
+      joinBtn.__pseudoGuardInstalled = true;
+      joinBtn.addEventListener('click', function(ev){
+        try {
+          var p = (pseudoInput && pseudoInput.value ? pseudoInput.value : '').trim();
+          if (!p) return;
+
+          var taken = false;
+          // Prefer authoritative source: current lobby player's map
+          try {
+            var meId = (window.socket && socket.id) || null;
+            var playersMap = (window.lobbyData && window.lobbyData.players) ? window.lobbyData.players : {};
+            for (var sid in playersMap) {
+              if (!playersMap.hasOwnProperty(sid)) continue;
+              if (sid === meId) continue;
+              var nm = (playersMap[sid] && playersMap[sid].pseudo) ? String(playersMap[sid].pseudo) : '';
+              if (nm && nm.trim().toLowerCase() === p.toLowerCase()) { taken = true; break; }
+            }
+          } catch(_){}
+
+          if (taken) {
+            try { __alertPseudoTaken(); } catch(_){}
+            ev.stopImmediatePropagation(); ev.preventDefault();
+            return;
+          }
+        } catch(_){}
+      }, true); // capture to run before other listeners
+    }
+
+    // Guard for chat "Send" button
+    var sendBtn = document.getElementById('chatSend');
+    if (sendBtn && !sendBtn.__pseudoGuardInstalled2) {
+      sendBtn.__pseudoGuardInstalled2 = true;
+      sendBtn.addEventListener('click', function(ev){
+        try {
+          var p = (pseudoInput && pseudoInput.value ? pseudoInput.value : '').trim();
+          if (!p) return;
+          var myId = (window.socket && socket.id) || '';
+          var ch = (typeof window.currentChannel === 'string') ? window.currentChannel : 'world';
+          var taken = false;
+
+          if (ch === 'lobby' && window.lobbyData && window.lobbyData.players) {
+            var playersMap = window.lobbyData.players || {};
+            for (var sid in playersMap) {
+              if (sid === myId) continue;
+              var nm = (playersMap[sid] && playersMap[sid].pseudo) ? String(playersMap[sid].pseudo) : '';
+              if (nm && nm.trim().toLowerCase() === p.toLowerCase()) { taken = true; break; }
+            }
+          } else {
+            // world: fall back to recent chat buffer check (same approach already used before emit)
+            try {
+              var arr = (window.chatBuf && window.chatBuf[ch]) ? window.chatBuf[ch] : [];
+              for (var i=0;i<arr.length;i++){
+                var m = arr[i];
+                if (!m || !m.pseudo) continue;
+                if (String(m.pseudo).toLowerCase() === p.toLowerCase() && m.sid !== myId) { taken = true; break; }
+              }
+            } catch(_){}
+          }
+
+          if (taken) {
+            try { __alertPseudoTaken(); } catch(_){}
+            ev.stopImmediatePropagation(); ev.preventDefault();
+            return;
+          }
+        } catch(_){}
+      }, true);
+    }
+  } catch(_){}
+})();
+</script>
+
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
 <!-- [PATCH] turret-skins-swap v1 -->
+</script>
+
 <script>
 (function(){"use strict";
   const SPRITES = {

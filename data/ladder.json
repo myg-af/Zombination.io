@@ -25,6 +25,12 @@
       "ts": 1700000004000
     },
     {
+      "player": "test2efsdf",
+      "wave": 7,
+      "kills": 0,
+      "ts": 1756244779494
+    },
+    {
       "player": "Quur",
       "wave": 6,
       "kills": 146,
@@ -593,12 +599,6 @@
       "wave": 2,
       "kills": 5,
       "ts": 1700000099000
-    },
-    {
-      "player": "HyirpyNeo",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000100000
     }
   ]
 }
