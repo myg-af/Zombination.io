@@ -762,6 +762,29 @@ if (!window.ensureMySkinLoaded) {
   <button id="btnLadder" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#8a70f0; color:#fff; cursor:pointer; margin-top:7px; pointer-events:auto; position:relative; z-index:10">Ladder</button>
   <button id="btnAccountShop" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#ff8800; color:#fff; cursor:pointer; margin-top:7px; pointer-events:auto; position:relative; z-index:10">Shop</button>
 </div>
+<!-- [PATCH] choose server button -->
+<div id="chooseServerRow" style="display:flex; justify-content:center; margin-top:6px;">
+  <button id="btnChooseServer" style="font-size:18px; padding:7px 32px; border-radius:8px; border:none; background:#6e6e6e; color:#fff; cursor:pointer; margin-top:7px; pointer-events:auto; position:relative; z-index:10;">Choose a server</button>
+</div>
+<script>
+(function(){
+  function goToOrigin(){
+    try {
+      var base = location.origin + location.pathname;
+      // strip trailing '?' or '#' if any
+      if (base.endsWith('?') || base.endsWith('#')) base = base.slice(0, -1);
+      location.assign(base);
+    } catch(e){
+      try { location.href = location.origin || '/'; } catch(_) { location.reload(); }
+    }
+  }
+  var btn = document.getElementById('btnChooseServer');
+  if (btn && !btn.__boundChooseServer) {
+    btn.__boundChooseServer = true;
+    btn.addEventListener('click', goToOrigin, { passive: true });
+  }
+})();
+</script>
 <br/>
 <div id="authBtnRow" style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:8px;">
   <button id="btnLogin" style="padding:8px 16px; border:none; border-radius:8px; background:#2a6aff; color:#fff; cursor:pointer;">Log in</button>
@@ -856,11 +879,98 @@ if (!window.ensureMySkinLoaded) {
 </div>
 </div>
 <div id=\"versionBox\"></div>
-<div id=\"workerBox\" title=\"Worker\"></div>
+<div id=\"workerBox\" title=\"Server\"></div>
 <!-- workerBox inserted -->
 <script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
 <script src="/socket.io/socket.io.js"></script>
+<!-- Server selection overlay -->
+<style>
+  #serverOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:999999;}
+  #serverBox{background:#14161a;border:1px solid #2a2f39;border-radius:14px;box-shadow:0 10px 40px #000a;padding:14px 16px;width:min(92vw,380px);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#fff;}
+  #serverBox h3{margin:4px 4px 10px 4px;font-size:18px;font-weight:800;color:#fff;}
+  .srv{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;margin:8px 6px;border-radius:10px;background:#0f1216;border:1px solid #29303a;}
+  .srv .name{font-weight:700;}
+  .srv .count{font-size:12px;color:#9ab;margin-top:2px;}
+  .srv .btn{min-width:64px;border:0;border-radius:8px;padding:6px 10px;cursor:pointer;background:#20b36a;color:#fff;font-weight:700}
+  .srv .btn[disabled]{opacity:.55;cursor:not-allowed;background:#444;}
+  .srv .full{background:#7a1d1d}
+  #srvFoot{font-size:12px;color:#8aa; text-align:right; padding: 0 8px;}
+</style>
+/* [PATCH] push chat behind when server overlay is open */
+<style id="chatOverlayMaskStyle">
+  .overlay-server #chatPanel,
+  .overlay-server #chatCollapsedBtn {
+    z-index: -1 !important;
+    pointer-events: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+  }
+</style>
+
+<div id="serverOverlay">
+  <div id="serverBox" role="dialog" aria-label="Select a server">
+    <h3>Select a server</h3>
+    <div id="srvList"></div>
+    <div id="srvFoot"></div>
+  </div>
+</div>
+<script>
+(function(){
+  if (window.__serverOverlayInstalled) return;
+  window.__serverOverlayInstalled = true;
+
+  function getCookie(name){
+    try{ var m = document.cookie.match(new RegExp('(?:^|; )'+name+'=([^;]*)')); return m ? decodeURIComponent(m[1]) : ''; }catch(_){ return ''; }
+  }
+  function showOverlay(){ var o = document.getElementById('serverOverlay'); if (o) o.style.display='flex'; try{ (document.documentElement||document.body).classList.add('overlay-server'); }catch(_){} }
+  function hideOverlay(){ var o = document.getElementById('serverOverlay'); if (o) o.style.display='none'; try{ (document.documentElement||document.body).classList.remove('overlay-server'); }catch(_){} }
+
+  const params = new URLSearchParams(location.search||'');
+  const hasWParam = params.has('w');
+  const hasWCookie = !!getCookie('w');
+
+  // Show overlay only if no worker has been chosen yet
+  if (!hasWParam && !hasWCookie) showOverlay();
+
+  async function refreshServers(){
+    try {
+      const r = await fetch('/api/servers', { cache: 'no-store' });
+      const j = await r.json();
+      if (!j || !j.ok) throw new Error('bad');
+      var list = document.getElementById('srvList');
+      if (!list) return;
+      list.innerHTML = '';
+      for (var i=0;i<j.total;i++){
+        var count = (j.workers && j.workers[i] ? (j.workers[i].count|0) : 0);
+        var full = count >= (j.capacity|0);
+        var row = document.createElement('div'); row.className='srv';
+        var left = document.createElement('div'); left.innerHTML = '<div class="name">Server '+(i+1)+'</div><div class="count">'+count+'/'+j.capacity+' players</div>';
+        var btn = document.createElement('button'); btn.className='btn'; btn.textContent = full ? 'Full' : 'Join'; if (full) { btn.setAttribute('disabled',''); btn.classList.add('full'); }
+        (function(idx, disabled){
+          btn.addEventListener('click', function(ev){
+            ev.preventDefault();
+            if (disabled) return;
+            // Selecting a server navigates with ?w=N
+            try { location.href = '/?w=' + idx; } catch(_){}
+          });
+        })(i+1, full);
+        row.appendChild(left); row.appendChild(btn); list.appendChild(row);
+      }
+    } catch(e){ /* ignore */ }
+  }
+  setInterval(refreshServers, 1500);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refreshServers, {passive:true}); else refreshServers();
+
+  // If a server gets full after we join, redirect back to chooser
+  try {
+    if (window.socket && typeof socket.on==='function') {
+      socket.on('serverFull', function(){ try{ alert('Server full'); }catch(_){ } try{ location.href='/'; }catch(_){} });
+    }
+  } catch(_){}
+})();
+</script>
+
 <script>
 // === Global orientation caches ===
 window.prevPlayerPos = {};
@@ -869,10 +979,19 @@ window.prevZombiePos = {};
 window.lastZombieAngle = {};
 
 
-const socket = io({ transports: ['polling','websocket'] });
+
+const __params = new URLSearchParams(window.location.search || '');
+const __wParam = __params.get('w');
+const ioOpts = { transports: ['polling','websocket'] };
+if (__wParam) {
+  const _wk = parseInt(__wParam, 10);
+  if (Number.isFinite(_wk)) ioOpts.query = { w: String(_wk) };
+}
+// Important: until the user explicitly joins, no 'w' cookie is written by the server.
+const socket = io(ioOpts);
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
-  console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
+console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
   try {
     socket.emit("clientHello", {
       v: (window.GAME_VERSION || "1.0.0"),
@@ -5183,7 +5302,14 @@ try { setVersionBox(); } catch(_){}
       var id = (window.__workerId|0);
       if (!id) { el.textContent = ''; el.style.display='none'; return; }
       el.style.display = 'block';
-      el.textContent = 'Worker #' + id;
+      var langRaw = (typeof window.currentLang === 'string' && window.currentLang)
+                 || (typeof currentLang === 'string' && currentLang)
+                 || ((navigator.language||'en').slice(0,2));
+      var alias = { ja:'jp', zh:'cn', ko:'kr' };
+      var lang = alias[langRaw] || langRaw;
+      var tr = (window.TRANSLATIONS && (TRANSLATIONS[lang]||TRANSLATIONS['en'])) || {};
+      var tpl = tr.serverLabel || 'Server {n}';
+      el.textContent = tpl.replace('{n}', id);
     } catch(_){}
   }
   window.setWorkerBox = setWorkerBox;
@@ -5916,6 +6042,18 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
     function getEl(id){ return document.getElementById(id); }
     function applyVisibility(){
       try {
+        // Hide chat when server selection overlay is visible
+        try {
+          var overlay = document.getElementById('serverOverlay');
+          var cs = (window.getComputedStyle ? getComputedStyle(overlay) : null);
+          var overlayVisible = !!(overlay && ((overlay.style && overlay.style.display !== 'none') || (cs && cs.display !== 'none')));
+          if (overlayVisible) {
+            panel && (panel.style.display = 'none');
+            btn && (btn.style.display = 'none');
+            return;
+          }
+        } catch(_){}
+    
         var panel = getEl('chatPanel');
         var btn = getEl('chatCollapsedBtn');
         if (!panel || !btn) return;
@@ -5946,7 +6084,23 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
       } catch(_){ return false; }
     }
 
-    if (window.socket && typeof window.socket.on === 'function') {
+    
+    // Observe server overlay visibility to hide/show chat on menu
+    try {
+      var __chatOverlayObserverInit = false;
+      (function(){
+        if (__chatOverlayObserverInit) return;
+        __chatOverlayObserverInit = true;
+        var overlay = document.getElementById('serverOverlay');
+        if (!overlay || typeof MutationObserver === 'undefined') { applyVisibility(); return; }
+        try {
+          var mo = new MutationObserver(function(){ applyVisibility(); });
+          mo.observe(overlay, { attributes: true, attributeFilter: ['style', 'class'], subtree: false });
+        } catch(_){}
+        applyVisibility();
+      })();
+    } catch(_){}
+if (window.socket && typeof window.socket.on === 'function') {
       // When a game starts, hide chat if solo; otherwise ensure it's not forced-hidden
       window.socket.on('gameStarted', function(info){
         try {
@@ -9054,7 +9208,7 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 </script>
 
 <div id="versionBox"></div>
-<div id="workerBox" title="Worker"></div>
+<div id="workerBox" title="Server"></div>
 
 <script>
 // === Robust pseudo guard for "Join lobby" and "Send" (inspired by Create lobby) ===
@@ -9136,6 +9290,41 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
+
+<!-- [PATCH] server label lang hook -->
+<script>
+(function(){
+  if (window.__workerLabelLangHooked) return;
+  window.__workerLabelLangHooked = true;
+  var __prevUpdateUITexts = window.updateUITexts;
+  window.updateUITexts = function(){
+    try { if (typeof __prevUpdateUITexts === 'function') __prevUpdateUITexts.apply(this, arguments); } catch(_){}
+    try {
+      if (typeof window.setWorkerBox === 'function') {
+        window.setWorkerBox();
+      } else {
+        var el = document.getElementById('workerBox');
+        if (el) {
+          var lang = (window.currentLang || 'en');
+          var tr = (window.TRANSLATIONS && (TRANSLATIONS[lang]||TRANSLATIONS['en'])) || {};
+          var id = (window.__workerId|0) || (window.__workerIdx|0) || 1;
+          var tpl = tr.serverLabel || 'Server {n}';
+          el.textContent = String(tpl).replace('{n}', String(id));
+        }
+      }
+    } catch(_){}
+  
+    try {
+      var btn = document.getElementById('btnChooseServer');
+      if (btn) {
+        var lang = (window.currentLang || 'en');
+        var tr = (window.TRANSLATIONS && (TRANSLATIONS[lang]||TRANSLATIONS['en'])) || {};
+        btn.textContent = (tr.chooseServer || 'Choose a server');
+      }
+    } catch(_){}
+};
+})();
+</script>
 </body></html>
       try { window.lobbyData = lobbyData; } catch(_){}
 <!-- [PATCH] turret-skins-swap v1 -->

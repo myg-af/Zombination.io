@@ -60,235 +60,266 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
 // === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
 // === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
 /*__MULTIWORKER_BOOTSTRAP__*/
+
 (function __multiWorkerBootstrap(){
   const cluster = require('cluster');
   const net = require('net');
-  const os = require('os');
 
-  // Parse WORKERS env (PowerShell example: $env:WORKERS = 6; node server.js)
-  const WORKERS = Math.max(1, parseInt(process.env.WORKERS || '1', 10) || 1);
+  // Number of workers (1 = no clustering). Default to 4 if not provided.
+  const WORKERS = Math.max(1, parseInt(process.env.WORKERS || '4', 10) || 1);
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  if (cluster.isPrimary && WORKERS > 1) {
-    console.log('[Master] starting with', WORKERS, 'workers on port', PORT);
+  // Helper: parse ?w=K from a URL like "/?w=3" (returns NaN if missing)
+  function extractWFromUrlPath(urlPath) {
+    try {
+      if (!urlPath || typeof urlPath !== 'string') return NaN;
+      const qIdx = urlPath.indexOf('?');
+      if (qIdx < 0) return NaN;
+      const qs = urlPath.slice(qIdx + 1).split('&');
+      for (const kv of qs) {
+        const eq = kv.indexOf('=');
+        if (eq > -1) {
+          const k = decodeURIComponent(kv.slice(0, eq));
+          if (k === 'w') return parseInt(decodeURIComponent(kv.slice(eq + 1)), 10);
+        } else if (decodeURIComponent(kv) === 'w') {
+          return NaN;
+        }
+      }
+      return NaN;
+    } catch (_) { return NaN; }
+  }
 
-    // Spawn workers with explicit index (1..N)
-    const workerList = [];
-    const metaById = new Map(); // id -> { index, players }
-    const sidToWorker = new Map();
-    const zidToWorker = new Map();
+  // Helper: parse request line path from first HTTP bytes
+  function extractPathFromFirstChunk(buf) {
+    try {
+      const s = buf.toString('utf8');
+      const firstLine = s.split('\r\n', 1)[0] || '';
+      const parts = firstLine.split(' ');
+      return parts[1] || '';
+    } catch (_) { return ''; }
+  }
 
-    function spawn(idx){
-      const env = Object.assign({}, process.env, {
-        WORKERS: String(WORKERS),
-        WORKER_INDEX: String(idx + 1),
-        IS_CLUSTER_WORKER: '1',
-      });
-      const w = cluster.fork(env);
-      workerList.push(w);
-      metaById.set(w.id, { index: idx + 1, players: 0 });
-      w.on('message', (m) => {
-        try{
-          if (!m || typeof m !== 'object') return;
-          if (m.type === 'player:delta') {
-            const meta = metaById.get(w.id);
-            if (meta) { meta.players = Math.max(0, (meta.players|0) + (m.delta|0)); }
-          } else if (m.type === 'player:count') {
-            const meta = metaById.get(w.id);
-            if (meta) { meta.players = Math.max(0, m.count|0); }
+  // Helper: parse "Referer" header from first HTTP bytes
+  function extractRefererFromFirstChunk(buf) {
+    try {
+      const s = buf.toString('utf8');
+      const lines = s.split('\r\n');
+      for (let i=1;i<lines.length;i++){
+        const line = lines[i];
+        if (!line) break;
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          const key = line.slice(0, idx).trim().toLowerCase();
+          if (key === 'referer') {
+            return line.slice(idx+1).trim();
           }
-        }catch(_){}
-      });
-      w.on('exit', (code, sig) => {
-        console.warn('[Master] worker', (metaById.get(w.id) || {}).index, 'exited', code, sig);
-        const meta = metaById.get(w.id);
-        metaById.delete(w.id);
-        const pos = workerList.indexOf(w);
-        if (pos >= 0) workerList.splice(pos, 1);
-        if (meta && Number.isFinite(meta.index)) spawn(meta.index - 1);
-      });
-    }
-    for (let i = 0; i < WORKERS; i++) spawn(i);
+        }
+      }
+      return '';
+    } catch (_) { return ''; }
+  }
 
-    // IP -> last assigned worker index (1..N) to split same-IP across workers
-    const lastByIp = new Map();
-
-    function normalizeIp(ip){
-      try {
-        let s = String(ip||'').trim();
-        if (s.startsWith('::ffff:')) s = s.slice(7);
-        return s;
-      } catch(_){ return String(ip||''); }
-    }
-
-    function parseXFFFromData(buf){
-      try {
-        const str = buf.toString('utf8');
-        const headEnd = str.indexOf('\\r\\n\\r\\n');
-        const head = headEnd >= 0 ? str.slice(0, headEnd) : str;
-        const lines = head.split('\\r\\n');
-        for (const ln of lines) {
-          const i = ln.indexOf(':');
-          if (i > -1) {
-            const key = ln.slice(0,i).trim().toLowerCase();
-            if (key === 'x-forwarded-for') {
-              const val = ln.slice(i+1).trim();
-              const first = val.split(',')[0].trim();
-              return normalizeIp(first);
+  
+  // Helper: parse Cookie header from first HTTP bytes and extract w=<int>
+  function extractCookieWFromFirstChunk(buf) {
+    try {
+      const s = buf.toString('utf8');
+      const lines = s.split('\r\n');
+      for (let i=1;i<lines.length;i++) {
+        const line = lines[i];
+        if (!line) break;
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          const key = line.slice(0, idx).trim().toLowerCase();
+          if (key === 'cookie') {
+            const cookieStr = line.slice(idx+1).trim();
+            // Parse simple cookie string: "a=1; b=2"
+            const parts = cookieStr.split(';');
+            for (const p of parts) {
+              const eq = p.indexOf('=');
+              let ck = '', cv = '';
+              if (eq > -1) { ck = p.slice(0,eq).trim(); cv = p.slice(eq+1).trim(); }
+              else { ck = p.trim(); cv=''; }
+              if (ck === 'w') {
+                const v = parseInt(decodeURIComponent(cv), 10);
+                if (Number.isFinite(v)) return v;
+              }
             }
           }
         }
-        return '';
-      } catch(_){ return ''; }
-    }
-
-    function parseCookiesFromHead(buf){
-      try {
-        const str = buf.toString('utf8');
-        const headEnd = str.indexOf('\\r\\n\\r\\n');
-        const head = headEnd >= 0 ? str.slice(0, headEnd) : str;
-        const m = head.match(/\\r\\ncookie:\\s*([^\\r\\n]+)/i);
-        if (!m) return {};
-        const raw = m[1];
-        const out = {};
-        raw.split(';').forEach(p=>{
-          const idx = p.indexOf('=');
-          if (idx>0){
-            const k = p.slice(0,idx).trim();
-            const v = p.slice(idx+1).trim();
-            out[k] = decodeURIComponent(v);
-          }
-        });
-        return out;
-      } catch(_){ return {}; }
-    }
-
-    function parsePathQuery(buf){
-      try{
-        const str = buf.toString('utf8');
-        const line = str.split('\\r\\n')[0] || '';
-        const sp = line.split(' ');
-        const url = (sp[1] || '');
-        return url;
-      }catch(_){ return ''; }
-    }
-    function parseQueryParam(url, key){
-      try{
-        const qIdx = url.indexOf('?');
-        if (qIdx < 0) return '';
-        const qs = url.slice(qIdx+1);
-        const params = qs.split('&');
-        for (const p of params){
-          const i = p.indexOf('=');
-          if (i>-1){
-            const k = decodeURIComponent(p.slice(0,i));
-            if (k === key) return decodeURIComponent(p.slice(i+1));
-          } else if (decodeURIComponent(p) === key) {
-            return '';
-          }
+      }
+      return NaN;
+    } catch (_) { return NaN; }
+  }
+// Helper: from a full URL, extract ?w=K
+  function extractWFromFullUrl(fullUrl) {
+    try {
+      if (!fullUrl) return NaN;
+      const qIdx = String(fullUrl).indexOf('?');
+      if (qIdx < 0) return NaN;
+      const qs = String(fullUrl).slice(qIdx + 1).split('&');
+      for (const kv of qs) {
+        const eq = kv.indexOf('=');
+        if (eq > -1) {
+          const k = decodeURIComponent(kv.slice(0, eq));
+          if (k === 'w') return parseInt(decodeURIComponent(kv.slice(eq + 1)), 10);
+        } else if (decodeURIComponent(kv) === 'w') {
+          return NaN;
         }
-        return '';
-      }catch(_){ return ''; }
+      }
+      return NaN;
+    } catch (_) { return NaN; }
+  }
+
+  if (cluster.isPrimary && WORKERS > 1) {
+    console.log('[Master] starting URL-directed cluster with', WORKERS, 'workers on port', PORT);
+
+    const workerByIndex = new Map(); // index (1..N) -> Worker
+
+    function spawnAtIndex(index) {
+      const env = Object.assign({}, process.env, {
+        IS_CLUSTER_WORKER: '1',
+        WORKERS: String(WORKERS),
+        WORKER_INDEX: String(index)
+      });
+      const w = cluster.fork(env);
+      workerByIndex.set(index, w);
+      w.on('exit', (code, signal) => {
+        console.error(`[Master] worker ${index} exited (${code||''} ${signal||''}). Respawning at same index.`);
+        // Replace with a new worker at the same index
+        spawnAtIndex(index);
+      });
+      bindWorkerMessages(index, w);
+      return w;
     }
 
-    // Pick least-loaded worker; if tie, choose randomly; prefer not repeating last IP worker
-    function chooseWorker(ip, sid, zid){
-      const metas = Array.from(metaById.entries()).map(([id, m]) => ({ id, index: m.index, players: m.players|0 }));
-      if (!metas.length) return null;
+    // Spawn all workers with deterministic indices
+    // === Joined players live counts (capacity control) ===
+    const joinedCounts = new Map(); // index -> joined (players who selected this worker)
+    function broadcastJoinedCounts(){
+      try {
+        const arr = Array.from({ length: WORKERS }, (_,i)=> (joinedCounts.get(i+1) || 0));
+        for (const [i,w] of workerByIndex.entries()) {
+          try { w.send({ type: 'cluster:joined-counts', counts: arr }); } catch(_){}
+        }
+      } catch(_){}
+    }
 
-      // 1) Strong sticky: if we know the socket.io SID or our own ZID, keep using that worker.
-      if (sid && sidToWorker.has(sid)) {
-        const idx = sidToWorker.get(sid);
-        const existing = metas.find(m => m.index === idx);
-        if (existing) return existing;
-      }
-      if (zid && zidToWorker.has(zid)) {
-        const idx = zidToWorker.get(zid);
-        const existing = metas.find(m => m.index === idx);
-        if (existing) return existing;
-      }
+    function bindWorkerMessages(idx, w){
+      try {
+        w.on('message', (msg) => {
+          try {
+            if (!msg || typeof msg !== 'object') return;
+            if (msg.type === 'joined:delta') {
+              const cur = joinedCounts.get(idx) || 0;
+              const next = Math.max(0, cur + (parseInt(msg.delta,10)||0));
+              joinedCounts.set(idx, next);
+              broadcastJoinedCounts();
+            }
+          } catch(_){}
+        });
+        w.on('exit', () => {
+          try { joinedCounts.set(idx, 0); broadcastJoinedCounts(); } catch(_){}
+        });
+      } catch(_){}
+    }
 
-      // 2) Deterministic fallback BEFORE SID exists: consistent ip-hash to one worker.
-      //    This avoids engine.io 400 errors due to non-sticky polling requests between workers.
-      function hash32(str){
+    for (let i=1;i<=WORKERS;i++) spawnAtIndex(i);
+
+    // Broadcast initial counts (all 0)
+    broadcastJoinedCounts();
+
+
+    // Choose an available worker index, preferring the desired one; falls back to nearest available
+    function resolveWorkerIndex(desired) {
+      // Clamp desired to [1..WORKERS]
+      if (!Number.isFinite(desired)) desired = 2; // default when not provided
+      desired = Math.max(1, Math.min(WORKERS, desired));
+      if (workerByIndex.get(desired)) return desired;
+
+      // Fallback: search nearest available index
+      let best = null, bestDist = Infinity;
+      for (let i=1;i<=WORKERS;i++){
+        if (workerByIndex.get(i)) {
+          const d = Math.abs(i - desired);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+      }
+      return best || 1;
+    }
+
+    // TCP balancer: route each connection to the worker chosen from URL (?w=K) or default 2
+    const balancer = net.createServer({ pauseOnConnect: true }, (socket) => {
+      let handed = false;
+
+      function finalize(firstChunk) {
+        if (handed) return;
+        handed = true;
+
+        // Extract desired worker from URL (?w=K); default is 2 when absent/invalid
+        // Extract desired worker from URL (?w=K); default is 2 when absent/invalid
+        let desired = 2;
+
         try {
-          let h = 2166136261 >>> 0; // FNV-1a basis
-          for (let i = 0; i < str.length; i++){
-            h ^= str.charCodeAt(i);
-            h = Math.imul(h, 16777619);
+          if (firstChunk && firstChunk.length) {
+            const path = extractPathFromFirstChunk(firstChunk);
+            const k = extractWFromUrlPath(path);
+            if (Number.isFinite(k)) {
+              desired = k;
+            } else {
+              // Fallback 1: cookie 'w' set by the app on the first HTML response
+              const ck = extractCookieWFromFirstChunk(firstChunk);
+              if (Number.isFinite(ck)) {
+                desired = ck;
+              } else {
+                // Fallback 2: Referer (when assets/handshake omit ?w but browser sends the page URL)
+                const ref = extractRefererFromFirstChunk(firstChunk);
+                const rk = extractWFromFullUrl(ref);
+                if (Number.isFinite(rk)) desired = rk;
+              }
+            }
           }
-          return h >>> 0;
-        } catch(_){ return 0; }
-      }
-      const key = String(ip || '').trim() || '0.0.0.0';
-      const prefIndex = ((hash32(key) % WORKERS) + 1) | 0;
-      let pick = metas.find(m => m.index === prefIndex) || null;
+        } catch (_) {}
 
-      // 3) If that specific index isn't present (worker restarting), pick the closest index, else least-loaded.
-      if (!pick) {
-        const byIndex = metas.slice().sort((a,b) => Math.abs(a.index - prefIndex) - Math.abs(b.index - prefIndex));
-        pick = byIndex[0] || metas[0];
-      }
-
-      // 4) Record mapping when we finally get SID/ZID on later requests.
-      if (sid) sidToWorker.set(sid, pick.index);
-      if (zid) zidToWorker.set(zid, pick.index);
-
-      return pick;
-    }const balancer = net.createServer({ pauseOnConnect: true }, (socket) => {
-      let decided = false;
-      function handoff(firstChunk){
-        if (decided) return;
-        decided = true;
-        const peer = normalizeIp(socket.remoteAddress || '');
-        let ip = peer;
-        let sid = '';
-        let zid = '';
+        const idx = resolveWorkerIndex(desired);
+        const target = workerByIndex.get(idx);
+        if (!target) { try { socket.destroy(); } catch(_){ } return; }
 
         try {
-          const url = parsePathQuery(firstChunk || Buffer.alloc(0));
-          sid = parseQueryParam(url, 'sid') || '';
-          const TRUSTED = String(process.env.TRUSTED_PROXIES || '').split(',').map(s => s.trim()).filter(Boolean);
-          if (TRUSTED.includes(peer)) {
-            const xip = parseXFFFromData(firstChunk || Buffer.alloc(0));
-            if (xip) ip = xip;
-          }
-          const cookies = parseCookiesFromHead(firstChunk || Buffer.alloc(0));
-          if (!zid) zid = cookies['zid'] || '';
-          if (!sid && cookies['io']) sid = cookies['io'];
-        } catch(_){}
-
-        const chosen = chooseWorker(ip, sid, zid) || chooseWorker('', sid, zid) || null;
-        if (!chosen) { try { socket.destroy(); } catch(_){ } return; }
-
-        try {
-          const w = cluster.workers[chosen.id];
-          if (!w) { socket.destroy(); return; }
-          lastByIp.set(ip, chosen.index);
-          w.send({ type:'sticky-connection', initialData: firstChunk }, socket);
-        } catch(e) {
+          target.send({ type: 'sticky-connection', initialData: firstChunk }, socket);
+        } catch (e) {
           try { socket.destroy(); } catch(_){}
         }
       }
 
-      socket.once('data', (chunk) => {
-        try { handoff(chunk); } catch(_){}
+      
+      // Try to read the first packet to capture headers (URL & Referer)
+      let __routeTimer = null;
+      try { __routeTimer = setTimeout(() => { try { finalize(null); } catch(_){} }, 2000); } catch(_) {}
+      socket.once('readable', () => {
+        try { if (__routeTimer) { clearTimeout(__routeTimer); __routeTimer = null; } } catch(_){}
+        let chunk = null;
+        try { chunk = socket.read(); } catch(_){}
+        finalize(chunk);
       });
-      setTimeout(() => { try { handoff(Buffer.alloc(0)); } catch(_){ } }, 50);
+      socket.on('end', () => { try { if (__routeTimer) { clearTimeout(__routeTimer); __routeTimer = null; } } catch(_){} });
+      socket.on('close', () => { try { if (__routeTimer) { clearTimeout(__routeTimer); __routeTimer = null; } } catch(_){} });
+
     });
 
-    balancer.on('error', (err)=>{
+    balancer.on('error', (err) => {
       console.error('[Master] balancer error:', err && err.message);
       process.exitCode = 1;
     });
 
     balancer.listen(PORT, () => {
-      console.log('[Master] listening on', PORT, 'and balancing across', WORKERS, 'workers');
+      console.log('[Master] listening on', PORT, '— URL param "?w=K" selects worker; default is worker 2');
     });
 
-    return; // master ends here
+    return; // master terminates here; workers run the app server
   }
 })();
+;
 /*__/MULTIWORKER_BOOTSTRAP__*/
 
 
@@ -316,7 +347,94 @@ app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 const server = http.createServer(app);
 
-// Sticky-connection acceptor: in cluster mode, master sends sockets here
+
+// Persist chosen worker when a specific server is requested via the URL (?w=K).
+// Do NOT set any worker by default — but if ?w=K is present, consider it an explicit join.
+app.use((req, res, next) => {
+  try {
+    const WORKERS = Math.max(1, parseInt(process.env.WORKERS || '4', 10) || 1);
+    const wParam = parseInt(String((req.query && req.query.w) || ''), 10);
+    const joinParam = String((req.query && req.query.join) || '').trim().toLowerCase();
+const isJoin = true; // legacy param no longer required; presence of ?w=K is considered a join
+
+    function setWorkerCookie(val){
+      try {
+        const v = Math.max(1, Math.min(WORKERS, parseInt(val,10)||2));
+        const parts = [
+          'w=' + v,
+          'Path=/',
+          'Max-Age=' + (7*24*3600),
+          'SameSite=Lax',
+          'HttpOnly'
+        ];
+        const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+        if (secure) parts.push('Secure');
+        const prev = res.getHeader('Set-Cookie');
+        if (!prev) res.setHeader('Set-Cookie', parts.join('; '));
+        else {
+          const arr = Array.isArray(prev) ? prev.slice() : [String(prev)];
+          arr.push(parts.join('; '));
+          res.setHeader('Set-Cookie', arr);
+        }
+      } catch(_){}
+    }
+
+    // If user is joining a specific worker, persist cookie and ensure request is served by that worker.
+    if (Number.isFinite(wParam)) {
+      try {
+        // If this request is already on a worker, and capacity is exceeded, reject join.
+        const isCluster = String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1);
+        if (isCluster) {
+          const curIdx = Math.max(1, parseInt(process.env.WORKER_INDEX||'1',10) || 1);
+          const desired = Math.max(1, Math.min(WORKERS, parseInt(wParam,10)||2));
+          // If the request is on the desired worker, check capacity gate (local value set later in worker code).
+          if (desired === curIdx) {
+            try {
+              const cap = parseInt(process.env.WORKER_CAPACITY||'2',10) || 2;
+              const joined = (global.__joinedCountLocal|0);
+              if (joined >= cap) {
+                res.statusCode = 409;
+                res.setHeader('Cache-Control', 'no-store, must-revalidate');
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                const html = '<!doctype html>'
+                  + '<meta http-equiv="refresh" content="2; url=/">'
+                  + '<title>Server full</title>'
+                  + '<div style="font-family:system-ui,Arial,sans-serif;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;">'
+                  + '<div style="background:#1b1b20;border-radius:12px;padding:18px 22px;box-shadow:0 10px 40px #000a;text-align:center;">'
+                  + '<div style="font-weight:700;margin-bottom:6px;">Server full</div>'
+                  + '<div style="color:#9ab;">This server currently has the maximum number of players. You will be redirected.</div>'
+                  + '</div></div>';
+                return res.end(html);
+              }
+            } catch(_){}
+          }
+        }
+      } catch(_){}
+
+      // Persist cookie (sticky routing) and redirect to the correct worker if needed
+      setWorkerCookie(wParam);
+      try {
+        const isCluster = String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1);
+        if (isCluster && (req.method === 'GET' || req.method === 'HEAD')) {
+          const curIdx = Math.max(1, parseInt(process.env.WORKER_INDEX||'1',10) || 1);
+          const desired = Math.max(1, Math.min(WORKERS, parseInt(wParam,10)||2));
+          if (desired !== curIdx) {
+            const loc = String((req.originalUrl || req.url || '/')).replace(/[\r\n]/g,'');
+            res.setHeader('Cache-Control', 'no-store, must-revalidate');
+            res.setHeader('Connection', 'close');
+            res.statusCode = 307;
+            res.setHeader('Location', loc);
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            const html = '<!doctype html><meta http-equiv="refresh" content="0;url=' + loc.replace('"','&quot;') + '"><title>Switching worker…</title>Redirecting…';
+            return res.end(html);
+          }
+        }
+      } catch(_){}
+    }
+    // Otherwise: do nothing — no default worker cookie is set.
+  } catch(_){}
+  next();
+});
 /*__STICKY_WORKER_HOOK__*/
 if (String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1)) {
   process.on('message', function(msg, handle){
@@ -339,6 +457,41 @@ const io = socketIo(server, {
   pingTimeout: 60000,
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
   transports: ['polling','websocket'],
+});
+
+// --- Worker capacity & aggregated counts ---
+const WORKER_INDEX = Math.max(1, parseInt(process.env.WORKER_INDEX || '1', 10) || 1);
+const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '2', 10) || 2);
+// Local joined players (only players that have chosen this worker: cookie w=<idx> on their socket)
+global.__joinedCountLocal = global.__joinedCountLocal || 0;
+let __joinedCountLocal = global.__joinedCountLocal;
+// Cluster-wide joined counts snapshot (broadcast by master)
+let __clusterJoinedCounts = Array.from({ length: Math.max(1, parseInt(process.env.WORKERS||'1',10) || 1) }, () => 0);
+
+// Receive cluster-wide counts from master
+try {
+  process.on('message', (m) => {
+    if (m && m.type === 'cluster:joined-counts' && Array.isArray(m.counts)) {
+      __clusterJoinedCounts = m.counts.slice(0);
+    }
+  });
+} catch(_) {}
+
+// Public endpoint: returns server list with joined counts (auto-refresh friendly)
+app.get('/api/servers', (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.json({
+      ok: true,
+      capacity: WORKER_CAPACITY,
+      total: __clusterJoinedCounts.length,
+      me: WORKER_INDEX,
+      workers: __clusterJoinedCounts.map((c, i) => ({ id: i+1, count: c|0 })),
+      ts: Date.now()
+    });
+  } catch(e){
+    res.status(500).json({ ok:false, error: 'internal' });
+  }
 });
 
 // --- Chat globals ---
@@ -1592,6 +1745,36 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 
 io.on('connection', socket => {
+
+  try {
+    // Determine if this socket is a joined player for this worker (cookie 'w=<idx>')
+    const ck = String((socket && socket.handshake && socket.handshake.headers && socket.handshake.headers.cookie) || '');
+    const m = ck.match(/(?:^|;\s*)w=(\d+)/);
+    const wCookie = m ? parseInt(m[1],10) : 0;
+    socket.__joined = (wCookie === WORKER_INDEX);
+    if (socket.__joined) {
+      if (__joinedCountLocal >= WORKER_CAPACITY) {
+        try { socket.emit('serverFull', { reason: 'capacity' }); } catch(_){}
+        try { socket.disconnect(true); } catch(_){}
+        return; // refuse connection
+      }
+      __joinedCountLocal++; global.__joinedCountLocal = __joinedCountLocal;
+      try { if (typeof process.send === 'function') process.send({ type: 'joined:delta', delta: +1 }); } catch(_){}
+      socket.once('disconnect', () => {
+        try {
+          if (socket.__joined) {
+            __joinedCountLocal = Math.max(0, __joinedCountLocal - 1);
+            global.__joinedCountLocal = __joinedCountLocal;
+            if (typeof process.send === 'function') process.send({ type: 'joined:delta', delta: -1 });
+          }
+        } catch(_){}
+      });
+    } else {
+      // non-joined visitor; do not count against capacity
+      socket.once('disconnect', () => {});
+    }
+  } catch(_){}
+
     
   /*__WORKER_CONN_METRICS__*/
   try {
@@ -4310,8 +4493,6 @@ app.post('/api/skin/buy', (req,res)=>{
     return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
-
-
 
 
 
