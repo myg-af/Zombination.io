@@ -11100,11 +11100,32 @@ document.getElementById('skinBuy').onclick = buyNow;
       menu.appendChild(btnBuild);
       menu.appendChild(btnShop);
       
+      // Safety net: keep Upgrades open when interacting with Chat/Auto/Stats
+      try {
+        if (!window.__igKeepShopOpenOnUtilityClicks){
+          window.__igKeepShopOpenOnUtilityClicks = true;
+          [btnStats, btnChat, btnAuto].forEach(function(b){
+            if (!b) return;
+            b.addEventListener('click', function(){
+              try{
+                if (shop && typeof isShown==='function' && isShown(shop)) {
+                  setTimeout(function(){
+                    try { if (typeof show==='function') show(shop); if (typeof setActive==='function') setActive(btnShop, true); } catch(_){}
+                  }, 0);
+                }
+              }catch(_){}
+            }, true);
+          });
+        }
+      }catch(_){}      
+        
+      
 menu.appendChild(btnLeave);
 // --- Ensure mutual exclusivity of panels + chat notify clear ---
 try{
   btnStats.addEventListener('click', function(){
-    try{
+    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
+try{
       // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
       if (chat) hide(chat);
       if (buildPanel) hide(buildPanel);
@@ -11112,13 +11133,16 @@ try{
       setActive(btnChat,false);
       setActive(btnBuild,false);
     }catch(_){}
-  }, true);
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+}, true);
   btnChat.addEventListener('click', function(){
-    try{
+    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
+try{
       // Do not hide stats or deselect it when toggling chat; just remove notification.
       try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
     }catch(_){}
-  }, true);
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+}, true);
   btnBuild.addEventListener('click', function(){
     try{
       // Opening the build panel should not close the stats bubble or deselect the stats button.
@@ -11143,7 +11167,8 @@ try{
     // --- Ensure mutual exclusivity of panels + chat notify clear ---
     try{
       btnStats.addEventListener('click', function(){
-        try{
+    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
+try{
           // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
           if (chat) hide(chat);
           if (buildPanel) hide(buildPanel);
@@ -11151,13 +11176,16 @@ try{
           setActive(btnChat,false);
           setActive(btnBuild,false);
         }catch(_){}
-      }, true);
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+}, true);
       btnChat.addEventListener('click', function(){
-        try{
+    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
+try{
           // Do not hide stats or deselect it; just remove the notification badge
           try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
         }catch(_){}
-      }, true);
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+}, true);
       btnBuild.addEventListener('click', function(){
         try{
           // Opening the build or upgrades panel should not close the stats bubble or deselect the stats button.
@@ -11239,7 +11267,14 @@ try{
           }
         } catch(_){}
         try { var orig = $('buildTiles').querySelector('.build-tile[data-type="'+dt+'"]'); if (orig) orig.click(); } catch(_){}
-      }, { passive:false });
+        try {
+          if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+            var __p = document.getElementById('igBuildPanel');
+            if (__p) __p.style.display = 'none';
+            var __b = document.getElementById('btnBuild');
+            if (__b && __b.classList) __b.classList.remove('active');
+          }
+        } catch(_){}}, { passive:false });
       clone.addEventListener('mouseenter', function(){
         try {
           var tip = tipForType(dt);
@@ -11342,7 +11377,8 @@ try{
 
     // ---------- Actions
     btnStats.addEventListener('click', function(){
-      if (!hudStats) return;
+    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
+if (!hudStats) return;
       var willShow = !isShown(hudStats);
       toggle(hudStats);
       setActive(btnStats, willShow);
@@ -11460,7 +11496,8 @@ try{
             }
           }
         } catch(_) { }
-      }, true);
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+}, true);
     } catch(_){ }
     if (typeof window.updateUITexts === 'function'){
       try{

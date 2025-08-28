@@ -5,7 +5,7 @@
       "usernameLower": "myg",
       "passHash": "pbkdf2$sha256$120000$b505f8e3b50655b5bd8f606bb4a35473$08460e1baee3ed7af2331057e4d13fb5623713813918708ed13132da4fe500fb",
       "createdAt": 1756112451449,
-      "gold": 11898,
+      "gold": 11899,
       "shopUpgrades": {
         "hp": 20,
         "dmg": 20
