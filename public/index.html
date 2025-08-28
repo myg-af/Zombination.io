@@ -6138,19 +6138,17 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
           // Notify world on collapsed when not in game (menu or lobby)
           if (isCollapsed && msg && msg.channel === 'world' && !inGame && collapsedBtn) collapsedBtn.classList.add('notify');
           if (!isCollapsed && msg && msg.channel === 'lobby' && currentChannel !== 'lobby' && tabLobby) tabLobby.classList.add('notify');
-          if (!isCollapsed && msg && msg.channel === 'world' && currentChannel !== 'world' && tabWorld) tabWorld.classList.add('notify');
+          if (!isCollapsed && msg && msg.channel === 'world' && !inGame && currentChannel !== 'world' && tabWorld) tabWorld.classList.add('notify');
         } catch(_){ }
         try {
   var __ua = (navigator.userAgent||'');
   var __isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(__ua);
   var __isSelf = !!(msg && msg.sid && window.socket && (msg.sid === window.socket.id));
-  if (__isMobile && inGame && isCollapsed && !__isSelf && collapsedBtn) {
-    collapsedBtn.classList.add('notify');
-  }
+  if (__isMobile && inGame && isCollapsed && !__isSelf && msg && msg.channel === 'lobby' && collapsedBtn) { collapsedBtn.classList.add('notify'); }
 } catch(_){ }
         try {
           var __self2 = !!(msg && msg.sid && window.socket && (msg.sid === window.socket.id));
-          if (inGame && isCollapsed && !__self2 && typeof window.__igChatNotify==='function') { window.__igChatNotify(); }
+          if (msg && msg.channel === 'lobby' && inGame && isCollapsed && !__self2 && typeof window.__igChatNotify==='function') { /* guarded */ if (msg && msg.channel === 'lobby') window.__igChatNotify(); }
         } catch(_){ }
         pushMsg(msg);
       });window.socket.on('chat:error'
