@@ -1,12 +1,6 @@
 {
   "ladder": [
     {
-      "player": "Myg",
-      "wave": 27,
-      "kills": 21,
-      "ts": 1756359377322
-    },
-    {
       "player": "Driga50",
       "wave": 8,
       "kills": 264,
@@ -29,36 +23,6 @@
       "wave": 7,
       "kills": 112,
       "ts": 1700000004000
-    },
-    {
-      "player": "Mygh",
-      "wave": 7,
-      "kills": 4,
-      "ts": 1756380791377
-    },
-    {
-      "player": "test2efsdf",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1756244779494
-    },
-    {
-      "player": "Mygg",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1756361635610
-    },
-    {
-      "player": "Mygx",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1756381877261
-    },
-    {
-      "player": "qfdqfsdqqf",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1756399841086
     },
     {
       "player": "Quur",
@@ -131,24 +95,6 @@
       "wave": 6,
       "kills": 72,
       "ts": 1700000016000
-    },
-    {
-      "player": "drytdyrt",
-      "wave": 6,
-      "kills": 7,
-      "ts": 1756357368507
-    },
-    {
-      "player": "ytuftfu",
-      "wave": 6,
-      "kills": 1,
-      "ts": 1756358897730
-    },
-    {
-      "player": "Mygss",
-      "wave": 6,
-      "kills": 0,
-      "ts": 1756344243993
     },
     {
       "player": "KyunbrZero64",
@@ -245,18 +191,6 @@
       "wave": 5,
       "kills": 45,
       "ts": 1700000032000
-    },
-    {
-      "player": "Mygs",
-      "wave": 5,
-      "kills": 3,
-      "ts": 1756377459311
-    },
-    {
-      "player": "Myghh",
-      "wave": 5,
-      "kills": 0,
-      "ts": 1756398753695
     },
     {
       "player": "Yvemav749",
@@ -599,6 +533,72 @@
       "wave": 2,
       "kills": 9,
       "ts": 1700000089000
+    },
+    {
+      "player": "Xya16",
+      "wave": 2,
+      "kills": 8,
+      "ts": 1700000090000
+    },
+    {
+      "player": "Quor44",
+      "wave": 2,
+      "kills": 8,
+      "ts": 1700000091000
+    },
+    {
+      "player": "Quulvy",
+      "wave": 2,
+      "kills": 7,
+      "ts": 1700000092000
+    },
+    {
+      "player": "FainPro77",
+      "wave": 2,
+      "kills": 7,
+      "ts": 1700000093000
+    },
+    {
+      "player": "Faenfa35",
+      "wave": 2,
+      "kills": 7,
+      "ts": 1700000094000
+    },
+    {
+      "player": "Uvilel",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000095000
+    },
+    {
+      "player": "Yvas715",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000096000
+    },
+    {
+      "player": "LexujaxGo80",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000097000
+    },
+    {
+      "player": "Uvanyv",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000098000
+    },
+    {
+      "player": "UvesvyV2",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000099000
+    },
+    {
+      "player": "HyirpyNeo",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000100000
     }
   ]
 }
