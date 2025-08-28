@@ -9947,6 +9947,168 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
+
+<!-- [PATCH] mobile-stats-build-fix v2 -->
+<style id="mobile-stats-build-fix-css">
+@media (hover: none) and (pointer: coarse) {
+  /* Force the HUD stats to bottom-left on mobile, keep within safe areas */
+  #hudStats {
+    position: fixed !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    z-index: 500 !important; /* below menus but above canvas */
+    display: block !important;
+    pointer-events: none; /* HUD only, non-interactive */
+  }
+  /* Ensure in-game quick menu stays above HUD */
+  #inGameMenu { z-index: 700 !important; }
+}
+</style>
+
+<script id="mobile-stats-build-fix-js">
+(function(){
+  try{
+    if (window.__mobileStatsBuildFixInstalled) return;
+    window.__mobileStatsBuildFixInstalled = true;
+
+    var IS_MOBILE = false;
+    try {
+      IS_MOBILE = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+    } catch(_){ IS_MOBILE = false; }
+
+    if (!IS_MOBILE) return;
+
+    function $(id){ return document.getElementById(id); }
+    function isHidden(el){
+      if (!el) return true;
+      var cs = window.getComputedStyle(el);
+      return (cs.display === 'none') || (cs.visibility === 'hidden') || (el.hasAttribute('hidden')) || (el.getAttribute('aria-hidden') === 'true');
+    }
+
+    /* ---------- Place HUD Stats bottom-left and nudge joysticks above UI ---------- */
+    function placeStatsAndReflow(){
+      try {
+        var hud = $('hudStats');
+        if (hud){
+          // The CSS patch already pins it bottom-left. Force layout update.
+          hud.style.willChange = 'transform';
+          hud.offsetHeight; // reflow
+          hud.style.willChange = '';
+        }
+        // If the game exposes setupJoysticks, ask it to recompute positions
+        if (typeof window.setupJoysticks === 'function'){
+          // Run after style has applied
+          setTimeout(function(){ try{ window.setupJoysticks(); }catch(_){} }, 0);
+        }
+      } catch(_){}
+    }
+
+    /* ---------- Deselect Build button when its panel closes ---------- */
+    function getBuildButtons(){
+      var arr = [];
+      try{ var b1 = $('btnBuild'); if (b1) arr.push(b1); }catch(_){}
+      try{
+        var menu = $('inGameMenu');
+        if (menu){
+          var b2 = menu.querySelector('.ig-btn[data-action="build"]');
+          if (b2) arr.push(b2);
+        }
+      }catch(_){}
+      return arr;
+    }
+    function setActive(btn, on){
+      if (!btn) return;
+      try {
+        if (typeof window.setActive === 'function') { window.setActive(btn, !!on); return; }
+      } catch(_){}
+      try {
+        btn.classList.toggle('active', !!on);
+        btn.setAttribute('aria-pressed', !!on);
+      } catch(_){}
+    }
+    function deselectBuild(){
+      try {
+        var btns = getBuildButtons();
+        for (var i=0;i<btns.length;i++) setActive(btns[i], false);
+      } catch(_){}
+    }
+
+    function observeClose(el){
+      if (!el) return;
+      if (el.__obsAdded) return;
+      el.__obsAdded = true;
+      var lastHidden = isHidden(el);
+      try{
+        var obs = new MutationObserver(function(){
+          var curHidden = isHidden(el);
+          if (curHidden && !lastHidden){
+            // Panel just closed
+            deselectBuild();
+          }
+          lastHidden = curHidden;
+        });
+        obs.observe(el, { attributes:true, attributeFilter:['style','class','hidden','aria-hidden'] });
+      }catch(_){}
+    }
+
+    function initObservers(){
+      // Common ids/classes used for build UI across versions
+      var candidates = [
+        'igBuildPanel', 'igBuildTiles', 'buildTiles', 'mobile-build', 'inGameMenu'
+      ];
+      for (var i=0;i<candidates.length;i++){
+        var el = $(candidates[i]);
+        if (el) observeClose(el);
+      }
+      // Observe dynamically created build panels too
+      try{
+        var bodyObs = new MutationObserver(function(muts){
+          for (var i=0;i<muts.length;i++){
+            var m = muts[i];
+            for (var j=0;j<(m.addedNodes?m.addedNodes.length:0);j++){
+              var n = m.addedNodes[j];
+              if (!(n instanceof Element)) continue;
+              if (n.id === 'igBuildPanel' || n.id === 'igBuildTiles' || n.id === 'buildTiles' || n.id === 'mobile-build'){
+                observeClose(n);
+              }
+            }
+          }
+        });
+        bodyObs.observe(document.body, { childList:true, subtree:true });
+      }catch(_){}
+    }
+
+    /* ---------- Hook buttons & lifecycle ---------- */
+    function hookStatsButton(){
+      try{
+        var menu = $('inGameMenu');
+        if (!menu) return;
+        var btn = menu.querySelector('.ig-btn[data-action="stats"]') || $('btnStats');
+        if (!btn) return;
+        btn.addEventListener('click', function(){
+          // defer to after panel visibility flips
+          setTimeout(placeStatsAndReflow, 0);
+        }, true);
+      }catch(_){}
+    }
+
+    // Run now and on important lifecycle moments
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', function(){ placeStatsAndReflow(); initObservers(); hookStatsButton(); }, {passive:true});
+    } else {
+      placeStatsAndReflow(); initObservers(); hookStatsButton();
+    }
+    window.addEventListener('load', placeStatsAndReflow, {passive:true});
+    window.addEventListener('resize', placeStatsAndReflow, {passive:true});
+    window.addEventListener('orientationchange', placeStatsAndReflow, {passive:true});
+
+  } catch(e){
+    try { console.warn('[mobile-stats-build-fix-js] failed', e); } catch(__) {}
+  }
+})();
+</script>
 </body>
 <!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
 <style id="mobile-build-robust-visibility">
@@ -12196,128 +12358,4 @@ if (!hudStats) return;
 
 
 <!-- [PATCH] mobileStatsAndBuildRobustFix: place Stats panel safely on mobile and deselect Build on close -->
-<script id="mobileStatsAndBuildRobustFix">
-(function(){
-  try{
-    if (window.__mobileStatsAndBuildRobustFixInstalled) return;
-    window.__mobileStatsAndBuildRobustFixInstalled = true;
 
-    function isMobile(){
-      try { return !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches); } catch(_){ return false; }
-    }
-
-    function getBuildButtons(){
-      var arr = [];
-      try {
-        var legacy = document.getElementById('btnBuild');
-        if (legacy) arr.push(legacy);
-      } catch(_){}
-      try{
-        var menu = document.getElementById('inGameMenu');
-        if (menu){
-          var b = menu.querySelector('.ig-btn[data-action="build"]');
-          if (b) arr.push(b);
-        }
-      }catch(_){}
-      return arr;
-    }
-
-    function deselectBuild(){
-      try{
-        var list = getBuildButtons();
-        for (var i=0;i<list.length;i++){
-          var b = list[i];
-          if (b && b.classList) b.classList.remove('active');
-        }
-      }catch(_){}
-    }
-
-    function installBuildObserver(){
-      try{
-        var panel = document.getElementById('igBuildPanel');
-        if (!panel || panel.__robustObs) return;
-        panel.__robustObs = true;
-        var last = '';
-        try { last = (window.getComputedStyle(panel).display || ''); } catch(_){}
-        var obs = new MutationObserver(function(){
-          try{
-            var cur = (window.getComputedStyle(panel).display || '');
-            if (cur !== last){
-              var was = last; last = cur;
-              if (cur === 'none' && was && was !== 'none'){
-                deselectBuild();
-              }
-            }
-          }catch(_){}
-        });
-        obs.observe(panel, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
-      }catch(_){}
-    }
-
-    function repositionJoysticksSoon(){
-      try{
-        if (!isMobile()) return;
-        if (typeof setupJoysticks === 'function'){
-          // Run after DOM/layout settles
-          setTimeout(function(){
-            try{ setupJoysticks(); }catch(_){}
-          }, 0);
-        }
-      }catch(_){}
-    }
-
-    function installStatsObserver(){
-      try{
-        var stats = document.getElementById('hudStats');
-        if (!stats || stats.__robustObs) return;
-        stats.__robustObs = true;
-        var obs = new MutationObserver(function(){
-          repositionJoysticksSoon();
-        });
-        obs.observe(stats, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
-      }catch(_){}
-    }
-
-    function hookStatsButton(){
-      try{
-        var menu = document.getElementById('inGameMenu');
-        if (!menu) return;
-        var btn = menu.querySelector('.ig-btn[data-action="stats"]');
-        if (!btn || btn.__robustHooked) return;
-        btn.__robustHooked = true;
-        btn.addEventListener('click', function(){
-          repositionJoysticksSoon();
-        }, true);
-      }catch(_){}
-    }
-
-    function ensureStatsBubbleLeft(){
-      try{
-        var stats = document.getElementById('hudStats');
-        if (!stats) return;
-        // Force bottom-left anchor with safe-area insets
-        stats.style.setProperty('left', 'calc(env(safe-area-inset-left, 0px) + 12px)', 'important');
-      }catch(_){}
-    }
-
-    function init(){
-      installBuildObserver();
-      installStatsObserver();
-      hookStatsButton();
-      ensureStatsBubbleLeft();
-    }
-
-    if (document.readyState === 'loading'){
-      document.addEventListener('DOMContentLoaded', init, {passive:true});
-    } else {
-      init();
-    }
-    window.addEventListener('load', init, {passive:true});
-    window.addEventListener('resize', function(){
-      repositionJoysticksSoon();
-    }, {passive:true});
-  }catch(e){
-    try{ console.warn('[mobileStatsAndBuildRobustFix] failed', e); }catch(__){}
-  }
-})();
-</script>
