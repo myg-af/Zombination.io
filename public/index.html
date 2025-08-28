@@ -292,7 +292,8 @@ input, textarea, select, button, label, [contenteditable]{
   left: 12px;
   bottom: 12px;
   width: min(420px, 94vw);
-  max-height: 46vh;
+  /* Reduce chat height to half of previous limit to avoid overly tall panels when many messages accumulate */
+  max-height: 32vh;
   display: flex;
   flex-direction: column;
   background: rgba(18,18,18,0.86);
@@ -411,7 +412,8 @@ input, textarea, select, button, label, [contenteditable]{
   box-shadow: 0 0 8px rgba(227,51,51,.8);
 }
 @media (max-width: 768px) {
-  #chatPanel { max-height: 38vh; width: min(92vw, 420px); }
+  /* On smaller screens, also halve the maximum height to prevent the chat from covering too much space */
+  #chatPanel { max-height: 28vh; width: min(92vw, 420px); }
 }
 </style>
 <style>
@@ -1842,6 +1844,10 @@ let bullets = {};
 let turretLasers = [];
 const turretAngleCache = new Map(); // key: "turret_c_r" -> { ang, t }
 
+// Cache robuste: HP max observés pour chaque zombie (clé = id)
+const __zombieMaxHpCache = Object.create(null);
+
+
 // ---- Perf caches (par frame) ----
 let FRAME_ID = 0;
 let ZOMBIES_FRAME = [];
@@ -1877,7 +1883,9 @@ let structHPGrid = null;
 socket.on('stateUpdate', (payload) => {
   if (!payload) return;
 
-  if (payload.zombies)        zombies = payload.zombies;
+  if (payload.zombies)        { zombies = payload.zombies;
+  try { for (const k in __zombieMaxHpCache) { if (!(k in zombies)) delete __zombieMaxHpCache[k]; } } catch(_){}
+}
   if (payload.bullets)        bullets = payload.bullets;
   if (payload.playersHealth)  playersHealth = Object.assign({}, playersHealth, payload.playersHealth);
   try {
@@ -2214,7 +2222,7 @@ const MAX_PINCH = 1.8;
       renderScale = baseRenderScale * pinchScale;
       return;
     }
-    const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 420;
+    const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 300;
     const cw = (canvas && canvas.width) || window.innerWidth || 0;
     const ch = (canvas && canvas.height) || window.innerHeight || 0;
     const minDim = Math.min(cw, ch);
@@ -2243,7 +2251,7 @@ updateRenderScale();
     const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
-	const CLIENT_VIEW_RADIUS = 420;
+	const CLIENT_VIEW_RADIUS = 300;
     let map = [], MAP_ROWS = 0, MAP_COLS = 0;
 
 // === Helpers map/structures (client) ===
@@ -3128,7 +3136,15 @@ function drawZombies() {
     ctx.restore();
 
     // Barre de vie
-    drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, z.maxHp, 30);
+    {
+      let __max = Number(z.maxHp);
+      if (!Number.isFinite(__max) || __max <= 0) {
+        const prev = __zombieMaxHpCache[id];
+        if (prev == null || (typeof z.hp === 'number' && z.hp > prev)) __zombieMaxHpCache[id] = z.hp;
+        __max = __zombieMaxHpCache[id] || (typeof z.hp === 'number' ? z.hp : 1);
+      }
+      drawHealthBar(screenX, screenY - ZOMBIE_RADIUS - 10, z.hp, __max, 30);
+    }
   }
 }
 
@@ -3234,22 +3250,33 @@ function drawTurretLasers() {
 	}
 
 	function drawHealthBar(x, y, current, max, width = null, height = 5) {
-	  let w;
-	  if (width !== null) {
-		w = width;  // largeur fixée explicitement
-	  } else {
-		// largeur variable pour zombies, par exemple
-		w = Math.max(30, Math.min(70, 30 + (max - 10) * 0.7));
-	  }
-	  const ratio = Math.max(0, Math.min(1, current / max));
-	  ctx.fillStyle = '#111';
-	  ctx.fillRect(x - w / 2, y, w, height);
-	  ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
-	  ctx.fillRect(x - w / 2, y, w * ratio, height);
-	  ctx.strokeStyle = '#fff';
-	  ctx.strokeRect(x - w / 2, y, w, height);
-	}
+  // Sanitize numbers to avoid NaN → invisible bars
+  current = Number(current);
+  max = Number(max);
+  if (!Number.isFinite(current) || current < 0) current = 0;
+  // if max is invalid, fall back to at least current (so ratio is meaningful)
+  if (!Number.isFinite(max) || max <= 0) max = current > 0 ? current : 1;
 
+  // Pick width
+  let w;
+  if (width !== null) {
+    w = width;
+  } else {
+    w = Math.max(30, Math.min(70, 30 + (max - 10) * 0.7));
+  }
+
+  const ratio = Math.max(0, Math.min(1, current / max));
+  // Background
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x - w / 2, y, w, height);
+  // Fill
+  ctx.fillStyle = (ratio < 0.4) ? "#e66" : "#8f8";
+  const fillW = Math.max(0, w * ratio);
+  if (fillW > 0) ctx.fillRect(x - w / 2, y, fillW, height);
+  // Border
+  ctx.strokeStyle = '#fff';
+  ctx.strokeRect(x - w / 2, y, w, height);
+}
 function drawAimLine() {
   if (isSpectator) return;
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
@@ -3328,51 +3355,164 @@ function testEvenOddSupport() {
 }
 
 function drawLightMask() {
-  if (isSpectator) return;
+  // — init du test 'evenodd' une fois —
+  if (typeof CANVAS_EVENODD_OK === 'undefined' || CANVAS_EVENODD_OK === null) {
+    try { CANVAS_EVENODD_OK = testEvenOddSupport(); } catch(_){ CANVAS_EVENODD_OK = false; }
+  }
+
+  const scale = renderScale || 1;
+  const viewW = canvas.width;
+  const viewH = canvas.height;
+
+  // ====== Spectator: même masque que joueur MAIS avec trous pour chaque joueur/bot/tourelle ======
+  if (isSpectator) {
+    try {
+      const holes = [];
+
+      // Helper: add a hole in screen coords if visible
+      function addHoleScreen(sx, sy, rr) {
+        if (sx + rr >= 0 && sx - rr <= viewW && sy + rr >= 0 && sy - rr <= viewH) {
+          holes.push([sx, sy, rr]);
+        }
+      }
+
+      // --- joueurs & bots ---
+      const R_PLAYER = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 300;
+      for (const id in (playersHealth || {})) {
+        const p = playersHealth[id];
+        if (!p || !p.alive) continue;
+        const sx = (p.x - cameraX) * scale;
+        const sy = (p.y - cameraY) * scale;
+        const rr = R_PLAYER * scale;
+        addHoleScreen(sx, sy, rr);
+      }
+
+      // --- tourelles ---
+      const TILE = (typeof TILE_SIZE !== 'undefined' && TILE_SIZE) ? TILE_SIZE : 40;
+      const R_TURRET = 300; // doit rester synchro avec server.js (TURRET_RANGE)
+
+      if (structures && Array.isArray(structures) && structures.length) {
+        const rows = structures.length;
+        const cols = (structures[0] && structures[0].length) || 0;
+
+        const viewWw = viewW / scale, viewHw = viewH / scale;
+        const expand = R_TURRET + TILE; // marge 1 tuile
+
+        const cMinX = Math.max(0, Math.floor((cameraX - expand) / TILE));
+        const cMaxX = Math.min(cols - 1, Math.floor((cameraX + viewWw + expand) / TILE));
+        const rMinY = Math.max(0, Math.floor((cameraY - expand) / TILE));
+        const rMaxY = Math.min(rows - 1, Math.floor((cameraY + viewHw + expand) / TILE));
+
+        for (let ty = rMinY; ty <= rMaxY; ty++) {
+          const row = structures[ty]; if (!row) continue;
+          for (let tx = cMinX; tx <= cMaxX; tx++) {
+            const s = row[tx]; if (!s) continue;
+            const t = s.type;
+            if ((t === 'T' || t === 't' || t === 'G') && (!s.hp || s.hp > 0)) {
+              const cx = (tx + 0.5) * TILE;
+              const cy = (ty + 0.5) * TILE;
+              const sx = (cx - cameraX) * scale;
+              const sy = (cy - cameraY) * scale;
+              const rr = R_TURRET * scale;
+              addHoleScreen(sx, sy, rr);
+            }
+          }
+        }
+      }
+
+      // --- dessine le masque sombre avec des trous multiples ---
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      
+      
+      
+      // --- Spectate: union parfaite (AUCUNE OMBRE) via offscreen mask -------
+      // On dessine le masque sur un canvas offscreen, on y "perce" les halos,
+      // puis on blitte l'image (avec trous transparents) sur le canvas principal.
+      // => Union exacte, pas de XOR, et on ne touche JAMAIS au contenu déjà dessiné.
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      // init / resize offscreen
+      if (!window._specMaskC) {
+        window._specMaskC = document.createElement('canvas');
+        window._specMaskCtx = window._specMaskC.getContext('2d');
+      }
+      const mC = window._specMaskC;
+      const mX = window._specMaskCtx;
+      if (mC.width !== viewW || mC.height !== viewH) {
+        mC.width = viewW;
+        mC.height = viewH;
+      }
+
+      // build mask
+      mX.setTransform(1, 0, 0, 1, 0, 0);
+      mX.globalCompositeOperation = 'source-over';
+      mX.globalAlpha = 1;
+      mX.shadowBlur = 0;
+      mX.shadowColor = 'transparent';
+      mX.clearRect(0, 0, viewW, viewH);
+      mX.fillStyle = 'rgba(0,0,0,0.45)';
+      mX.fillRect(0, 0, viewW, viewH);
+
+      // punch holes (opaque) -> union parfaite
+      mX.globalCompositeOperation = 'destination-out';
+      mX.fillStyle = 'rgba(0,0,0,1)';
+      mX.globalAlpha = 1;
+      for (let i = 0; i < holes.length; i++) {
+        const h = holes[i];
+        mX.beginPath();
+        mX.arc(h[0], h[1], h[2], 0, Math.PI * 2);
+        mX.fill();
+      }
+      mX.globalCompositeOperation = 'source-over';
+
+      // draw final mask onto main canvas
+      ctx.drawImage(mC, 0, 0);
+
+      ctx.restore();
+      // ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
+
+
+      // on remet l’espace monde
+      ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    } catch(_){ /* ignore drawing errors for spectator overlay */ }
+    return;
+  }
+  // ====== Par défaut (non-spectateur) — masque standard autour du joueur local ======
   if (!myId || !playersHealth[myId] || !playersHealth[myId].alive) return;
 
-  // centre du joueur en coordonnées écran (identique PC)
   const p = playersHealth[myId];
   const screenX = (p.x - cameraX) * renderScale;
   const screenY = (p.y - cameraY) * renderScale;
+  const r = CLIENT_VIEW_RADIUS * renderScale;
 
-  // ★ rayon du halo en pixels ÉCRAN (monde 420 * zoom écran)
-  const r = CLIENT_VIEW_RADIUS * renderScale; // ★ AJOUT
-
-  // on passe en coordonnées écran pour l’overlay (identique PC)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  // — init du test 'evenodd' une fois —
-  if (CANVAS_EVENODD_OK === null) {
-    CANVAS_EVENODD_OK = testEvenOddSupport();
-  }
-
   if (CANVAS_EVENODD_OK) {
-    // ✅ chemin standard (exactement comme PC)
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath();
     ctx.rect(0, 0, canvas.width, canvas.height);
-    ctx.moveTo(screenX + r, screenY);                 // ★ remplace CLIENT_VIEW_RADIUS par r
-    ctx.arc(screenX, screenY, r, 0, Math.PI * 2, true); // ★ idem
+    ctx.moveTo(screenX + r, screenY);
+    ctx.arc(screenX, screenY, r, 0, Math.PI * 2, true);
     ctx.fill('evenodd');
     ctx.restore();
   } else {
-    // 🔁 fallback mobile (visuellement identique) : on “perfore” le trou
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     const prevOp = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(screenX, screenY, r, 0, Math.PI * 2);      // ★ idem
+    ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = prevOp;
     ctx.restore();
   }
 
-  // on remet l’espace monde
   ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 }
 
@@ -5906,18 +6046,22 @@ try { setVersionBox(); } catch(_){}
   </div>
   <div id="chatMessages" aria-live="polite"></div>
   <div id="chatInputRow">
-    <input id="chatInput" type="text" maxlength="50" placeholder="Message (max 50)" />
+    <!-- Increase the allowed length to 100 characters and update placeholder accordingly -->
+    <input id="chatInput" type="text" maxlength="100" placeholder="Message (max 100)" />
     <button id="chatSend">Send</button>
   </div>
 </div>
 <button id="chatCollapsedBtn" title="Chat">💬</button>
 
 <script>(function(){
-  const MAX_LEN = 50;
+  // Allow up to 100 characters per message (increased from 50)
+  const MAX_LEN = 100;
   const COOLDOWN_MS = 2000;
   let lastSent = 0;
 
-  const CHAT_MAX_AGE_MS = 60000; // messages auto-disappear after 60s
+  // Disable automatic expiry of chat messages.  
+  // This large value effectively keeps messages indefinitely, allowing pruning by count instead.
+  const CHAT_MAX_AGE_MS = Number.POSITIVE_INFINITY;
 
   let currentChannel = 'world'; // 'world' | 'lobby'
   let pendingHistoryFor = null;
@@ -5939,6 +6083,27 @@ try { setVersionBox(); } catch(_){}
   const collapsedBtn = qs('chatCollapsedBtn');
   const tabWorld = qs('tabWorld');
   const tabLobby = qs('tabLobby');
+  // --- Robust anti-auto-scroll while user scrolls up ---
+  let __chatHoldScroll = false;          // true while user is scrolled away from bottom
+  let __chatUserScrollTs = 0;            // last time user interacted with scroll
+  function __isNearBottom(el, tol){ 
+    try { tol = (typeof tol === 'number') ? tol : 8; return (el.scrollHeight - (el.scrollTop + el.clientHeight)) <= tol; } catch(_) { return true; }
+  }
+  function __updateHoldFlag(){
+    try { 
+      __chatHoldScroll = !__isNearBottom(list, 8);
+      __chatUserScrollTs = Date.now();
+    } catch(_){}
+  }
+  try {
+    if (list && !list.__holdInstalled){
+      list.__holdInstalled = true;
+      list.addEventListener('scroll', __updateHoldFlag, { passive:true });
+      list.addEventListener('wheel', __updateHoldFlag, { passive:true });
+      list.addEventListener('touchstart', __updateHoldFlag, { passive:true });
+    }
+  } catch(_){}
+
 
   // Mark when typing in chat to disable WASD/Arrows
   try {
@@ -5988,9 +6153,12 @@ try { setVersionBox(); } catch(_){}
       return '[' + hh + ':' + mm + ']';
     } catch(_){ return ''; }
   }
-  // Remove expired messages from DOM
+  // Remove expired messages from DOM.  
+  // When CHAT_MAX_AGE_MS is infinite (i.e. no expiry), this function does nothing.  
   function __scheduleRemoval(div, ts){
     try {
+      // Skip scheduling when messages should persist indefinitely
+      if (!Number.isFinite(CHAT_MAX_AGE_MS)) return;
       var delay = Math.max(0, CHAT_MAX_AGE_MS - (Date.now() - (ts||0)));
       if (delay <= 0) {
         if (div && div.parentNode) div.parentNode.removeChild(div);
@@ -6001,12 +6169,15 @@ try { setVersionBox(); } catch(_){}
       }, delay);
     } catch(_){}
   }
-  // Prune old messages from buffer for a channel (keep last minute only)
+  // Prune old messages from buffer for a channel.  
+  // Keep only the most recent 30 messages to prevent unbounded growth.
   function __pruneBuf(ch){
     try {
-      var cutoff = Date.now() - CHAT_MAX_AGE_MS;
       if (!chatBuf || !chatBuf[ch]) return;
-      chatBuf[ch] = chatBuf[ch].filter(function(m){ return m && (m.ts||0) >= cutoff; });
+      var arr = chatBuf[ch];
+      if (arr.length > 30) {
+        chatBuf[ch] = arr.slice(arr.length - 30);
+      }
     } catch(_){}
   }
 
@@ -6020,7 +6191,8 @@ try { setVersionBox(); } catch(_){}
       tabWorld.textContent = tr.worldChat || 'World chat';
       tabLobby.textContent = tr.lobbyChat || 'Lobby chat';
       sendBtn.textContent = tr.send || 'Send';
-      input.placeholder = tr.chatPlaceholder || 'Message (max 50)';
+      // Default to the English variant with updated character limit when translation is missing
+      input.placeholder = tr.chatPlaceholder || 'Message (max 100)';
       toggle.title = tr.collapse || 'Collapse';
       collapsedBtn.title = tr.chat || 'Chat';
     }catch(e){}
@@ -6070,6 +6242,8 @@ try { setVersionBox(); } catch(_){}
       chatSeen[ch] = new Set((chatBuf[ch]||[]).map(function(m){ return ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000)); }));
       var arr = (chatBuf[ch]||[]);
       var cutoff = Date.now() - CHAT_MAX_AGE_MS;
+      var __stickToBottom = ((list.scrollHeight - (list.scrollTop + list.clientHeight)) <= 8);
+      var __prevBottomOffset = (list.scrollHeight - list.scrollTop);
       list.innerHTML = '';
       for (var i=0;i<arr.length;i++){
         var msg = arr[i];
@@ -6094,10 +6268,20 @@ try { setVersionBox(); } catch(_){}
 
         div.appendChild(document.createTextNode(' ' + text));
 
+        var __wasAtBottomPush = (!__chatHoldScroll && __isNearBottom(list, 8));
+
+
         list.appendChild(div);
+
+
         __scheduleRemoval(div, ts);
-      }
-      list.scrollTop = list.scrollHeight + 1000;
+
+
+        if (__wasAtBottomPush) { try { list.scrollTop = list.scrollHeight; } catch(_){} }
+
+
+        }
+      if (!__chatHoldScroll && (typeof __stickToBottom !== 'undefined' ? __stickToBottom : __isNearBottom(list, 8))) { try { list.scrollTop = list.scrollHeight; } catch(_){} } else if (__chatHoldScroll) { try { list.scrollTop = Math.max(0, list.scrollHeight - __prevBottomOffset); } catch(_){} }
     }catch(e){}
   }
 
@@ -6115,7 +6299,9 @@ try { setVersionBox(); } catch(_){}
       if ((Date.now() - tsNow) >= CHAT_MAX_AGE_MS) {
         return;
       }
-      arr.push(msg); if (arr.length > 200) arr.shift();
+      arr.push(msg);
+      // Trim buffer to the most recent 30 messages
+      if (arr.length > 30) arr.shift();
       if (ch === currentChannel){
         var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
         var text = (msg && msg.text) ? String(msg.text) : '';
@@ -6136,10 +6322,17 @@ try { setVersionBox(); } catch(_){}
         div.appendChild(nameSpan);
 
         div.appendChild(document.createTextNode(' ' + text));
+        var __wasAtBottomPush = (!__chatHoldScroll && __isNearBottom(list, 8));
+
         list.appendChild(div);
+
         __scheduleRemoval(div, ts);
-        list.scrollTop = list.scrollHeight + 1000;
-        while (list.childElementCount > 200) list.removeChild(list.firstElementChild);
+
+        if (__wasAtBottomPush) { try { list.scrollTop = list.scrollHeight; } catch(_){} }
+
+        if (!__chatHoldScroll && (typeof __stickToBottom !== 'undefined' ? __stickToBottom : __isNearBottom(list, 8))) { try { list.scrollTop = list.scrollHeight; } catch(_){} } else if (__chatHoldScroll) { try { list.scrollTop = Math.max(0, list.scrollHeight - __prevBottomOffset); } catch(_){} }
+        // Ensure at most 30 messages are visible in the DOM
+        while (list.childElementCount > 30) list.removeChild(list.firstElementChild);
       }
     }catch(e){}
   }
@@ -9667,7 +9860,98 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
   window.__fitInGameMenu = fitInGameMenu;
 })();
 </script>
-</body></html>
+
+<script id="chat-upgrades-deselect-fix">
+(function(){
+  try{
+    if (window.__chatUpgradesFixInstalled) return;
+    window.__chatUpgradesFixInstalled = true;
+    function isShown(el){
+      try{
+        if (!el) return false;
+        var cs = window.getComputedStyle(el);
+        return !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0');
+      }catch(_){ return false; }
+    }
+    document.addEventListener('click', function(ev){
+      try{
+        var t = ev && ev.target;
+        if (!t || !t.closest) return;
+        var chatBtn = t.closest('.ig-btn[data-action="chat"]');
+        if (!chatBtn) return;
+        var chat = document.getElementById('chatPanel');
+        var willShow = chat ? !isShown(chat) : true;
+        if (willShow){
+          // Close Upgrades and de‑select its button when opening Chat
+          try { if (typeof upgradesOpen==='function' && typeof closeUpgrades==='function' && upgradesOpen()) { closeUpgrades(); } } catch(_){}
+          try { var shopBtn = document.querySelector('#inGameMenu .ig-btn[data-action="upgrade"]'); if (shopBtn) shopBtn.classList.remove('active'); } catch(_){}
+        }
+      }catch(_){}
+    }, true); // capture to run before other listeners toggle visibility
+  }catch(_){}
+})();
+</script>
+
+</body>
+<!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
+<style id="mobile-build-robust-visibility">
+  /* Hide mobile build buttons by default (prevents accidental display on desktop when zooming) */
+  #mobile-build { display: none !important; }
+  /* Show them only on true touch devices */
+  @media (hover: none) and (pointer: coarse) {
+    #mobile-build {
+      display: grid !important;
+      position: fixed;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+      transform: translateX(-50%);
+      grid-template-columns: repeat(4, auto);
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(0,0,0,0.35);
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+      border-radius: 14px;
+      z-index: 10007;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      touch-action: manipulation;
+    }
+  }
+
+  /* Ensure chat sits at the bottom-left of the main menu with a small gutter.  
+     Use the same reduced height as the main chat panel to avoid it growing too large in the menu. */
+  body.menu-hide-ui #chatPanel {
+    position: fixed !important;
+    left: 12px !important;
+    bottom: 12px !important;
+    transform: none !important;
+    width: min(420px, 94vw) !important;
+    max-height: 32vh !important;
+  }
+</style>
+<script id="mobile-build-enforcer">
+(function(){
+  try{
+    var el = document.getElementById('mobile-build');
+    if (!el) return;
+    function enforce(){
+      try{
+        var isTouch = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+        // Force hide on non-touch environments regardless of viewport/zoom
+        el.style.display = isTouch ? '' : 'none';
+      }catch(_){}
+    }
+    enforce();
+    window.addEventListener('resize', enforce, {passive:true});
+    window.addEventListener('orientationchange', enforce, {passive:true});
+    window.addEventListener('load', enforce, {passive:true});
+  }catch(_){}
+})();
+</script>
+
+</html>
       try { window.lobbyData = lobbyData; } catch(_){}
 <!-- [PATCH] turret-skins-swap v1 -->
 </script>
@@ -11051,7 +11335,10 @@ document.getElementById('skinBuy').onclick = buyNow;
     }
     function toggle(el){ if (!el) return; isShown(el) ? hide(el) : show(el); }
     function setActive(btn, on){ if (!btn) return; btn.classList[on?'add':'remove']('active'); }
-    function vibr(ms){ try{ if (navigator && navigator.vibrate) navigator.vibrate(ms||6); }catch(_){} }
+    function vibr(ms){ try{ if (navigator && navigator.vibrate) navigator.vibrate(ms||6); }catch(_){ } }
+
+    // When true, the Upgrades button is forced visually inactive even if the panel stays open (used when opening Chat)
+    var __forceShopBtnInactive = false;
 
     // ---------- menu container
     var menu = $('inGameMenu');
@@ -11099,12 +11386,36 @@ document.getElementById('skinBuy').onclick = buyNow;
       menu.appendChild(btnAuto);
       menu.appendChild(btnBuild);
       menu.appendChild(btnShop);
+    // --- Keep Upgrades open when toggling Auto fire or Stats (robust, capture-phase) ---
+    try {
+      if (!window.__igShopReopenOnUtilityClicks) {
+        window.__igShopReopenOnUtilityClicks = true;
+        document.addEventListener('click', function(ev){
+          try {
+            var t = ev && ev.target;
+            if (!t) return;
+            var b = t.closest ? t.closest('.ig-btn') : null;
+            if (!b) return;
+            var act = b.getAttribute('data-action') || '';
+            if (act === 'autofire' || act === 'stats') {
+              var need = (typeof upgradesOpen === 'function') ? upgradesOpen() : false;
+              if (need) {
+                setTimeout(function(){
+                  try { if (typeof openUpgrades === 'function') ensureUpgradesVisible(); } catch(_){}
+                }, 0);
+              }
+            }
+          } catch(_){}
+        }, true);
+      }
+    } catch(_){}
+
       
-      // Safety net: keep Upgrades open when interacting with Chat/Auto/Stats
+      // Safety net: keep Upgrades open when interacting with Auto/Stats
       try {
         if (!window.__igKeepShopOpenOnUtilityClicks){
           window.__igKeepShopOpenOnUtilityClicks = true;
-          [btnStats, btnChat, btnAuto].forEach(function(b){
+          [btnStats, btnAuto].forEach(function(b){
             if (!b) return;
             b.addEventListener('click', function(){
               try{
@@ -11124,6 +11435,8 @@ menu.appendChild(btnLeave);
 // --- Ensure mutual exclusivity of panels + chat notify clear ---
 try{
   btnStats.addEventListener('click', function(){
+      var __wasShopOpen = false; try{ __wasShopOpen = (typeof upgradesOpen==='function' && upgradesOpen()); }catch(_){}
+
     try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
 try{
       // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
@@ -11133,15 +11446,45 @@ try{
       setActive(btnChat,false);
       setActive(btnBuild,false);
     }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
 }, true);
   btnChat.addEventListener('click', function(){
-    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
-try{
-      // Do not hide stats or deselect it when toggling chat; just remove notification.
-      try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
-    }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+      try {
+        var __willShowChat = true;
+        try {
+          if (typeof chat !== 'undefined' && chat) {
+            var __cs = (chat.style && chat.style.display) ? chat.style.display : null;
+            if (typeof window.getComputedStyle === 'function') {
+              var __g = window.getComputedStyle(chat);
+              __willShowChat = (__cs === 'none') || (__g && __g.display === 'none');
+            } else {
+              __willShowChat = (__cs === 'none');
+            }
+          } else {
+            __willShowChat = true;
+          }
+        } catch(__){ __willShowChat = true; }
+
+        if (__willShowChat){
+          // 1) Ferme le panneau Upgrades s'il est ouvert
+          try { if (typeof closeUpgrades === 'function') closeUpgrades(); } catch(__){}
+          // 2) Force la désélection visuelle du bouton Upgrades (comme Build)
+          try {
+            if (typeof setActive === 'function' && typeof btnShop !== 'undefined' && btnShop) {
+              setActive(btnShop, false);
+            } else {
+              var __shopBtn = (typeof btnShop !== 'undefined' && btnShop) ? btnShop : document.querySelector('#inGameMenu .ig-btn[data-action="upgrade"]');
+              if (__shopBtn && __shopBtn.classList) __shopBtn.classList.remove('active');
+            }
+          } catch(__){}
+          // 3) Désactive toute resynchronisation qui réactiverait le bouton
+          try { window.__forceShopBtnInactive = true; } catch(__){}
+        }
+
+        // Supprime toujours la pastille de notification du Chat
+        try{ if (typeof btnChat !== 'undefined' && btnChat) btnChat.classList.remove('notify'); }catch(__){}
+      } catch(__) {}
+    
 }, true);
   btnBuild.addEventListener('click', function(){
     try{
@@ -11149,7 +11492,8 @@ try{
     }catch(_){}
   }, true);
   btnShop.addEventListener('click', function(){
-    try{
+    __forceShopBtnInactive = false;
+      try{
       // Opening the upgrades panel should not close the stats bubble or deselect the stats button.
     }catch(_){}
   }, true);
@@ -11176,7 +11520,7 @@ try{
           setActive(btnChat,false);
           setActive(btnBuild,false);
         }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
 }, true);
       btnChat.addEventListener('click', function(){
     try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
@@ -11184,7 +11528,7 @@ try{
           // Do not hide stats or deselect it; just remove the notification badge
           try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
         }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
 }, true);
       btnBuild.addEventListener('click', function(){
         try{
@@ -11283,7 +11627,9 @@ try{
           positionTooltipNear(clone, box);
           box.style.display = 'block';
         } catch(_){}
-      }, { passive:true });
+      
+      try{ if (__wasShopOpen) ensureUpgradesVisible(); }catch(_){}
+}, { passive:true });
       clone.addEventListener('mousemove', function(){
         try { var box = $('buildTooltip'); if (box && box.style.display==='block') positionTooltipNear(clone, box); } catch(_){}
       }, { passive:true });
@@ -11350,6 +11696,7 @@ try{
       // second render after paint in case of late data
       setTimeout(function(){ try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){} }, 50);
     }
+    try { bindShopCloseSync(); } catch(_){ }
     function closeUpgrades(){
       var sm = getShopModal();
       if (sm){
@@ -11368,6 +11715,7 @@ try{
       }
       setActive(btnShop, false);
     }
+    try { __forceShopBtnInactive = false; } catch(_){ }
     function upgradesOpen(){
       var sm = getShopModal();
       if (!sm) return false;
@@ -11375,7 +11723,105 @@ try{
       return isShown(sm);
     }
 
-    // ---------- Actions
+    
+    
+
+// --- Keep btnShop state in sync when the upgrades panel is closed by its own controls (X), overlay or ESC
+function bindShopCloseSync(){
+  try{
+    var sm = getShopModal && getShopModal();
+    if (!sm || sm.__closeSyncBound) return;
+    sm.__closeSyncBound = true;
+    // Clicks on any close control inside the shop should deselect the Upgrades button
+    sm.addEventListener('click', function(ev){
+      try{
+        var t = ev.target;
+        if (!t) return;
+        var closeEl = t.closest ? t.closest('#shopClose, [data-close], .close, .btn-close, .x, .close-btn') : null;
+        if (closeEl) {
+          try { setActive(btnShop, false); __forceShopBtnInactive = false; } catch(_) {}
+          try { if (sm.dataset) delete sm.dataset.igOpen; } catch(_) {}
+        }
+      }catch(_){}
+    }, true);
+    // ESC while shop is open
+    document.addEventListener('keydown', function(e){
+      try{
+        if (!sm) return;
+        var shown = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
+        if (!shown) return;
+        var k = e.key ? e.key.toLowerCase() : '';
+        if (k === 'escape') { try { setActive(btnShop, false); } catch(_){} }
+      }catch(_){}
+    }, true);
+    // Observe visibility changes
+    try{
+      var mo = new MutationObserver(function(){
+        try{
+          var visible = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
+          if (!visible) { try { setActive(btnShop, false); __forceShopBtnInactive = false; } catch(_){} }
+        }catch(_){}
+      });
+      mo.observe(sm, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
+    }catch(_){}
+  }catch(_){}
+}
+
+// [PATCH] Ultra-robust: if the Upgrades panel is closed by clicking outside,
+// ensure the Upgrades button is deselected as well.
+// We listen at capture-phase and run our check after other handlers.
+(function(){
+  try{
+    if (window.__shopOutsideDeselectInstalled) return;
+    window.__shopOutsideDeselectInstalled = true;
+    function handler(ev){
+      try{
+        var sm = (typeof getShopModal==='function') ? getShopModal() : null;
+        if (!sm) return;
+        var t = ev && ev.target;
+        if (!t) return;
+        // Skip if the click was inside the upgrades panel
+        if (sm.contains(t)) return;
+        // Skip if the click was on the Upgrades button itself (its own logic will handle state)
+        try{
+          if (typeof btnShop!=='undefined' && btnShop){
+            if (t===btnShop) return;
+            if (t.closest && t.closest('[data-action="upgrade"], #shopBtn') === btnShop) return;
+          }
+        }catch(_){}
+        // After other listeners potentially hid the panel, sync the button state.
+        setTimeout(function(){
+          try{
+            var visible = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
+            if (!visible){
+              try { setActive(btnShop, false); } catch(_){}
+              try { __forceShopBtnInactive = false; } catch(_){}
+              try { if (sm.dataset) delete sm.dataset.igOpen; } catch(_){}
+            }
+          }catch(_){}
+        }, 0);
+      }catch(_){}
+    }
+    try{ document.addEventListener('pointerdown', handler, true); }catch(_){}
+    try{ document.addEventListener('click', handler, true); }catch(_){}
+  }catch(_){}
+})();
+
+
+// Keep the upgrades panel visible without re-rendering (avoid flicker)
+    function ensureUpgradesVisible(){
+      try {
+        var sm = getShopModal();
+        if (!sm) return;
+        ['open','visible','hidden'].forEach(function(c){ sm.classList.remove(c); });
+        sm.removeAttribute('aria-hidden');
+        show(sm);
+        if (sm.dataset) sm.dataset.igOpen = '1';
+        setActive(btnShop, true);
+      } catch(_){}
+    }
+
+// ---------- Actions
     btnStats.addEventListener('click', function(){
     try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
 if (!hudStats) return;
@@ -11390,6 +11836,7 @@ if (!hudStats) return;
       var willShow = !isShown(chat);
       toggle(chat);
       setActive(btnChat, willShow);
+      
       if (willShow) {
         // Ferme uniquement le panneau de construction lorsque le chat est ouvert.
         // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
@@ -11399,9 +11846,13 @@ if (!hudStats) return;
     }, { passive:true });
 
     btnAuto.addEventListener('click', function(){
+      var __wasShopOpen = false; try{ __wasShopOpen = (typeof upgradesOpen==='function' && upgradesOpen()); }catch(_){}
+
       try { var ab = $('autoFireBtn'); if (ab) { ab.click(); } } catch(_){}
       setTimeout(syncAutoBtn, 20);
-    }, { passive:true });
+    
+      try{ if (__wasShopOpen) ensureUpgradesVisible(); }catch(_){}
+}, { passive:true });
 
     btnBuild.addEventListener('click', function(){
       cloneTiles();
@@ -11496,7 +11947,7 @@ if (!hudStats) return;
             }
           }
         } catch(_) { }
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, true); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.add('active'); }catch(__){} } } }catch(_){ }
+    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
 }, true);
     } catch(_){ }
     if (typeof window.updateUITexts === 'function'){
@@ -11518,7 +11969,7 @@ if (!hudStats) return;
         setActive(btnAuto, enabled);
       } catch(_){}
     }
-    function syncShopBtn(){ try { setActive(btnShop, upgradesOpen()); } catch(_){} }
+    function syncShopBtn(){ try { var on = upgradesOpen(); if (on && typeof __forceShopBtnInactive!=='undefined' && __forceShopBtnInactive) on = false; setActive(btnShop, on); } catch(_){} }
 
     // ---------- In-game visibility
     function showInGameUI(){
@@ -11643,6 +12094,81 @@ if (!hudStats) return;
     try{ console.warn('[build-tooltip-guard] failed', e); }catch(__){}
   }
 })();
+</script>
+
+<!-- [PATCH] igPanelPositionFix: ensure in-game panels always open above the bottom menu on all screen sizes -->
+<script id="igPanelPositionFix">
+  (function(){
+    try {
+      // Prevent multiple installations
+      if (window.__igPanelPositionFixInstalled) return;
+      window.__igPanelPositionFixInstalled = true;
+      // Function to update the bottom offset of floating panels (chat, build, stats)
+      function updatePositions(){
+        try {
+          var menu  = document.getElementById('inGameMenu');
+          var chat  = document.getElementById('chatPanel');
+          var build = document.getElementById('igBuildPanel');
+          var stats = document.getElementById('hudStats');
+          // Only run if menu and at least one panel exist
+          if (!menu || (!chat && !build && !stats)) return;
+          var rect = menu.getBoundingClientRect();
+          var visible = rect && rect.height && rect.height > 0;
+          var gap = 8;
+          // Default fallback offsets used when menu is hidden: 66px for desktop, 70px for touch devices
+          var defaultBottom = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) ? 70 : 66;
+          var offset = defaultBottom;
+          if (visible) {
+            var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+            offset = Math.max(0, vh - rect.top) + gap;
+          }
+          var val = offset + 'px';
+          // Apply bottom offset using !important to override CSS rules
+          if (chat) {
+          var floating = !!(chat.classList && chat.classList.contains('ig-floating'));
+          if (floating) {
+            chat.style.setProperty('bottom', val, 'important');
+          } else {
+            chat.style.setProperty('bottom', '12px', 'important');
+          }
+        }
+          if (build) build.style.setProperty('bottom', val, 'important');
+          if (stats) stats.style.setProperty('bottom', val, 'important');
+        } catch(_) {}
+      }
+      // Schedule updates with requestAnimationFrame to avoid thrashing
+      var rafId = null;
+      function schedule(){
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(function(){
+          rafId = null;
+          updatePositions();
+        });
+      }
+      // Observe menu mutations to recompute offsets when its size or content changes
+      function observeMenu(){
+        try {
+          var menu = document.getElementById('inGameMenu');
+          if (!menu || !window.MutationObserver) return;
+          var obs = new MutationObserver(function(){ schedule(); });
+          obs.observe(menu, { attributes:true, childList:true, subtree:true });
+        } catch(_) {}
+      }
+      // Initialize on DOM ready
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function(){ schedule(); observeMenu(); }, {passive:true});
+      } else {
+        schedule();
+        observeMenu();
+      }
+      // Refresh positions on resize/orientation changes and when page loads
+      window.addEventListener('resize', schedule, {passive:true});
+      window.addEventListener('orientationchange', schedule, {passive:true});
+      window.addEventListener('load', schedule, {passive:true});
+    } catch(e){
+      try { console.warn('[igPanelPositionFix] init failed', e); } catch(__) {}
+    }
+  })();
 </script>
 
 

@@ -390,7 +390,7 @@ const isJoin = true; // legacy param no longer required; presence of ?w=K is con
           // If the request is on the desired worker, check capacity gate (local value set later in worker code).
           if (desired === curIdx) {
             try {
-              const cap = parseInt(process.env.WORKER_CAPACITY||'100',10) ||  100;
+              const cap = parseInt(process.env.WORKER_CAPACITY||'60',10) ||  60;
               const joined = (global.__joinedCountLocal|0);
               if (joined >= cap) {
                 res.statusCode = 409;
@@ -461,7 +461,7 @@ const io = socketIo(server, {
 
 // --- Worker capacity & aggregated counts ---
 const WORKER_INDEX = Math.max(1, parseInt(process.env.WORKER_INDEX || '1', 10) || 1);
-const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '100', 10) ||  100);
+const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '60', 10) ||   60);
 // Local joined players (only players that have chosen this worker: cookie w=<idx> on their socket)
 global.__joinedCountLocal = global.__joinedCountLocal || 0;
 let __joinedCountLocal = global.__joinedCountLocal;
@@ -775,8 +775,8 @@ const socketToGame = {};
 const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 // === Interest management (zone de vue par joueur) ===
-const SERVER_VIEW_RADIUS = 1000; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
-const BUILD_VIEW_RADIUS = 420; // rayon de halo autorisant le placement
+const SERVER_VIEW_RADIUS = 400; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
+const BUILD_VIEW_RADIUS = 300; // rayon de halo autorisant le placement
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
 
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
@@ -1399,7 +1399,7 @@ const BULLET_DAMAGE = 5;
 const TURRET_SHOOT_INTERVAL = 1000;
 const MINI_TURRET_SHOOT_INTERVAL = 2000;
 const BIG_TURRET_SHOOT_INTERVAL = 500;
-const TURRET_RANGE = 500;
+const TURRET_RANGE = 300;
 const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
 // --- Anti-burst tourelles ---
 // Décalage aléatoire de cadence par tir, centré sur 0 (moyenne nulle) → ne change pas le DPS moyen
@@ -1410,7 +1410,7 @@ const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon 
 
 // Événement de batch pour les lasers (un tableau de segments)
 const TURRET_LASER_BATCH_EVENT = 'laserBeams';
-const PATHFIND_BUDGET_PER_TICK = 12;     // nb max de findPath autorisés / tick (ajuste 8..20)
+const PATHFIND_BUDGET_PER_TICK = 8;     // nb max de findPath autorisés / tick (ajuste 8..20)
 const TURRET_RETARGET_MS = 120;          // une tourelle ne re-choisit pas une cible + souvent que ça
 
 // ---- PATHFINDING ADAPTATIF PAR TICK ----
@@ -1422,12 +1422,12 @@ function computePathfindBudget(game) {
   const b = game._bulletCount || 0;
 
   // Base plus généreuse quand peu d'ennemis, plus stricte quand ça charge
-  // 0 → 50 zombies : 12
-  // 51 → 150 zombies : 8
-  // >150 zombies : 6
-  let base = 12;
-  if (z > 150) base = 6;
-  else if (z > 50) base = 8;
+  // 0 → 50 zombies : 8
+  // 51 → 150 zombies : 6
+  // >150 zombies : 4
+  let base = 8;
+  if (z > 150) base = 4;
+  else if (z > 50) base = 6;
 
   // Petite correction si vraiment calme (pas de bullets, pas de spawn)
   const calmish = (z === 0 && b === 0 && !game.spawningActive && t === 0);
@@ -1983,11 +1983,12 @@ socket.on('clientPing', () => {});
       const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
       let arr = [];
       if (channel === 'world') {
-        arr = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-50) : [];
+        // Send only the most recent 30 messages to clients (reduced from 50)
+        arr = Array.isArray(worldChatHistory) ? worldChatHistory.slice(-30) : [];
       } else {
         const gid = socketToGame[socket.id];
         const game = activeGames.find(g => g && g.id === gid);
-        if (game && Array.isArray(game.chatHistory)) arr = game.chatHistory.slice(-50);
+        if (game && Array.isArray(game.chatHistory)) arr = game.chatHistory.slice(-30);
       }
       if (cb) cb({ ok:true, channel, history: arr });
       else io.to(socket.id).emit('chat:history', { channel, history: arr });
@@ -2003,7 +2004,8 @@ socket.on('clientPing', () => {});
       // basic sanitize
       let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
       if (!text) return;
-      if (text.length > 50) text = text.slice(0,50);
+      // Allow up to 100 characters per message (increase from previous 50)
+      if (text.length > 100) text = text.slice(0,100);
 
       // cooldown per IP (2s)
       {
@@ -2075,7 +2077,8 @@ const msg = { sid: socket.id, pseudo, text, ts: now, channel };
 
       if (channel === 'world') {
         worldChatHistory.push(msg);
-        if (worldChatHistory.length > 500) worldChatHistory.shift();
+        // Keep only the most recent 30 messages in the world chat history (was 500)
+        if (worldChatHistory.length > 30) worldChatHistory.shift();
         // Global broadcast: everyone receives world chat regardless of room state
         // Echo to sender, then send to others in 'world' excluding mobile clients that are in-game
         try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
@@ -2101,7 +2104,8 @@ const msg = { sid: socket.id, pseudo, text, ts: now, channel };
         if (!game) return;
         game.chatHistory = game.chatHistory || [];
         game.chatHistory.push(msg);
-        if (game.chatHistory.length > 200) game.chatHistory.shift();
+        // Keep only the most recent 30 messages in each lobby chat history (was 200)
+        if (game.chatHistory.length > 30) game.chatHistory.shift();
         // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
         // Echo to sender, then broadcast to other lobby members (excluding mobile clients that are currently in-game)
         try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
@@ -3900,8 +3904,20 @@ function stepOnce(dt) {
             }
           }
 
-          io.to(sid).volatile.emit('stateUpdate', {
-            zombies: zSnap,
+          
+          // Build a compact zombie snapshot to minimize bandwidth and avoid leaking server-only fields
+          const zPub = {};
+          for (const zid in zSnap) {
+            const z = zSnap[zid];
+            if (!z) continue;
+            const hp = (typeof z.hp === 'number') ? z.hp : 0;
+            if (hp <= 0) continue;
+            const zx = (typeof z.x === 'number') ? z.x : 0;
+            const zy = (typeof z.y === 'number') ? z.y : 0;
+            zPub[zid] = { id: zid, x: zx, y: zy, hp: hp };
+          }
+io.to(sid).volatile.emit('stateUpdate', {
+            zombies: zPub,
             bullets: bPub,
             playersHealth: buildPublicMapForRecipient(sid, phSnap, hostId),
             round: game.currentRound
