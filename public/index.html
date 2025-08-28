@@ -2750,10 +2750,36 @@ function setupJoysticks() {
 
   const padding = 36;
   const joySize = Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.23);
-  let joyY = window.innerHeight - joySize - padding;
+
+  /*
+   * Calcule la hauteur occupée par les éléments d'interface situés en bas de l'écran (statistiques, chat, menu in‑game…)
+   * afin de positionner les joysticks juste au‑dessus de ceux‑ci. Sans cela, les joysticks peuvent recouvrir
+   * les boutons « Stats », « Chat », « Auto fire » ou « Build » sur mobile. La marge additionnelle garantit
+   * qu'ils ne sont pas collés aux bords.
+   */
+  function computeReservedBottomHeight(){
+    try {
+      let reserved = 0;
+      const ids = ['hudStats','chatPanel','chatCollapsedBtn','inGameMenu','mobile-build'];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const style = window.getComputedStyle(el);
+        // Ignore hidden or transparent elements
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+        const rect = el.getBoundingClientRect();
+        if (rect.height && rect.height > reserved) reserved = rect.height;
+      });
+      // ajoute un peu de marge pour que le joystick ne touche pas le menu
+      return reserved + 20;
+    } catch(_){ return 20; }
+  }
+
+  const reserved = computeReservedBottomHeight();
+  let joyY = window.innerHeight - joySize - reserved;
   if (joyY < padding) joyY = padding;
 
-  // Crée les deux joysticks
+  // Crée les deux joysticks aux positions calculées
   moveJoy = createJoystick(document.body, padding, joyY, "moveJoy");
   aimJoy  = createJoystick(document.body, window.innerWidth - joySize - padding, joyY, "aimJoy");
 
@@ -2766,8 +2792,9 @@ function setupJoysticks() {
     addJoystickTouchHandlers(aimJoy,  "aim");
   }
 
-  // Repositionne l’UI shop
+  // Repositionne l’UI shop et les overlays en fonction des nouvelles positions
   positionShopUI();
+  if (typeof positionInGameOverlays === 'function') positionInGameOverlays();
 }
 
 // ===== remplace entièrement cette fonction =====
@@ -2830,6 +2857,36 @@ function positionShopUI() {
     // priorité d’affichage au-dessus du SHOP
     buildBarEl.style.zIndex = "10006";
   }
+}
+
+/*
+ * Positionne dynamiquement les panneaux sur mobile (panneau de construction « igBuildPanel » et barrette
+ * de construction rapide « mobile-build ») afin qu'ils ne recouvrent pas les boutons du menu in‑game.
+ * Ce correctif calcule la hauteur du menu et ajuste la propriété CSS bottom des panneaux pour
+ * qu'ils apparaissent juste au‑dessus. Il est sans effet sur desktop.
+ */
+function positionInGameOverlays(){
+  try{
+    if (!isMobileDevice) return;
+    const menu = document.getElementById('inGameMenu');
+    if (!menu) return;
+    const rect = menu.getBoundingClientRect();
+    const margin = 10;
+    // Distance depuis le bas de la fenêtre jusqu'au haut du menu, plus une petite marge
+    const bottomOffset = window.innerHeight - rect.top + margin;
+    ['igBuildPanel','mobile-build'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.position = 'fixed';
+        el.style.left = el.style.left || '50%';
+        // Si centré, conserver la translation horizontale
+        if (el.id === 'igBuildPanel') {
+          el.style.transform = 'translateX(-50%)';
+        }
+        el.style.bottom = bottomOffset + 'px';
+      }
+    });
+  }catch(_){}
 }
 
 function drawMap() {
@@ -4740,14 +4797,22 @@ el.innerHTML += `
 	
 	// --- REAFFICHER LES JOYSTICKS + MAJ ZOOM SUR MOBILE APRÈS CHANGEMENT D'ORIENTATION ---
 	if (isMobileDevice) {
-	  window.addEventListener('resize', () => {
-		updateRenderScale();
-		setTimeout(() => { setupJoysticks(); positionShopUI(); }, 200);
-	  });
-	  window.addEventListener('orientationchange', () => {
-		updateRenderScale();
-		setTimeout(() => { setupJoysticks(); positionShopUI(); }, 200);
-	  });
+  window.addEventListener('resize', () => {
+    updateRenderScale();
+    setTimeout(() => {
+      setupJoysticks();
+      positionShopUI();
+      try { if (typeof positionInGameOverlays === 'function') positionInGameOverlays(); } catch (_) {}
+    }, 200);
+  });
+  window.addEventListener('orientationchange', () => {
+    updateRenderScale();
+    setTimeout(() => {
+      setupJoysticks();
+      positionShopUI();
+      try { if (typeof positionInGameOverlays === 'function') positionInGameOverlays(); } catch (_) {}
+    }, 200);
+  });
 	}
 (() => {
   const container = document.getElementById('mobile-build');
@@ -11040,10 +11105,12 @@ menu.appendChild(btnLeave);
 try{
   btnStats.addEventListener('click', function(){
     try{
+      // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
       if (chat) hide(chat);
       if (buildPanel) hide(buildPanel);
-      try{ if (typeof closeUpgrades==='function') closeUpgrades(); }catch(_){}
-      setActive(btnChat,false); setActive(btnBuild,false); setActive(btnShop,false);
+      // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
+      setActive(btnChat,false);
+      setActive(btnBuild,false);
     }catch(_){}
   }, true);
   btnChat.addEventListener('click', function(){
@@ -11077,10 +11144,12 @@ try{
     try{
       btnStats.addEventListener('click', function(){
         try{
+          // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
           if (chat) hide(chat);
           if (buildPanel) hide(buildPanel);
-          try{ if (typeof closeUpgrades==='function') closeUpgrades(); }catch(_){}
-          setActive(btnChat,false); setActive(btnBuild,false); setActive(btnShop,false);
+          // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
+          setActive(btnChat,false);
+          setActive(btnBuild,false);
         }catch(_){}
       }, true);
       btnChat.addEventListener('click', function(){
@@ -11161,9 +11230,16 @@ try{
     function bindTileClone(clone, dt){
       // prevent native tooltip flicker on clones
       if (clone.hasAttribute('title')) clone.setAttribute('title','');
-      clone.addEventListener('click', function(){
+      clone.addEventListener('click', function(e){
+        // Empêche la fermeture involontaire du panneau de construction en stoppant la propagation de l'événement
+        try {
+          if (e) {
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+            if (typeof e.stopPropagation === 'function') e.stopPropagation();
+          }
+        } catch(_){}
         try { var orig = $('buildTiles').querySelector('.build-tile[data-type="'+dt+'"]'); if (orig) orig.click(); } catch(_){}
-      }, { passive:true });
+      }, { passive:false });
       clone.addEventListener('mouseenter', function(){
         try {
           var tip = tipForType(dt);
@@ -11279,10 +11355,9 @@ try{
       toggle(chat);
       setActive(btnChat, willShow);
       if (willShow) {
-        // Close Build & Upgrades when opening Chat
+        // Ferme uniquement le panneau de construction lorsque le chat est ouvert.
+        // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
         try { hide(buildPanel); setActive(btnBuild, false); } catch(_){}
-        try { if (typeof upgradesOpen==='function' && typeof closeUpgrades==='function' && upgradesOpen()) { closeUpgrades(); } } catch(_){}
-        try { setActive(btnShop, false); } catch(_){}
       }
       try { var inp = $('chatInput'); if (willShow && inp) inp.focus({ preventScroll:true }); } catch(_){}
     }, { passive:true });
@@ -11297,6 +11372,8 @@ try{
       var willShow = !isShown(buildPanel);
       toggle(buildPanel);
       setActive(btnBuild, willShow);
+  // Repositionner le panneau de construction et la barre mobile au-dessus du menu in‑game
+  try { if (typeof positionInGameOverlays === 'function') positionInGameOverlays(); } catch(_){}
       if (willShow) {
         // Close Chat & Upgrades when opening Build
         try { hide(chat); setActive(btnChat, false); } catch(_){}
