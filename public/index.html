@@ -420,6 +420,12 @@ input, textarea, select, button, label, [contenteditable]{
 /* ensure chat is always clickable above any overlays */
 #chatPanel, #chatPanel * { pointer-events: auto !important; }
 #chatCollapsedBtn { pointer-events: auto !important; }
+/* Ensure mutual exclusivity: if panel is visible, force-hide the collapsed button */
+#chatPanel[style*="display: flex"] ~ #chatCollapsedBtn,
+#chatPanel[style*="display:flex"] ~ #chatCollapsedBtn,
+#chatPanel[style*="display:block"] ~ #chatCollapsedBtn,
+#chatPanel:not([style*="display: none"]):not([style*="display:none"]) ~ #chatCollapsedBtn { display: none !important; }
+
   .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
@@ -1217,57 +1223,7 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
-<!-- === Mobile Build Buttons === -->
-<div class="mobile-build" id="mobile-build">
-<button aria-label="Construire Mur (B)" class="mb-btn" data-type="B">Mur</button>
-<button aria-label="Construire Porte (D)" class="mb-btn" data-type="D">Porte</button>
-<button aria-label="Construire Mini-Tourelle (t)" class="mb-btn" data-type="t">Mini-T</button>
-<button aria-label="Construire Grande Tourelle (T)" class="mb-btn" data-type="T">Tourelle</button>
-</div>
-<style>
-  /* Mobile only */
-  
-	 @media (max-width: 768px) and (orientation: portrait) {
-	  .mobile-build { 
-		display: none !important; 
-	  }
-	}
-  @media (max-width: 768px) {
-	.mobile-build {
-	  position: fixed;
-	  left: 50%;
-	  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); /* marge iOS + au-dessus du Shop */
-	  transform: translateX(-50%);
-	  display: grid;
-	  grid-template-columns: repeat(4, auto);
-	  gap: 10px;
-	  padding: 10px 12px;
-	  background: rgba(0,0,0,0.35);
-	  backdrop-filter: blur(6px);
-	  border-radius: 14px;
-	  z-index: 10007; /* supérieur au Shop */
-	  user-select: none;
-	}
- .mb-btn {
-      padding: 10px 12px;
-      font-size: 14px;
-      font-weight: 600;
-      border: none;
-      border-radius: 10px;
-      background: #222;
-      color: #fff;
-    }
-    .mobile-build .mb-btn:active {
-      transform: translateY(1px);
-    }
-  }
-
-  /* Desktop: hide */
-  @media (min-width: 769px) {
-    .mobile-build { display: none; }
-  }
-</style>
-<!-- === /Mobile Build Buttons === -->
+<!-- Mobile build buttons removed per request: hidden on all devices -->
 <script>
 // === Toggle (réduire/afficher) la barre Auto-Fire + 4 constructions ===
 let BUILD_UI_COLLAPSED = (localStorage.getItem('buildUICollapsed') === '1');
@@ -6415,14 +6371,25 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
   });
 
   // Socket bindings
-  function initSocketBindings(){
+  
+  // Helper: strictly check if chat is currently collapsed (panel hidden)
+  function __chatIsCollapsed(){
+    try {
+      if (!panel) return false;
+      // Prefer inline style first; fallback to computed
+      if (panel.style && panel.style.display === 'none') return true;
+      var cs = (window.getComputedStyle ? getComputedStyle(panel) : null);
+      return !!(cs && cs.display === 'none');
+    } catch(_) { return false; }
+  }
+function initSocketBindings(){
     try {
       if (!window.socket) return false;
       if (!panel) return false;
       if (__chatBoundTo === window.socket) return true;
       __chatBoundTo = window.socket;
 
-      panel.style.display = 'flex';
+      if (!__chatIsCollapsed()) { try { setCollapsed(false); } catch(_) { panel.style.display = 'flex'; try { if (collapsedBtn) collapsedBtn.style.display = 'none'; }catch(_){ } } }
       window.socket.emit('chat:join', { channel: currentChannel });
 
       if (window.socket.off){
@@ -9895,41 +9862,8 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 </body>
 <!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
 <style id="mobile-build-robust-visibility">
-  /* Hide mobile build buttons by default (prevents accidental display on desktop when zooming) */
-  #mobile-build { display: none !important; }
-  /* Show them only on true touch devices */
-  @media (hover: none) and (pointer: coarse) {
-    #mobile-build {
-      display: grid !important;
-      position: fixed;
-      left: 50%;
-      bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
-      transform: translateX(-50%);
-      grid-template-columns: repeat(4, auto);
-      gap: 10px;
-      padding: 10px 12px;
-      background: rgba(0,0,0,0.35);
-      -webkit-backdrop-filter: blur(6px);
-      backdrop-filter: blur(6px);
-      border-radius: 14px;
-      z-index: 10007;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      touch-action: manipulation;
-    }
-  }
-
-  /* Ensure chat sits at the bottom-left of the main menu with a small gutter.  
-     Use the same reduced height as the main chat panel to avoid it growing too large in the menu. */
-  body.menu-hide-ui #chatPanel {
-    position: fixed !important;
-    left: 12px !important;
-    bottom: 12px !important;
-    transform: none !important;
-    width: min(420px, 94vw) !important;
-    max-height: 32vh !important;
-  }
+  /* Mobile build UI fully disabled per request */
+  #mobile-build, .mobile-build { display: none !important; }
 </style>
 <script id="mobile-build-enforcer">
 (function(){
@@ -11977,7 +11911,7 @@ if (!hudStats) return;
         if (menu) menu.style.display = 'flex';
         // Place the chat panel into floating mode and hide it by default
         var c = document.getElementById('chatPanel');
-        if (c){ c.classList.add('ig-floating'); c.style.display='none'; }
+        if (c){ c.classList.add('ig-floating'); try { setCollapsed(true); } catch(_){ c.style.display='none'; try{ var b=document.getElementById('chatCollapsedBtn'); if(b) b.style.display='flex'; }catch(_){} } }
         // Automatically show the stats bubble and mark its button as active when entering the game
         if (typeof hudStats !== 'undefined' && hudStats){
           hudStats.style.display = 'block';
@@ -11990,7 +11924,7 @@ if (!hudStats) return;
         hide(hudStats); setActive(btnStats,false);
         hide(buildPanel); setActive(btnBuild,false);
         setActive(btnChat,false);
-        var c=document.getElementById('chatPanel'); if (c){ c.classList.remove('ig-floating'); c.style.display='flex'; }
+        var c=document.getElementById('chatPanel'); if (c){ c.classList.remove('ig-floating'); try { setCollapsed(false); } catch(_){ c.style.display='flex'; try{ var b=document.getElementById('chatCollapsedBtn'); if(b) b.style.display='none'; }catch(_){} } }
         closeUpgrades();
         if (menu) menu.style.display='none';
         var tip = $('buildTooltip'); if (tip) tip.style.display='none';
