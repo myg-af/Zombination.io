@@ -97,18 +97,6 @@
       "ts": 1700000016000
     },
     {
-      "player": "qfdqfsdqqf",
-      "wave": 6,
-      "kills": 28,
-      "ts": 1756400517166
-    },
-    {
-      "player": "Myghh",
-      "wave": 6,
-      "kills": 0,
-      "ts": 1756400945151
-    },
-    {
       "player": "KyunbrZero64",
       "wave": 5,
       "kills": 89,
@@ -599,6 +587,18 @@
       "wave": 2,
       "kills": 5,
       "ts": 1700000098000
+    },
+    {
+      "player": "UvesvyV2",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000099000
+    },
+    {
+      "player": "HyirpyNeo",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000100000
     }
   ]
 }
