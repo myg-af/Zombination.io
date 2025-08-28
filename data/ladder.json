@@ -55,6 +55,12 @@
       "ts": 1756381877261
     },
     {
+      "player": "qfdqfsdqqf",
+      "wave": 7,
+      "kills": 0,
+      "ts": 1756399841086
+    },
+    {
       "player": "Quur",
       "wave": 6,
       "kills": 146,
@@ -245,6 +251,12 @@
       "wave": 5,
       "kills": 3,
       "ts": 1756377459311
+    },
+    {
+      "player": "Myghh",
+      "wave": 5,
+      "kills": 0,
+      "ts": 1756398753695
     },
     {
       "player": "Yvemav749",
@@ -587,18 +599,6 @@
       "wave": 2,
       "kills": 9,
       "ts": 1700000089000
-    },
-    {
-      "player": "Xya16",
-      "wave": 2,
-      "kills": 8,
-      "ts": 1700000090000
-    },
-    {
-      "player": "Quor44",
-      "wave": 2,
-      "kills": 8,
-      "ts": 1700000091000
     }
   ]
 }

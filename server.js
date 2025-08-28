@@ -1,3 +1,54 @@
+/*__LOG_TIMESTAMP_FILTER__*/
+(function(){
+  try {
+    var __orig = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error,
+      debug: console.debug
+    };
+    function pad(n){ n = n|0; return (n<10?'0':'') + n; }
+    function ts(){
+      var d = new Date();
+      return '[' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + ']';
+    }
+    function shouldSuppress(args){
+      try {
+        if (!args || !args.length) return false;
+        var first = args[0];
+        var s = (typeof first === 'string') ? first : String(first || '');
+        // Suppress noisy or redundant logs
+        if (s.indexOf('[EMIT gameStarted]') !== -1) return true;
+        if (/^\[STATS\]\s+total connected:/.test(s)) return true;
+        return false;
+      } catch(_){ return false; }
+    }
+    function wrap(name){
+      var fn = __orig[name] || console[name];
+      if (typeof fn !== 'function') return;
+      console[name] = function(){
+        try {
+          var args = Array.prototype.slice.call(arguments);
+          if (shouldSuppress(args)) return;
+          if (args.length && typeof args[0] === 'string') {
+            if (!/^\[\d{2}:\d{2}:\d{2}\]/.test(args[0])) {
+              args[0] = ts() + ' ' + args[0];
+            }
+          } else {
+            args.unshift(ts());
+          }
+          return fn.apply(console, args);
+        } catch(e){
+          try { return fn.apply(console, arguments); } catch(_){}
+        }
+      };
+    }
+    wrap('log'); wrap('info'); wrap('warn'); wrap('error'); wrap('debug');
+  } catch(_){}
+})();
+/*__/LOG_TIMESTAMP_FILTER__*/
+
 // Variant: for WORLD chat only — allow reclaiming a guest pseudo when the only conflict
 // is another *connected* socket from the same IP and not a logged-in account.
 // This avoids the "Nickname already in use" trap after a quick page refresh.
@@ -196,6 +247,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
     // Spawn all workers with deterministic indices
     // === Joined players live counts (capacity control) ===
     const joinedCounts = new Map(); // index -> joined (players who selected this worker)
+    const connCounts = new Map(); // index -> current connected sockets (all)
     function broadcastJoinedCounts(){
       try {
         const arr = Array.from({ length: WORKERS }, (_,i)=> (joinedCounts.get(i+1) || 0));
@@ -216,18 +268,37 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
               joinedCounts.set(idx, next);
               broadcastJoinedCounts();
             }
-          } catch(_){}
+            else if (msg.type === 'player:delta') {
+      const cur2 = connCounts.get(idx) || 0;
+      const next2 = Math.max(0, cur2 + (parseInt(msg.delta,10)||0));
+      connCounts.set(idx, next2);
+    }
+} catch(_){}
         });
         w.on('exit', () => {
           try { joinedCounts.set(idx, 0); broadcastJoinedCounts(); } catch(_){}
         });
-      } catch(_){}
+              try { connCounts.set(idx, 0); } catch(_){ }
+} catch(_){}
     }
 
     for (let i=1;i<=WORKERS;i++) spawnAtIndex(i);
 
     // Broadcast initial counts (all 0)
     broadcastJoinedCounts();
+// Periodic aggregated connected count (every 5 minutes)
+try {
+  if (!global.__connStatsTimerInstalled) {
+    global.__connStatsTimerInstalled = true;
+    setInterval(() => {
+      try {
+        const totalConn = Array.from({ length: WORKERS }, (_,i)=> (connCounts.get(i+1) || 0))
+                               .reduce((a,b)=> (a + (b|0)), 0);
+        console.log('[STATS] total connected (all workers): ' + totalConn);
+      } catch(_){}
+    }, 5 * 60 * 1000);
+  }
+} catch(_){}
 
 
     // Choose an available worker index, preferring the desired one; falls back to nearest available
@@ -458,6 +529,26 @@ const io = socketIo(server, {
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
   transports: ['polling','websocket'],
 });
+
+// === Periodic connected count (single-process or non-cluster) ===
+try {
+  const __isClusterWorker = String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1);
+  if (!__isClusterWorker) {
+    if (!global.__singleConnStatsTimerInstalled) {
+      global.__singleConnStatsTimerInstalled = true;
+      setInterval(() => {
+        try {
+          let total = 0;
+          try {
+            if (io && io.engine && typeof io.engine.clientsCount === 'number') total = io.engine.clientsCount|0;
+            else if (io && io.of && io.of('/') && io.of('/').sockets && typeof io.of('/').sockets.size === 'number') total = io.of('/').sockets.size|0;
+          } catch(_){ total = 0; }
+          console.log('[STATS] total connected: ' + total);
+        } catch(_){}
+      }, 5 * 60 * 1000);
+    }
+  }
+} catch(_){}
 
 // --- Worker capacity & aggregated counts ---
 const WORKER_INDEX = Math.max(1, parseInt(process.env.WORKER_INDEX || '1', 10) || 1);
@@ -1869,8 +1960,6 @@ try {
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
 
-  console.log('[CONNECT]', socket.id);
-
   // Token-based reclaim is now handled via 'reclaimHost' event from client after connect.
   let __reclaimed = false;
 
@@ -2541,8 +2630,6 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
   
   socket.on('disconnect', () => {
     try { lastPseudoBySocket.delete(socket.id); } catch(_){}
-
-    console.log('[DISCONNECT]', socket.id);
 
     // Try to resolve the game from mapping
     const mappedId = socketToGame[socket.id];

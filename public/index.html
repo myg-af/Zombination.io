@@ -106,7 +106,7 @@
     #lobbyJoin[disabled] { opacity: 0.6; cursor: not-allowed; }
     #btnJoinLobbyList[disabled], #btnCreateLobby[disabled] { opacity: 0.6; cursor: not-allowed; }
     
-    #btnLadder[disabled], #btnLogin[disabled], #btnSignup[disabled], #btnLogout[disabled], #btnSettings[disabled], #btnAccountShop[disabled] { opacity: 0.6; cursor: not-allowed; }
+    #btnLadder[disabled], #btnLogin[disabled], #btnSignup[disabled], #btnLogout[disabled], #btnSettings[disabled], #btnAccountShop[disabled], #btnChooseServer[disabled] { opacity: 0.6; cursor: not-allowed; }
 #lobbyPlayers { margin: 18px 0 12px 0; color: #9fd; }
     #lobbyTimer { font-size: 17px; margin-bottom: 9px; }
     #lobbyStatus { margin: 4px 0 0 0; color: #ccc; font-size: 14px; }
@@ -1797,6 +1797,84 @@ let currentGameId = null;
 let playersHealth = {};
 let zombies = {};
 let bullets = {};
+
+// === Ultra-Robust Client-Side Bullet Smoothing (jitter-free drawing) ===
+// We keep raw snapshots in `bullets` as provided by the server,
+// and maintain a render cache that predicts/smooths positions between snapshots.
+const __bulletSmooth = new Map(); // id -> {rx, ry, sx, sy, px, py, tPrev, tCur, speed}
+
+// Helper called each time a new snapshot arrives
+function __ingestBulletSnapshot(snapshot) {
+  const now = (typeof performance!=='undefined' && performance.now)?performance.now():Date.now();
+
+  // Mark all as unseen this tick
+  __bulletSmooth.forEach(st => { st.__seen = false; });
+
+  for (const id in snapshot) {
+    const b = snapshot[id];
+    if (!b || typeof b.x !== 'number' || typeof b.y !== 'number') continue;
+    let st = __bulletSmooth.get(id);
+    if (!st) {
+      // New bullet
+      st = {
+        rx: b.x, ry: b.y,          // render position
+        sx: b.x, sy: b.y,          // latest server position
+        px: b.x, py: b.y,          // previous server position
+        tPrev: now, tCur: now,
+        speed: 0                   // estimated pixels/sec (computed on next update)
+      };
+      __bulletSmooth.set(id, st);
+    } else {
+      // Update history and speed estimate
+      st.px = st.sx; st.py = st.sy;
+      st.sx = b.x;  st.sy = b.y;
+      st.tPrev = st.tCur; st.tCur = now;
+
+      const dt = Math.max(1, st.tCur - st.tPrev); // ms, avoid 0
+      const dist = Math.hypot(st.sx - st.px, st.sy - st.py);
+      const v = (dist * 1000) / dt; // px/sec
+      if (v && isFinite(v)) {
+        // Clamp to reasonable range to avoid outliers; server BULLET_SPEED is ~600
+        st.speed = Math.max(200, Math.min(1200, v));
+      }
+    }
+    st.__seen = true;
+  }
+
+  // Cleanup bullets that disappeared from server snapshot
+  __bulletSmooth.forEach((st, id) => {
+    if (!st.__seen) __bulletSmooth.delete(id);
+    else delete st.__seen;
+  });
+}
+
+// Predict & smooth a bullet position for the current frame time
+function __getSmoothedBulletXY(id, b, nowPerf, deltaTimeSec) {
+  const st = __bulletSmooth.get(id);
+  if (!st) return { x: b.x, y: b.y };
+
+  // Predict forward from latest server point using last known speed + direction, small clamp
+  const speed = st.speed || 600; // px/sec fallback
+  const predX = st.sx + (typeof b.dx==='number' ? b.dx : 0) * speed * Math.min(0.16, (nowPerf - st.tCur) / 1000);
+  const predY = st.sy + (typeof b.dy==='number' ? b.dy : 0) * speed * Math.min(0.16, (nowPerf - st.tCur) / 1000);
+
+  // Smooth render position toward predicted to hide network jitter.
+  const MAX_SNAP_DIST = 36;        // if too far, snap (server correction)
+  const SMOOTH_ALPHA  = 0.28;      // smoothing factor per frame
+
+  const dx = predX - st.rx;
+  const dy = predY - st.ry;
+  const d2 = dx*dx + dy*dy;
+
+  if (d2 > MAX_SNAP_DIST*MAX_SNAP_DIST) {
+    st.rx = predX;
+    st.ry = predY;
+  } else {
+    st.rx += dx * SMOOTH_ALPHA;
+    st.ry += dy * SMOOTH_ALPHA;
+  }
+  return { x: st.rx, y: st.ry };
+}
 let turretLasers = [];
 const turretAngleCache = new Map(); // key: "turret_c_r" -> { ang, t }
 
@@ -1842,7 +1920,7 @@ socket.on('stateUpdate', (payload) => {
   if (payload.zombies)        { zombies = payload.zombies;
   try { for (const k in __zombieMaxHpCache) { if (!(k in zombies)) delete __zombieMaxHpCache[k]; } } catch(_){}
 }
-  if (payload.bullets)        bullets = payload.bullets;
+  if (payload.bullets)        bullets = payload.bullets; try { __ingestBulletSnapshot(bullets); } catch(_){ }
   if (payload.playersHealth)  playersHealth = Object.assign({}, playersHealth, payload.playersHealth);
   try {
     if (!__centeredOnPlayerOnce && myId && playersHealth && playersHealth[myId] && isNum(playersHealth[myId].x) && isNum(playersHealth[myId].y)) {
@@ -3116,17 +3194,22 @@ function drawBullets() {
 
   for (const id in bullets) {
     const b = bullets[id];
+    const __sXY = __getSmoothedBulletXY(id, b, nowPerf, 0);
+    const __bx = __sXY.x, __by = __sXY.y;
+
     // culling rapide
-    if (b.x < minX || b.x > maxX || b.y < minY || b.y > maxY) continue;
+        const __cx = (__bulletSmooth.get(id) ? __bulletSmooth.get(id).rx : b.x);
+    const __cy = (__bulletSmooth.get(id) ? __bulletSmooth.get(id).ry : b.y);
+    if (__cx < minX || __cx > maxX || __cy < minY || __cy > maxY) continue;
 
     ctx.save();
     ctx.beginPath();
     ctx.strokeStyle = (b.owner === myId) ? 'yellow' : '#ff0';
     ctx.lineWidth = 3;
-    ctx.moveTo(b.x - cameraX, b.y - cameraY);
+    ctx.moveTo(__bx - cameraX, __by - cameraY);
     ctx.lineTo(
-      b.x - cameraX - b.dx * 8,
-      b.y - cameraY - b.dy * 8
+      __bx - cameraX - b.dx * 8,
+      __by - cameraY - b.dy * 8
     );
     ctx.stroke();
     ctx.restore();
@@ -5034,6 +5117,11 @@ try {
   if (_logout) _logout.disabled = inLobby;
   var _shop = document.getElementById('btnAccountShop');
   if (_shop) _shop.disabled = shouldDisable;
+
+try {
+  var cs = document.getElementById('btnChooseServer');
+  if (cs) cs.disabled = shouldDisable;
+} catch(_){}
 } catch(_){}
 
     // Disable chat 'Send' when no pseudo
