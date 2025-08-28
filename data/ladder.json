@@ -2,9 +2,9 @@
   "ladder": [
     {
       "player": "Myg",
-      "wave": 10,
-      "kills": 0,
-      "ts": 1756340690392
+      "wave": 27,
+      "kills": 21,
+      "ts": 1756359377322
     },
     {
       "player": "Driga50",
@@ -115,6 +115,12 @@
       "ts": 1756357368507
     },
     {
+      "player": "ytuftfu",
+      "wave": 6,
+      "kills": 1,
+      "ts": 1756358897730
+    },
+    {
       "player": "Mygss",
       "wave": 6,
       "kills": 0,
@@ -215,12 +221,6 @@
       "wave": 5,
       "kills": 45,
       "ts": 1700000032000
-    },
-    {
-      "player": "ytuftfu",
-      "wave": 5,
-      "kills": 27,
-      "ts": 1756355421111
     },
     {
       "player": "Yvemav749",

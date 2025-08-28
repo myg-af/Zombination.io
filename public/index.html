@@ -169,7 +169,7 @@
     /* Ajout des joysticks mobile */
 	.joystick-container {
 	  position: fixed;
-	  z-index: 10000;
+	  z-index: 10060;
 	  touch-action: none;
 	  pointer-events: auto; /* <-- IMPORTANT : le conteneur doit capter les events */
 	}
@@ -491,6 +491,17 @@ input, textarea, select, button, label, [contenteditable]{
     padding-right: max(12px, env(safe-area-inset-right));
   }
 }  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
+<style>
+
+/* Build tile maxed state (grayed) */
+#buildTiles .build-tile.is-max,
+#igBuildTiles .build-tile.is-max {
+  filter: grayscale(0.8);
+  opacity: 0.6;
+  cursor: not-allowed !important;
+}
+
+</style>
 </style>
 
 <style id="build-tile-selected-style">
@@ -1381,7 +1392,7 @@ if (buildTilesCont){
   });
 }
 setInterval(()=>{
-  document.querySelectorAll('#buildTiles .build-tile').forEach(btn=>{
+  document.querySelectorAll('#buildTiles .build-tile, #igBuildTiles .build-tile').forEach(btn=>{
     const type = btn.getAttribute('data-type');
     const priceLabel = btn.querySelector('div:nth-child(2)');
     let cd = btn.querySelector('.cd-label');
@@ -4158,7 +4169,7 @@ function upperFirstLocalized(s){
   }
 }
 const buildBar = document.getElementById('buildBar');
-const buildTiles = document.querySelectorAll('#buildTiles .build-tile');
+const buildTiles = document.querySelectorAll('#buildTiles .build-tile, #igBuildTiles .build-tile');
 const buildTooltip = document.getElementById('buildTooltip');
 let STRUCTURE_PRICES = { T: 2000, t:  500, G:  10000, B:  250, D:  500 };
 
@@ -4446,48 +4457,89 @@ if (structHPGrid) {
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
 
 function updateBuildTilesState() {
-  document.querySelectorAll('#buildTiles .build-tile').forEach(btn => {
-    const type = btn.getAttribute('data-type');
-    const price = STRUCTURE_PRICES[type] ?? Infinity;
-
-    // maj de l’étiquette sous la tuile (2e div)
-    const priceLabel = btn.querySelector('div:nth-child(2)');
-    if (priceLabel) {
-      let label = `$${price}`;
-      if (type==='t'||type==='T'||type==='G') {
-        const limits = { t:2, T:2, G:1 };
-        let count=0;
-        if (structures) {
-          for (let r=0;r<structures.length;r++) for (let c=0;c<structures[r].length;c++){
-            const sc = structures[r][c];
-            if (sc && sc.type===type && sc.hp>0 && sc.placedBy===myId) count++;
+  try {
+    const selectors = '#buildTiles .build-tile, #igBuildTiles .build-tile';
+    const limits = { t:2, T:2, G:1 };
+    // Count my existing turrets by type
+    const myCounts = { t:0, T:0, G:0 };
+    try {
+      if (typeof structures !== 'undefined' && structures) {
+        for (let r=0; r<structures.length; r++) {
+          const row = structures[r]; if (!row) continue;
+          for (let c=0; c<row.length; c++) {
+            const sc = row[c];
+            if (sc && sc.hp>0 && sc.placedBy===myId && (sc.type==='t'||sc.type==='T'||sc.type==='G')) {
+              myCounts[sc.type] = (myCounts[sc.type]||0) + 1;
+            }
           }
         }
-        label += ` • ${count}/${limits[type]}`;
       }
-      priceLabel.textContent = label;
-    }
+    } catch(_){}
 
-    // état “achetable”
-    const afford = myMoney >= price;
-    btn.style.opacity = afford ? '1' : '0.55';
-    btn.style.cursor  = afford ? 'pointer' : 'not-allowed';
-    btn.disabled = !afford;
-    // enforce per-type max counts per player
-    if (type==='t' || type==='T' || type==='G') {
-      const limits = { 't': 2, 'T': 2, 'G': 1 };
-      let count=0;
-      if (structures) {
-        for (let r=0;r<structures.length;r++) for (let c=0;c<structures[r].length;c++) {
-          const sc = structures[r][c];
-          if (sc && sc.type===type && sc.hp>0 && sc.placedBy===myId) count++;
+    document.querySelectorAll(selectors).forEach(btn => {
+      const type = btn.getAttribute('data-type');
+      const price = (typeof STRUCTURE_PRICES==='object' && STRUCTURE_PRICES) ? (STRUCTURE_PRICES[type] ?? Infinity) : Infinity;
+
+      // update label under the icon (2nd div)
+      const priceLabel = btn.querySelector('div:nth-child(2)');
+      if (priceLabel) {
+        let label = `$${price}`;
+        if (type==='t'||type==='T'||type==='G') {
+          label += ` • ${(myCounts[type]||0)}/${limits[type]}`;
         }
+        priceLabel.textContent = label;
       }
-      if (count>=limits[type]) { btn.disabled=true; btn.style.opacity='0.5'; btn.style.cursor='not-allowed'; }
-    }
 
-  });
+      // affordability
+      const afford = (typeof myMoney==='number' ? myMoney : 0) >= price;
+      btn.style.opacity = afford ? '1' : '0.55';
+      btn.style.cursor  = afford ? 'pointer' : 'not-allowed';
+      btn.disabled = !afford;
+
+      // per-type max limit | gray out
+      if (type==='t' || type==='T' || type==='G') {
+        const capped = (myCounts[type]||0) >= limits[type];
+        if (capped) {
+          btn.disabled = true;
+          btn.classList.add('is-max');
+          btn.style.opacity='0.5';
+          btn.style.cursor='not-allowed';
+        } else {
+          btn.classList.remove('is-max');
+        }
+      } else {
+        btn.classList.remove('is-max');
+      }
+    });
+  } catch(_){}
 }
+
+
+// Ensure cloned in-game tiles stay in sync
+(function(){
+  try {
+    if (typeof updateBuildTilesState !== 'function') return;
+    const ig = document.getElementById('igBuildTiles');
+    const orig = document.getElementById('buildTiles');
+    const refresh = () => { try { updateBuildTilesState(); } catch(_e){} };
+    if (ig && window.MutationObserver){
+      const mo = new MutationObserver(()=>{ refresh(); });
+      mo.observe(ig, {childList:true, subtree:true, attributes:true});
+    }
+    // Also refresh when panel is opened (if visibility toggles)
+    const panel = document.getElementById('igBuildPanel');
+    if (panel){
+      let last = getComputedStyle(panel).display;
+      setInterval(()=>{
+        try{
+          const cur = getComputedStyle(panel).display;
+          if (cur !== last){ last = cur; refresh(); }
+        }catch(_){}
+      }, 500);
+    }
+  } catch(_){}
+})();
+
 
 const PRICE_TIERS = [10, 25, 50, 75, 100];
 const PRICE_STEP_AFTER_TIER = 75;
@@ -8479,7 +8531,7 @@ e.preventDefault(); e.stopPropagation();
   function applyBuildTileHighlight(){
     try{
       var mode = currentBuildMode();
-      var tiles = document.querySelectorAll('#buildTiles .build-tile');
+      var tiles = document.querySelectorAll('#buildTiles .build-tile, #igBuildTiles .build-tile');
       tiles.forEach(function(btn){
         try{
           var type = btn.getAttribute('data-type');
@@ -9501,6 +9553,53 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
       }
     } catch(_){}
 };
+})();
+</script>
+<script id="igMenuAutoFit">
+(function(){
+  if (window.__igMenuAutoFitInstalled) return;
+  window.__igMenuAutoFitInstalled = true;
+
+  function fitInGameMenu(){
+    try{
+      var menu = document.getElementById('inGameMenu');
+      if (!menu) return;
+      var cs = window.getComputedStyle(menu);
+      if (!cs || cs.display === 'none') { menu.style.removeProperty('--igScale'); return; }
+      // Reset scale then measure
+      menu.style.setProperty('--igScale', '1');
+      var vw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+      var safeL = 0, safeR = 0; // env(safe-area-*) not readable in JS — conservative margin
+      var maxW = Math.max(1, vw - 12 - safeL - safeR);
+      var r = menu.getBoundingClientRect();
+      var need = (r.width > maxW);
+      var scale = need ? Math.max(0.72, (maxW / Math.max(1, r.width))) : 1;
+      menu.style.setProperty('--igScale', String(scale));
+    }catch(_){}
+  }
+
+  function refresh(){
+    fitInGameMenu();
+    try{ if (typeof setupJoysticks === 'function') setupJoysticks(); }catch(_){}
+  }
+
+  // Observe visibility/size changes on the menu
+  try {
+    var menu = document.getElementById('inGameMenu');
+    if (menu && window.MutationObserver){
+      var mo = new MutationObserver(function(){ fitInGameMenu(); });
+      mo.observe(menu, { attributes:true, attributeFilter:['style','class'] });
+    }
+  } catch(_){}
+
+  // Hook common events
+  window.addEventListener('resize', refresh, {passive:true});
+  window.addEventListener('orientationchange', refresh, {passive:true});
+  document.addEventListener('DOMContentLoaded', refresh, {passive:true});
+  window.addEventListener('load', refresh, {passive:true});
+
+  // Expose for debugging
+  window.__fitInGameMenu = fitInGameMenu;
 })();
 </script>
 </body></html>
@@ -10725,8 +10824,8 @@ document.getElementById('skinBuy').onclick = buyNow;
   #inGameMenu {
     position: fixed;
     left: 50%;
-    transform: translateX(-50%);
-    bottom: 12px;
+    transform: translateX(-50%) scale(var(--igScale, 1));
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
     z-index: 10050;
     display: none;
     gap: 8px;
@@ -10737,7 +10836,17 @@ document.getElementById('skinBuy').onclick = buyNow;
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     pointer-events: auto;
-  }
+  
+  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
+
+  transform-origin: bottom center;
+
+  box-sizing: border-box;
+
+  flex-wrap: wrap;
+
+  justify-content: center;
+}
 .ig-btn {
     appearance: none;
     border: 1px solid rgba(255,255,255,0.12);
@@ -10846,7 +10955,17 @@ document.getElementById('skinBuy').onclick = buyNow;
   #shopModal { border: none !important; outline: none !important; box-shadow: 0 8px 28px rgba(0,0,0,.7) !important; }
 
   @media (hover: none) and (pointer: coarse){
-    #inGameMenu{ gap:6px; padding:6px; bottom: 10px; }
+    #inGameMenu{ gap:6px; padding:6px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); 
+  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
+
+  transform-origin: bottom center;
+
+  box-sizing: border-box;
+
+  flex-wrap: wrap;
+
+  justify-content: center;
+}
     .ig-btn{ padding:10px 12px; font-size:15px; min-width:72px; }
     #chatPanel.ig-floating{ bottom: 70px; font-size:15px; }
     #igBuildPanel{ bottom: 70px; }

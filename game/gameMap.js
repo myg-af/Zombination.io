@@ -1,8 +1,8 @@
 // Ceci est le fichier gameMap.js :
 
-const MAP_ROWS = 70;
-const MAP_COLS = 70;
-const OBSTACLE_COUNT = 400; // ← moins d'obstacles pour plus d'espaces ouverts !
+const MAP_ROWS = 50;
+const MAP_COLS = 50;
+const OBSTACLE_COUNT = 250; // ← moins d'obstacles pour plus d'espaces ouverts !
 const TILE_SIZE = 40;
 
 // Flood fill pour marquer les cases accessibles

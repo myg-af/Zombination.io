@@ -585,7 +585,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const MAX_PLAYERS = 6;
 const LOBBY_TIME = 5 * 1000;
-const MAX_ACTIVE_ZOMBIES = 200;
+const MAX_ACTIVE_ZOMBIES = 130;
 const MAX_ZOMBIES_PER_WAVE = 500;
 
 // --- Shop constants envoyées au client ---
