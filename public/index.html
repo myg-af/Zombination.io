@@ -11260,7 +11260,7 @@ document.getElementById('skinBuy').onclick = buyNow;
   #hudStats.ig-floating {
     position: fixed !important;
     /* Place stats bubble near the bottom‑left of the screen instead of centered */
-    left: 12px !important;
+    left: calc(env(safe-area-inset-left, 0px) + 12px) !important;
     transform: none !important;
     bottom: 8px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
     z-index: 10051 !important;
@@ -12194,3 +12194,130 @@ if (!hudStats) return;
 </script>
 
 
+
+<!-- [PATCH] mobileStatsAndBuildRobustFix: place Stats panel safely on mobile and deselect Build on close -->
+<script id="mobileStatsAndBuildRobustFix">
+(function(){
+  try{
+    if (window.__mobileStatsAndBuildRobustFixInstalled) return;
+    window.__mobileStatsAndBuildRobustFixInstalled = true;
+
+    function isMobile(){
+      try { return !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches); } catch(_){ return false; }
+    }
+
+    function getBuildButtons(){
+      var arr = [];
+      try {
+        var legacy = document.getElementById('btnBuild');
+        if (legacy) arr.push(legacy);
+      } catch(_){}
+      try{
+        var menu = document.getElementById('inGameMenu');
+        if (menu){
+          var b = menu.querySelector('.ig-btn[data-action="build"]');
+          if (b) arr.push(b);
+        }
+      }catch(_){}
+      return arr;
+    }
+
+    function deselectBuild(){
+      try{
+        var list = getBuildButtons();
+        for (var i=0;i<list.length;i++){
+          var b = list[i];
+          if (b && b.classList) b.classList.remove('active');
+        }
+      }catch(_){}
+    }
+
+    function installBuildObserver(){
+      try{
+        var panel = document.getElementById('igBuildPanel');
+        if (!panel || panel.__robustObs) return;
+        panel.__robustObs = true;
+        var last = '';
+        try { last = (window.getComputedStyle(panel).display || ''); } catch(_){}
+        var obs = new MutationObserver(function(){
+          try{
+            var cur = (window.getComputedStyle(panel).display || '');
+            if (cur !== last){
+              var was = last; last = cur;
+              if (cur === 'none' && was && was !== 'none'){
+                deselectBuild();
+              }
+            }
+          }catch(_){}
+        });
+        obs.observe(panel, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
+      }catch(_){}
+    }
+
+    function repositionJoysticksSoon(){
+      try{
+        if (!isMobile()) return;
+        if (typeof setupJoysticks === 'function'){
+          // Run after DOM/layout settles
+          setTimeout(function(){
+            try{ setupJoysticks(); }catch(_){}
+          }, 0);
+        }
+      }catch(_){}
+    }
+
+    function installStatsObserver(){
+      try{
+        var stats = document.getElementById('hudStats');
+        if (!stats || stats.__robustObs) return;
+        stats.__robustObs = true;
+        var obs = new MutationObserver(function(){
+          repositionJoysticksSoon();
+        });
+        obs.observe(stats, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
+      }catch(_){}
+    }
+
+    function hookStatsButton(){
+      try{
+        var menu = document.getElementById('inGameMenu');
+        if (!menu) return;
+        var btn = menu.querySelector('.ig-btn[data-action="stats"]');
+        if (!btn || btn.__robustHooked) return;
+        btn.__robustHooked = true;
+        btn.addEventListener('click', function(){
+          repositionJoysticksSoon();
+        }, true);
+      }catch(_){}
+    }
+
+    function ensureStatsBubbleLeft(){
+      try{
+        var stats = document.getElementById('hudStats');
+        if (!stats) return;
+        // Force bottom-left anchor with safe-area insets
+        stats.style.setProperty('left', 'calc(env(safe-area-inset-left, 0px) + 12px)', 'important');
+      }catch(_){}
+    }
+
+    function init(){
+      installBuildObserver();
+      installStatsObserver();
+      hookStatsButton();
+      ensureStatsBubbleLeft();
+    }
+
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', init, {passive:true});
+    } else {
+      init();
+    }
+    window.addEventListener('load', init, {passive:true});
+    window.addEventListener('resize', function(){
+      repositionJoysticksSoon();
+    }, {passive:true});
+  }catch(e){
+    try{ console.warn('[mobileStatsAndBuildRobustFix] failed', e); }catch(__){}
+  }
+})();
+</script>
