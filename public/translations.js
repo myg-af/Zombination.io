@@ -70,7 +70,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} lvl {level} succeeded. Money: ${money}',
     notEnoughMoney: 'Not enough money.',
     actionImpossible: 'Action impossible.',
-    upgrades: { maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+7% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Money earned', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
+    upgrades: { maxHp: { label: '+10% Max HP', desc: 'Increase max HP.', statLabel: 'Max HP' }, speed: { label: '+5% Move speed', desc: 'Move faster.', statLabel: 'Speed' }, regen: { label: '+0.05 HP/s', desc: 'Regenerate health over time.', statLabel: 'Regen' }, damage: { label: '+10% Damage', desc: 'Increase your weapon damage.', statLabel: 'Damage' }, goldGain: { label: '+10% Money earned', desc: 'Earn more gold per kill.', statLabel: 'Gold gain' } },
   
     chooseServer: 'Choose a server',
 },
@@ -145,7 +145,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '升级 {type} 等级 {level} 成功。金钱: ${money}',
     notEnoughMoney: '金钱不足。',
     actionImpossible: '无法执行操作。',
-    upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+7% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金钱获得', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
+    upgrades: { maxHp: { label: '+10% 生命上限', desc: '提高最大生命值。', statLabel: '生命上限' }, speed: { label: '+5% 移动速度', desc: '移动更快。', statLabel: '移动速度' }, regen: { label: '+0.05 生命/秒', desc: '随时间恢复生命。', statLabel: '生命回复' }, damage: { label: '+10% 伤害', desc: '提高你的武器伤害。', statLabel: '伤害' }, goldGain: { label: '+10% 金钱获得', desc: '每次击杀获得更多金币。', statLabel: '金币获取' } },
   
     chooseServer: '选择服务器',
 },
@@ -220,7 +220,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Улучшение {type} ур. {level} выполнено. Деньги: ${money}',
     notEnoughMoney: 'Недостаточно денег.',
     actionImpossible: 'Действие невозможно.',
-    upgrades: { maxHp: { label: '+10% Макс. HP', desc: 'Увеличивает максимальный запас HP.', statLabel: 'Макс. HP' }, speed: { label: '+7% Скорость', desc: 'Двигайтесь быстрее.', statLabel: 'Скорость' }, regen: { label: '+0,05 HP/с', desc: 'Постепенное восстановление здоровья.', statLabel: 'Регенерация' }, damage: { label: '+10% Урон', desc: 'Повышает ваш урон.', statLabel: 'Урон' }, goldGain: { label: '+10% Заработанных денег', desc: 'Больше золота за убийства.', statLabel: 'Золото' } },
+    upgrades: { maxHp: { label: '+10% Макс. HP', desc: 'Увеличивает максимальный запас HP.', statLabel: 'Макс. HP' }, speed: { label: '+5% Скорость', desc: 'Двигайтесь быстрее.', statLabel: 'Скорость' }, regen: { label: '+0,05 HP/с', desc: 'Постепенное восстановление здоровья.', statLabel: 'Регенерация' }, damage: { label: '+10% Урон', desc: 'Повышает ваш урон.', statLabel: 'Урон' }, goldGain: { label: '+10% Заработанных денег', desc: 'Больше золота за убийства.', statLabel: 'Золото' } },
   
     chooseServer: 'Выбрать сервер',
 },
@@ -289,7 +289,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Mejora {type} niv {level} completada. Dinero: ${money}',
     notEnoughMoney: 'No hay suficiente dinero.',
     actionImpossible: 'Acción imposible.',
-    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Dinero ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta la vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+5% Velocidad', desc: 'Te mueves más rápido.', statLabel: 'Velocidad' }, regen: { label: '+0,05 PS/s', desc: 'Regeneras vida con el tiempo.', statLabel: 'Regeneración' }, damage: { label: '+10% Daño', desc: 'Aumenta tu daño.', statLabel: 'Daño' }, goldGain: { label: '+10% Dinero ganado', desc: 'Gana más oro por baja.', statLabel: 'Oro ganado' } },
   
     chooseServer: 'Elegir un servidor',
 },
@@ -364,7 +364,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} nv {level} concluído. Dinheiro: ${money}',
     notEnoughMoney: 'Dinheiro insuficiente.',
     actionImpossible: 'Ação impossível.',
-    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+7% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Dinheiro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
+    upgrades: { maxHp: { label: '+10% Vida máx', desc: 'Aumenta a vida máxima.', statLabel: 'Vida máx' }, speed: { label: '+5% Velocidade', desc: 'Move-se mais rápido.', statLabel: 'Velocidade' }, regen: { label: '+0,05 PV/s', desc: 'Regenera vida com o tempo.', statLabel: 'Regeneração' }, damage: { label: '+10% Dano', desc: 'Aumenta seu dano.', statLabel: 'Dano' }, goldGain: { label: '+10% Dinheiro ganho', desc: 'Ganhe mais ouro por abate.', statLabel: 'Ouro ganho' } },
   
     chooseServer: 'Escolher um servidor',
 },
@@ -439,7 +439,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Upgrade {type} Stufe {level} erfolgreich. Geld: ${money}',
     notEnoughMoney: 'Nicht genug Geld.',
     actionImpossible: 'Aktion nicht möglich.',
-    upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+7% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Verdientes Geld', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
+    upgrades: { maxHp: { label: '+10% Max. HP', desc: 'Erhöht die max. HP.', statLabel: 'Max. HP' }, speed: { label: '+5% Geschwindigkeit', desc: 'Bewege dich schneller.', statLabel: 'Geschwindigkeit' }, regen: { label: '+0,05 HP/s', desc: 'Regeneriert HP über Zeit.', statLabel: 'Regeneration' }, damage: { label: '+10% Schaden', desc: 'Erhöht deinen Schaden.', statLabel: 'Schaden' }, goldGain: { label: '+10% Verdientes Geld', desc: 'Mehr Gold pro Kill.', statLabel: 'Goldgewinn' } },
   
     chooseServer: 'Server wählen',
 },
@@ -514,7 +514,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '{type} Lv{level} の強化に成功。お金: ${money}',
     notEnoughMoney: 'お金が足りません。',
     actionImpossible: '操作できません。',
-    upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+7% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% 獲得金額', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
+    upgrades: { maxHp: { label: '+10% 最大HP', desc: '最大HPを増やす。', statLabel: '最大HP' }, speed: { label: '+5% 移動速度', desc: '移動が速くなる。', statLabel: '移動速度' }, regen: { label: '+0.05 HP/秒', desc: '時間とともに回復。', statLabel: '回復' }, damage: { label: '+10% ダメージ', desc: '与ダメージを増やす。', statLabel: 'ダメージ' }, goldGain: { label: '+10% 獲得金額', desc: 'キル毎のゴールド増加。', statLabel: 'ゴールド獲得' } },
   
     chooseServer: 'サーバーを選択',
 },
@@ -589,7 +589,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Amélioration {type} niv {level} réussie. Argent: ${money}',
     notEnoughMoney: 'Pas assez d\'argent.',
     actionImpossible: 'Action impossible.',
-    upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+7% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% d\'Argent gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
+    upgrades: { maxHp: { label: '+10% PV max', desc: 'Augmente les PV max.', statLabel: 'PV max' }, speed: { label: '+5% Vitesse', desc: 'Augmente la vitesse.', statLabel: 'Vitesse' }, regen: { label: '+0,05 PV/s', desc: 'Régénère des PV.', statLabel: 'Régénération' }, damage: { label: '+10% Dégâts', desc: 'Augmente vos dégâts.', statLabel: 'Dégâts' }, goldGain: { label: '+10% d\'Argent gagné', desc: 'Gagnez plus d\'or par kill.', statLabel: 'Gain d\'or' } },
   
     chooseServer: 'Choisir un serveur',
 },
@@ -664,7 +664,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: 'Ulepszono {type} do poziomu {level}. Pieniądze: ${money}',
     notEnoughMoney: 'Za mało pieniędzy.',
     actionImpossible: 'Akcja niemożliwa.',
-    upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+7% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Zdobytych pieniędzy', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
+    upgrades: { maxHp: { label: '+10% Maks. HP', desc: 'Zwiększa maksymalne HP.', statLabel: 'Maks. HP' }, speed: { label: '+5% Szybkość', desc: 'Poruszasz się szybciej.', statLabel: 'Szybkość' }, regen: { label: '+0,05 HP/s', desc: 'Regeneracja zdrowia.', statLabel: 'Regeneracja' }, damage: { label: '+10% Obrażenia', desc: 'Zwiększa obrażenia.', statLabel: 'Obrażenia' }, goldGain: { label: '+10% Zdobytych pieniędzy', desc: 'Więcej złota za zabójstwa.', statLabel: 'Złoto' } },
   
     chooseServer: 'Wybierz serwer',
 },
@@ -739,7 +739,7 @@ const TRANSLATIONS = {
     turretUpgradeSuccess: '{type} 레벨 {level} 업그레이드 성공. 돈: ${money}',
     notEnoughMoney: '돈이 부족합니다.',
     actionImpossible: '작업을 수행할 수 없습니다.',
-    upgrades: { maxHp: { label: '+10% 최대 HP', desc: '최대 HP 증가.', statLabel: '최대 HP' }, speed: { label: '+7% 이동 속도', desc: '더 빨리 이동.', statLabel: '이동 속도' }, regen: { label: '+0.05 HP/초', desc: '시간 경과에 따라 회복.', statLabel: '재생' }, damage: { label: '+10% 대미지', desc: '공격력 증가.', statLabel: '대미지' }, goldGain: { label: '+10% 획득 금액', desc: '처치당 더 많은 골드.', statLabel: '골드 획득' } },
+    upgrades: { maxHp: { label: '+10% 최대 HP', desc: '최대 HP 증가.', statLabel: '최대 HP' }, speed: { label: '+5% 이동 속도', desc: '더 빨리 이동.', statLabel: '이동 속도' }, regen: { label: '+0.05 HP/초', desc: '시간 경과에 따라 회복.', statLabel: '재생' }, damage: { label: '+10% 대미지', desc: '공격력 증가.', statLabel: '대미지' }, goldGain: { label: '+10% 획득 금액', desc: '처치당 더 많은 골드.', statLabel: '골드 획득' } },
   
     chooseServer: '서버 선택',}
 };
@@ -1139,4 +1139,71 @@ try { if (typeof window !== 'undefined') { window.TRANSLATIONS = TRANSLATIONS; }
   add('jp', { serverLabel:'サーバー {n}' });
   add('pl', { serverLabel:'Serwer {n}' });
   add('kr', { serverLabel:'서버 {n}' });
+})();
+
+
+// === Bottom menu & leave-confirm translations (10+ langs) ===
+(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
+  add('en', { stats:'Stats', build:'Build', autoFire:'Auto fire', leaveGame:'Leave', confirmTitle:'Confirm', leaveConfirm:'Leave the game and return to the lobby?' });
+  add('fr', { stats:'Stats', build:'Construire', autoFire:'Tir auto', leaveGame:'Quitter', confirmTitle:'Confirmer', leaveConfirm:'Quitter la partie et retourner au lobby ?' });
+  add('es', { stats:'Estadísticas', build:'Construir', autoFire:'Disparo auto', leaveGame:'Salir', confirmTitle:'Confirmar', leaveConfirm:'¿Salir de la partida y volver al lobby?' });
+  add('pt', { stats:'Estatísticas', build:'Construir', autoFire:'Tiro automático', leaveGame:'Sair', confirmTitle:'Confirmar', leaveConfirm:'Sair do jogo e voltar ao lobby?' });
+  add('de', { stats:'Statistik', build:'Bauen', autoFire:'Auto‑Feuer', leaveGame:'Verlassen', confirmTitle:'Bestätigen', leaveConfirm:'Spiel verlassen und zur Lobby zurückkehren?' });
+  add('it', { stats:'Statistiche', build:'Costruisci', autoFire:'Fuoco automatico', leaveGame:'Lascia', confirmTitle:'Conferma', leaveConfirm:'Lascia la partita e torna alla lobby?' });
+  add('tr', { stats:'İstatistik', build:'İnşa', autoFire:'Otomatik ateş', leaveGame:'Ayrıl', confirmTitle:'Onayla', leaveConfirm:'Oyundan çıkıp lobiye dön?' });
+  add('ru', { stats:'Статистика', build:'Строить', autoFire:'Автоогонь', leaveGame:'Выйти', confirmTitle:'Подтвердите', leaveConfirm:'Выйти из игры и вернуться в лобби?' });
+  add('cn', { stats:'统计', build:'建造', autoFire:'自动射击', leaveGame:'离开', confirmTitle:'确认', leaveConfirm:'离开游戏并返回大厅？' });
+  add('jp', { stats:'統計', build:'建築', autoFire:'オート射撃', leaveGame:'退出', confirmTitle:'確認', leaveConfirm:'ゲームを退出してロビーに戻りますか？' });
+  add('pl', { stats:'Statystyki', build:'Buduj', autoFire:'Auto‑ogień', leaveGame:'Wyjdź', confirmTitle:'Potwierdź', leaveConfirm:'Opuścić grę i wrócić do lobby?' });
+  add('kr', { stats:'통계', build:'건설', autoFire:'자동 사격', leaveGame:'나가기', confirmTitle:'확인', leaveConfirm:'게임을 나가고 로비로 돌아갈까요?' });
+})();
+// === Bottom menu label refinements (ensure fully localized) ===
+(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
+  // Provide an explicit label for the Upgrades button (was falling back to EN)
+  add('en', { upgradeLabel:'Upgrades' });
+  add('fr', { upgradeLabel:'Améliorations', stats:'Statistiques' });
+  add('es', { upgradeLabel:'Mejoras' });
+  add('pt', { upgradeLabel:'Melhorias' });
+  add('de', { upgradeLabel:'Verbesserungen' });
+  add('it', { upgradeLabel:'Miglioramenti' });
+  add('tr', { upgradeLabel:'Yükseltmeler' });
+  add('ru', { upgradeLabel:'Улучшения' });
+  add('cn', { upgradeLabel:'升级' });
+  add('jp', { upgradeLabel:'強化' });
+  add('pl', { upgradeLabel:'Ulepszenia' });
+  add('kr', { upgradeLabel:'업그레이드' });
+})();
+
+
+
+
+// === Add missing generic Cancel label for confirm dialog ===
+;(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function add(lang, kv){ TRANSLATIONS[lang] = Object.assign({}, TRANSLATIONS[lang]||{}, kv); }
+  add('en', { cancel:'Cancel' });
+  add('fr', { cancel:'Annuler' });
+  add('es', { cancel:'Cancelar' });
+  add('pt', { cancel:'Cancelar' });
+  add('de', { cancel:'Abbrechen' });
+  add('it', { cancel:'Annulla' });
+  add('tr', { cancel:'İptal' });
+  add('ru', { cancel:'Отмена' });
+  add('cn', { cancel:'取消' });
+  add('jp', { cancel:'キャンセル' });
+  add('pl', { cancel:'Anuluj' });
+  add('kr', { cancel:'취소' });
+})();
+
+
+// === Ensure auto‑fire ON/OFF labels for IT/TR ===
+;(function(){
+  if (typeof TRANSLATIONS !== 'object') return;
+  function merge(base, ext){ if (!base) return ext; for (var k in ext){ if (Object.prototype.hasOwnProperty.call(ext,k)){ if (ext[k] && typeof ext[k]==='object' && !Array.isArray(ext[k])) base[k]=Object.assign({}, base[k]||{}, ext[k]); else base[k]=ext[k]; } } return base; }
+  TRANSLATIONS.it = merge(TRANSLATIONS.it||{}, { autoFireOn:'Fuoco automatico ON', autoFireOff:'Fuoco automatico OFF' });
+  TRANSLATIONS.tr = merge(TRANSLATIONS.tr||{}, { autoFireOn:'Otomatik ateş AÇIK', autoFireOff:'Otomatik ateş KAPALI' });
 })();

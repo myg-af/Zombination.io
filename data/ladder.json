@@ -1,6 +1,12 @@
 {
   "ladder": [
     {
+      "player": "Myg",
+      "wave": 10,
+      "kills": 0,
+      "ts": 1756340690392
+    },
+    {
       "player": "Driga50",
       "wave": 8,
       "kills": 264,
@@ -103,6 +109,18 @@
       "ts": 1700000016000
     },
     {
+      "player": "drytdyrt",
+      "wave": 6,
+      "kills": 7,
+      "ts": 1756357368507
+    },
+    {
+      "player": "Mygss",
+      "wave": 6,
+      "kills": 0,
+      "ts": 1756344243993
+    },
+    {
       "player": "KyunbrZero64",
       "wave": 5,
       "kills": 89,
@@ -197,6 +215,12 @@
       "wave": 5,
       "kills": 45,
       "ts": 1700000032000
+    },
+    {
+      "player": "ytuftfu",
+      "wave": 5,
+      "kills": 27,
+      "ts": 1756355421111
     },
     {
       "player": "Yvemav749",
@@ -575,30 +599,6 @@
       "wave": 2,
       "kills": 6,
       "ts": 1700000095000
-    },
-    {
-      "player": "Yvas715",
-      "wave": 2,
-      "kills": 6,
-      "ts": 1700000096000
-    },
-    {
-      "player": "LexujaxGo80",
-      "wave": 2,
-      "kills": 6,
-      "ts": 1700000097000
-    },
-    {
-      "player": "Uvanyv",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000098000
-    },
-    {
-      "player": "UvesvyV2",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000099000
     }
   ]
 }

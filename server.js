@@ -390,7 +390,7 @@ const isJoin = true; // legacy param no longer required; presence of ?w=K is con
           // If the request is on the desired worker, check capacity gate (local value set later in worker code).
           if (desired === curIdx) {
             try {
-              const cap = parseInt(process.env.WORKER_CAPACITY||'2',10) || 2;
+              const cap = parseInt(process.env.WORKER_CAPACITY||'100',10) ||  100;
               const joined = (global.__joinedCountLocal|0);
               if (joined >= cap) {
                 res.statusCode = 409;
@@ -461,7 +461,7 @@ const io = socketIo(server, {
 
 // --- Worker capacity & aggregated counts ---
 const WORKER_INDEX = Math.max(1, parseInt(process.env.WORKER_INDEX || '1', 10) || 1);
-const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '2', 10) || 2);
+const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '100', 10) ||  100);
 // Local joined players (only players that have chosen this worker: cookie w=<idx> on their socket)
 global.__joinedCountLocal = global.__joinedCountLocal || 0;
 let __joinedCountLocal = global.__joinedCountLocal;
@@ -547,6 +547,40 @@ const {
   isDiagonalBlocked
 } = gameMapModule;
 
+/*__IP_CONN_LIMIT_HTTP__*/
+const __ipConnCounts = new Map();
+function getIpFromReq(req){
+  try{
+    let ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (!ip) ip = (req.socket && req.socket.remoteAddress) || '';
+    if (ip && typeof ip === 'string' && ip.startsWith('::ffff:')) ip = ip.slice(7);
+    // Only honor X-Forwarded-For when behind trusted proxy
+    const TRUSTED = (process.env.TRUSTED_PROXIES || '')
+      .split(',')
+      .map(s => s.trim()).filter(Boolean);
+    const peer = ((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/,'');
+    const isTrusted = TRUSTED.includes(peer);
+    if (!isTrusted) {
+      ip = ((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/,'');
+    }
+    return String(ip||'').trim();
+  }catch(_){ return ''; }
+}
+// Gate HTTP access when this IP already has >= 6 active socket connections
+app.use((req,res,next)=>{
+  try{
+    const ip = getIpFromReq(req) || 'unknown';
+    const cnt = __ipConnCounts.get(ip) || 0;
+    if (cnt >= 6) {
+      res.statusCode = 429;
+      res.setHeader('Cache-Control','no-store, max-age=0');
+      res.setHeader('Content-Type','text/html; charset=utf-8');
+      res.end('<!doctype html><title>Too many tabs</title><div style="font:14px system-ui,Arial;color:#fff;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><div style="background:#1b1b20;border-radius:12px;padding:18px 22px;box-shadow:0 10px 40px #000a;text-align:center;"><div style="font-weight:700;margin-bottom:6px;">Limit reached</div><div style="opacity:.85">You already have 6 tabs open for this game from this IP.<br>Close one tab to continue.</div></div></div>');
+      return;
+    }
+  }catch(_){}
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const MAX_PLAYERS = 6;
@@ -1746,6 +1780,30 @@ _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.n
 
 io.on('connection', socket => {
 
+// Per-IP connection limiter (max 6 sockets/IP). Counts exactly once per socket.
+try {
+  if (!socket.__ipCounted) {
+    const __ip = (typeof getClientIP === 'function') ? (getClientIP(socket) || 'unknown') : 'unknown';
+    socket.__clientIp = __ip;
+    const prev = __ipConnCounts.get(__ip) || 0;
+    if (prev >= 6) {
+      try { socket.emit('tooManyConnections', { limit: 6 }); } catch(_){}
+      try { socket.disconnect(true); } catch(_){}
+      return;
+    }
+    __ipConnCounts.set(__ip, prev + 1);
+    socket.__ipCounted = true;
+    socket.once('disconnect', () => {
+      try {
+        const cur = __ipConnCounts.get(__ip) || 1;
+        if (cur <= 1) __ipConnCounts.delete(__ip);
+        else __ipConnCounts.set(__ip, cur - 1);
+      } catch(_){}
+    });
+  }
+} catch(_){}
+
+
   try {
     // Determine if this socket is a joined player for this worker (cookie 'w=<idx>')
     const ck = String((socket && socket.handshake && socket.handshake.headers && socket.handshake.headers.cookie) || '');
@@ -2844,17 +2902,20 @@ function getPlayerStats(player) {
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
 
   const acc = (player && player.accountShop) || {hp:0,dmg:0};
-  const baseStats = {
-    maxHp: Math.round(base.maxHp * Math.pow(1.1, u.maxHp || 0)),
-    speed: +(base.speed * Math.pow(1.1, u.speed || 0)).toFixed(1),
-    regen, // hp/s
-    damage: Math.round(base.damage * Math.pow(1.1, u.damage || 0)),
-    goldGain: Math.round(base.goldGain * Math.pow(1.1, u.goldGain || 0)),
-  };
-  // Apply account-level additive bonuses
-  baseStats.maxHp += (acc.hp|0) * 10;
-  baseStats.damage += (acc.dmg|0) * 1;
-  return baseStats;
+// Apply account-level additive bonuses FIRST, so in-game upgrades scale off the true base
+const baseWithShop = {
+  maxHp: base.maxHp + ((acc.hp|0) * 10),
+  damage: base.damage + ((acc.dmg|0) * 1),
+  speed: base.speed,
+  goldGain: base.goldGain
+};
+const up = player && player.upgrades || {};
+const maxHp = Math.round(baseWithShop.maxHp * (1 + 0.10 * (up.maxHp || 0)));
+const damage = Math.round(baseWithShop.damage * (1 + 0.10 * (up.damage || 0)));
+const speed  = +(baseWithShop.speed * (1 + 0.05 * (up.speed || 0))).toFixed(1);
+const goldGain = Math.round(baseWithShop.goldGain * Math.pow(1.1, up.goldGain || 0));
+const baseStats = { maxHp, speed, regen, damage, goldGain };
+return baseStats;
 }
 
 

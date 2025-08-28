@@ -85,7 +85,7 @@
 	#gameCanvas { touch-action: none; }
 	.joystick-base, .joystick-stick { touch-action: none; }
 	html, body { overscroll-behavior: none; }
-    #hudStats { position: fixed; left: 10px; bottom: 10px; background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; min-width: 210px; }
+    #hudStats { position: fixed; left: 8px; left: calc(env(safe-area-inset-left, 0px) + 8px); bottom: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); background: rgba(0,0,0,0.7); border-radius: 7px; padding: 10px 20px 10px 15px; font-size: 18px; user-select: none; display: inline-block; width: -moz-fit-content; width: fit-content; max-width: min(96vw, 520px); white-space: nowrap; }
     #hudAlive { font-weight: bold; color: #fd7; }
     #deathScreen { display: none; position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; background: rgba(30,0,0,0.8); z-index: 3; justify-content: center; align-items: center; flex-direction: column; }
     #deathScreenInner { background: #181818; border-radius: 20px; padding: 35px 45px; color: #fff; box-shadow: 0 6px 30px #000c; text-align: center; min-width: 320px; }
@@ -276,6 +276,14 @@ body.menu-hide-ui #fpsCounter,
 }
 
 </style>
+<style id="form-focus-typing-fix">
+/* Ensure text inputs can be focused/edited/selected everywhere (auth modal, lobby, chat) */
+input, textarea, select, button, label, [contenteditable]{
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+</style>
+
 
 <style>
 /* === CHAT WIDGET (World + Lobby) === */
@@ -343,6 +351,7 @@ body.menu-hide-ui #fpsCounter,
 }
 .chatLine { margin: 3px 0; word-break: break-word; color:#fff; }
 .chatName { color: #9fd; font-weight: 600; margin-right: 6px; }
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 #chatInputRow {
   display: flex;
   gap: 6px;
@@ -409,6 +418,7 @@ body.menu-hide-ui #fpsCounter,
 /* ensure chat is always clickable above any overlays */
 #chatPanel, #chatPanel * { pointer-events: auto !important; }
 #chatCollapsedBtn { pointer-events: auto !important; }
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
 <!-- MOBILE LOBBY RESIZE PATCH (ULTRA ROBUST) -->
@@ -455,6 +465,7 @@ body.menu-hide-ui #fpsCounter,
   #lobbyBox { border-radius: 14px !important; }
   #lobbyBtnRow { gap: 6px !important; }
 }
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
 <!-- MOBILE CENTERING PATCH: lobbyBox width & centering -->
@@ -479,7 +490,8 @@ body.menu-hide-ui #fpsCounter,
     padding-left: max(12px, env(safe-area-inset-left));
     padding-right: max(12px, env(safe-area-inset-right));
   }
-}</style>
+}  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
+</style>
 
 <style id="build-tile-selected-style">
 /* Selected build tile (PC & Mobile) */
@@ -493,6 +505,7 @@ body.menu-hide-ui #fpsCounter,
 }
 
 
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
 
@@ -530,6 +543,7 @@ body.menu-hide-ui #fpsCounter,
   cursor: pointer;
 }
 .skin-apply:hover { filter: brightness(1.08); }
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
 <script>
@@ -549,6 +563,12 @@ if (!window.ensureMySkinLoaded) {
   };
 }
 </script>
+<style id="igLegacyHide">
+/* Hide legacy in-game UI, keep #hudStats for Stats bubble */
+#shopBtn, #buildBar, #autoFireBtn { display: none !important; }
+/* Hide chat collapsed bubble ONLY in-game (i.e., when main menu UI is not shown) */
+body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
+</style>
 </head>
 <body>
 <!-- top-message helper -->
@@ -896,6 +916,7 @@ if (!window.ensureMySkinLoaded) {
   .srv .btn[disabled]{opacity:.55;cursor:not-allowed;background:#444;}
   .srv .full{background:#7a1d1d}
   #srvFoot{font-size:12px;color:#8aa; text-align:right; padding: 0 8px;}
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 /* [PATCH] push chat behind when server overlay is open */
 <style id="chatOverlayMaskStyle">
@@ -906,6 +927,7 @@ if (!window.ensureMySkinLoaded) {
     opacity: 0 !important;
     visibility: hidden !important;
   }
+  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
 
 <div id="serverOverlay">
@@ -2048,17 +2070,21 @@ const UPGRADES = [
     label: "+10% Vie max",
     desc: "Augmente les PV max.",
     icon: "/icons/heart.svg",
-    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.hp|0))*10); },
+    getValue: (base, level) => {
+      const acc = (window.accountShop || {});
+      const baseWithShop = base + ((acc.hp|0) * 10);
+      return Math.round(baseWithShop * (1 + 0.10 * level));
+    },
     baseValue: 100,
     statLabel: "PV max",
     format: v => v + " PV"
   },
   {
     id: "speed",
-    label: "+10% Vitesse",
+    label: "+5% Vitesse",
     desc: "Déplace-toi plus vite.",
     icon: "/icons/speed.svg",
-    getValue: (base, level) => +(base * Math.pow(1.1, level)).toFixed(1),
+    getValue: (base, level) => +(base * (1 + 0.05 * level)).toFixed(1),
     baseValue: 40,
     statLabel: "Vitesse",
     format: v => v + " px/s"
@@ -2081,7 +2107,11 @@ const UPGRADES = [
     label: "+10% Dégâts",
     desc: "Tire plus fort.",
     icon: "/icons/bullet.svg",
-    getValue: (base, level) => { const acc=(window.accountShop||{}); return Math.round(base*Math.pow(1.1,level)) + (((acc.dmg|0))*1); },
+    getValue: (base, level) => {
+      const acc = (window.accountShop || {});
+      const baseWithShop = base + ((acc.dmg|0) * 1);
+      return Math.round(baseWithShop * (1 + 0.10 * level));
+    },
     baseValue: 10,
     statLabel: "Dégâts",
     format: v => v
@@ -2312,27 +2342,97 @@ function findTurretTargetAngle(turretKey, cxWorld, cyWorld) {
     let aimDir = { x: 1, y: 0 }; // direction de visée par défaut (droite)
 	let lastAimDir = { x: 1, y: 0 };
 	
-	window.addEventListener('keydown', e => {
-	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-		e.preventDefault(); // évite le scroll de la page !
-	  }
-	  keys[e.key.toLowerCase()] = true;
-	});
-	window.addEventListener('keyup', e => {
-	  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-		e.preventDefault();
-	  }
-	  keys[e.key.toLowerCase()] = false;
-	});
 	
-window.addEventListener('mousedown', e => {
-  if (buildMode) { e.preventDefault(); return; }   // ← ajoute ça
-  const sm = document.getElementById('shopModal');
-  if (sm && sm.style.display === 'block') return;
-  mouseDown = e.button === 0;
+// Navigation keys map (WASD + arrows)
+const __NAV_KEYS = { w:1, a:1, s:1, d:1, arrowup:1, arrowdown:1, arrowleft:1, arrowright:1 };
+
+// Helper: are we typing in an input/textarea/contenteditable? (e.g., chat)
+function __isTyping(){
+  try{
+    if (window.__typingInChat) return true;
+    var el = document.activeElement;
+    if (!el) return false;
+    try{
+      if (el instanceof HTMLElement) {
+        var cs = window.getComputedStyle(el);
+        if (cs && (cs.visibility === 'hidden' || cs.display === 'none')) return false;
+      }
+    }catch(_){}
+    var tn = (el.tagName||'').toUpperCase();
+    if (tn === 'INPUT' || tn === 'TEXTAREA') {
+      if (el.readOnly || el.disabled) return false;
+      return true;
+    }
+    if (el.isContentEditable) return true;
+  }catch(_){}
+  return false;
+}
+
+// Map physical keys to logical WASD irrespective of layout (QWERTY/AZERTY)
+function __canonNavKey(e){
+  try{
+    var code = String(e && e.code || '');
+    if (code === 'KeyW') return 'w';
+    if (code === 'KeyA') return 'a';
+    if (code === 'KeyS') return 's';
+    if (code === 'KeyD') return 'd';
+  }catch(_){}
+  var k = String(e && (e.key||'')).toLowerCase();
+  if (k === 'w' || k === 'a' || k === 's' || k === 'd') return k;
+  if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright') return k;
+  return null;
+}
+
+window.addEventListener('keydown', function(e){
+  var k = String(e && (e.key||'')).toLowerCase();
+  var canon = __canonNavKey(e);
+  if (canon && __NAV_KEYS[canon]){
+    // If typing in a field (chat/login/etc.), DO NOT block native input.
+    if (__isTyping()) return;
+    try{ e.preventDefault(); }catch(_){ }
+    keys[canon] = true;
+    return;
+  }
+  keys[k] = true;
 });
 
-    window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
+window.addEventListener('keyup', function(e){
+  var k = String(e && (e.key||'')).toLowerCase();
+  var canon = __canonNavKey(e);
+  if (canon && __NAV_KEYS[canon]){
+    // If typing, let the field manage the caret/selection, don't block.
+    if (__isTyping()) { keys[canon] = false; return; }
+    try{ e.preventDefault(); }catch(_){ }
+    keys[canon] = false;
+    return;
+  }
+  keys[k] = false;
+});
+
+window.addEventListener('mousedown', e => {
+  // Prevent firing when interacting with UI panels/buttons,
+  // BUT allow native focus/clicks for form controls so typing works.
+  try {
+    var t = e.target;
+    var inUI = !!(t && t.closest && t.closest('#inGameMenu, #chatPanel, #chatCollapsedBtn, #igBuildPanel, #hudStats, #shopModal, #shopBtn, #buildBar, #buildTiles, .mobile-build, #authModal, #lobbyScreen'));
+    if (inUI) {
+      // If the click is on a real form control, don't preventDefault to keep focus & typing.
+      var ctrl = t && (t.closest('input, textarea, select, button, label, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]'));
+      if (ctrl) {
+        try { if (e.stopPropagation) e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } catch(_){}
+        mouseDown = false;
+        return;
+      }
+      // Otherwise block the game action while letting the UI consume the click
+      try { e.preventDefault(); if (e.stopPropagation) e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); } catch(_){}
+      mouseDown = false;
+      return;
+    }
+  } catch(_){}
+  if (buildMode) { try{ e.preventDefault(); }catch(_){ } return; }
+  var sm = document.getElementById('shopModal');
+  if (sm && sm.style.display === 'block') return;
+  mouseDown = (e.button === 0);});window.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; });
     window.addEventListener('mousemove', e => {
       mousePos = { x: e.clientX, y: e.clientY };
       if (!isMobileDevice && myId && playersHealth[myId]) {
@@ -4498,8 +4598,8 @@ function renderShopUpgrades() {
       if (upg.id === 'speed') {
         try {
           const rest = (getUpgText(upg,'label') || '').replace(/^\s*\+?\d+\s*%?\s*/,'').trim();
-          __label = '+10% ' + (rest || getUpgText(upg,'statLabel') || 'Speed');
-        } catch(e2) { __label = '+10% ' + (getUpgText(upg,'label') || 'Speed'); }
+          __label = '+5% ' + (rest || getUpgText(upg,'statLabel') || 'Speed');
+        } catch(e2) { __label = '+5% ' + (getUpgText(upg,'label') || 'Speed'); }
       } else if (upg.id === 'regen') {
         const __lvl = myUpgrades[upg.id] || 0;
         const __cur = upg.getValue(upg.baseValue, __lvl);
@@ -5700,6 +5800,8 @@ try { setVersionBox(); } catch(_){}
   const COOLDOWN_MS = 2000;
   let lastSent = 0;
 
+  const CHAT_MAX_AGE_MS = 60000; // messages auto-disappear after 60s
+
   let currentChannel = 'world'; // 'world' | 'lobby'
   let pendingHistoryFor = null;
   const chatBuf = { world: [], lobby: [] };
@@ -5721,16 +5823,34 @@ try { setVersionBox(); } catch(_){}
   const tabWorld = qs('tabWorld');
   const tabLobby = qs('tabLobby');
 
+  // Mark when typing in chat to disable WASD/Arrows
+  try {
+    if (input && !input.__typingFlagInstalled) {
+      input.__typingFlagInstalled = true;
+      function __clearNavKeys(){
+        try {
+          var arr = ['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'];
+          for (var i=0;i<arr.length;i++){ try{ keys[arr[i]] = false; }catch(_){ } }
+        } catch(_){}
+      }
+      input.addEventListener('focus', function(){ try { window.__typingInChat = true; __clearNavKeys(); } catch(_){ } }, { passive:true });
+      input.addEventListener('blur', function(){ try { window.__typingInChat = false; } catch(_){ } }, { passive:true });
+    }
+  } catch(_){}
+
   try { if (typeof window.updateButtonsDisabled === 'function') window.updateButtonsDisabled(); } catch(_){}
   // Toggle / expand handlers
   if (toggle) toggle.addEventListener('click', async function(){ setCollapsed(true); }, {passive:true});
-  if (collapsedBtn) collapsedBtn.addEventListener('click', async function(){ setCollapsed(false); }, {passive:true});
+  if (collapsedBtn) collapsedBtn.addEventListener('click', async function(){ setCollapsed(false); try{ if (window.__igChatClearNotify) window.__igChatClearNotify(); }catch(_){ } }, {passive:true});
 
   // -- Helper: position collapsed button above HUD (best-effort)
   function positionCollapsedBtn(){
     try{
       if (!collapsedBtn) return;
       if (!inGame) { collapsedBtn.style.bottom = '12px'; return; }
+
+  
+
       var hud = document.getElementById('hudStats') || document.getElementById('hudAlive') || document.getElementById('hudMoney');
       if (hud && hud.getBoundingClientRect){
         var r = hud.getBoundingClientRect();
@@ -5741,6 +5861,39 @@ try { setVersionBox(); } catch(_){}
       }
     }catch(e){}
   }
+
+// Format timestamp as HH:MM (24h)
+  function __fmtTime(ts){
+    try {
+      var d = new Date(typeof ts === 'number' ? ts : Date.now());
+      var hh = String(d.getHours()).padStart(2,'0');
+      var mm = String(d.getMinutes()).padStart(2,'0');
+      return '[' + hh + ':' + mm + ']';
+    } catch(_){ return ''; }
+  }
+  // Remove expired messages from DOM
+  function __scheduleRemoval(div, ts){
+    try {
+      var delay = Math.max(0, CHAT_MAX_AGE_MS - (Date.now() - (ts||0)));
+      if (delay <= 0) {
+        if (div && div.parentNode) div.parentNode.removeChild(div);
+        return;
+      }
+      setTimeout(function(){
+        try { if (div && div.parentNode) div.parentNode.removeChild(div); } catch(_){}
+      }, delay);
+    } catch(_){}
+  }
+  // Prune old messages from buffer for a channel (keep last minute only)
+  function __pruneBuf(ch){
+    try {
+      var cutoff = Date.now() - CHAT_MAX_AGE_MS;
+      if (!chatBuf || !chatBuf[ch]) return;
+      chatBuf[ch] = chatBuf[ch].filter(function(m){ return m && (m.ts||0) >= cutoff; });
+    } catch(_){}
+  }
+
+
 
   // i18n
   function applyChatI18n(){
@@ -5770,34 +5923,62 @@ try { setVersionBox(); } catch(_){}
       if (collapsedBtn) collapsedBtn.style.display = 'flex';
       positionCollapsedBtn();
       try { localStorage.setItem('chatCollapsed','1'); } catch(_){}
+      // When collapsing the chat, also deselect the chat button in the bottom menu
+      try {
+        var chatBtn = document.querySelector('#inGameMenu .ig-btn[data-action="chat"]');
+        if (chatBtn) chatBtn.classList.remove('active');
+      } catch(_){}
     } else {
       if (panel) panel.style.display = 'flex';
       if (collapsedBtn) collapsedBtn.style.display = 'none';
       if (collapsedBtn) collapsedBtn.classList.remove('notify');
       positionCollapsedBtn();
       try { localStorage.setItem('chatCollapsed','0'); } catch(_){}
+      // When expanding the chat, mark the chat button as active
+      try {
+        var chatBtn = document.querySelector('#inGameMenu .ig-btn[data-action="chat"]');
+        if (chatBtn) chatBtn.classList.add('active');
+      } catch(_){}
       try { input && input.focus(); } catch(_){}
     }
   }
 
+  
+  // Render from buffer
+  
   // Render from buffer
   function renderChannel(ch){
     try{
-      chatSeen[ch] = new Set((chatBuf[ch]||[]).map(m => ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000))));
-      const arr = (chatBuf[ch]||[]);
+      __pruneBuf(ch);
+      chatSeen[ch] = new Set((chatBuf[ch]||[]).map(function(m){ return ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000)); }));
+      var arr = (chatBuf[ch]||[]);
+      var cutoff = Date.now() - CHAT_MAX_AGE_MS;
       list.innerHTML = '';
-      for (let i=0;i<arr.length;i++){
-        const msg = arr[i];
-        const name = msg && msg.pseudo ? String(msg.pseudo) : 'player';
-        const text = msg && msg.text ? String(msg.text) : '';
-        const div = document.createElement('div');
+      for (var i=0;i<arr.length;i++){
+        var msg = arr[i];
+        if (!msg || (msg.ts||0) < cutoff) continue;
+        var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
+        var text = (msg && msg.text) ? String(msg.text) : '';
+        var ts = (msg && msg.ts) ? Number(msg.ts) : Date.now();
+
+        var div = document.createElement('div');
         div.className = 'chatLine';
-        const nameSpan = document.createElement('span');
+        div.setAttribute('data-ts', String(ts));
+
+        var timeSpan = document.createElement('span');
+        timeSpan.className = 'chatTime';
+        timeSpan.textContent = __fmtTime(ts) + ' ';
+        div.appendChild(timeSpan);
+
+        var nameSpan = document.createElement('span');
         nameSpan.className = 'chatName';
         nameSpan.textContent = name + ':';
         div.appendChild(nameSpan);
-        div.appendChild(document.createTextNode(text));
+
+        div.appendChild(document.createTextNode(' ' + text));
+
         list.appendChild(div);
+        __scheduleRemoval(div, ts);
       }
       list.scrollTop = list.scrollHeight + 1000;
     }catch(e){}
@@ -5807,30 +5988,45 @@ try { setVersionBox(); } catch(_){}
   function pushMsg(msg){
     try{
       if (!msg) return;
-      const ch = msg && msg.channel ? ((msg.channel === 'lobby') ? 'lobby' : 'world') : currentChannel;
-      const arr = chatBuf[ch] = chatBuf[ch] || [];
-      const key = ((msg.sid||'')+'|'+(msg.text||'')+'|'+Math.floor((msg.ts||0)/2000));
+      var ch = (msg && msg.channel) ? ((msg.channel === 'lobby') ? 'lobby' : 'world') : currentChannel;
+      __pruneBuf(ch);
+      var arr = chatBuf[ch] = chatBuf[ch] || [];
+      var key = ((msg.sid||'')+'|'+(msg.text||'')+'|'+Math.floor((msg.ts||0)/2000));
       if (chatSeen[ch] && chatSeen[ch].has(key)) { return; }
       try { chatSeen[ch].add(key); } catch(_){}
+      var tsNow = Number(msg.ts || Date.now());
+      if ((Date.now() - tsNow) >= CHAT_MAX_AGE_MS) {
+        return;
+      }
       arr.push(msg); if (arr.length > 200) arr.shift();
       if (ch === currentChannel){
-        const name = msg && msg.pseudo ? String(msg.pseudo) : 'player';
-        const text = msg && msg.text ? String(msg.text) : '';
-        const div = document.createElement('div');
+        var name = (msg && msg.pseudo) ? String(msg.pseudo) : 'player';
+        var text = (msg && msg.text) ? String(msg.text) : '';
+        var ts  = (msg && msg.ts) ? Number(msg.ts) : Date.now();
+
+        var div = document.createElement('div');
         div.className = 'chatLine';
-        const nameSpan = document.createElement('span');
+        div.setAttribute('data-ts', String(ts));
+
+        var timeSpan = document.createElement('span');
+        timeSpan.className = 'chatTime';
+        timeSpan.textContent = __fmtTime(ts) + ' ';
+        div.appendChild(timeSpan);
+
+        var nameSpan = document.createElement('span');
         nameSpan.className = 'chatName';
         nameSpan.textContent = name + ':';
         div.appendChild(nameSpan);
-        div.appendChild(document.createTextNode(text));
+
+        div.appendChild(document.createTextNode(' ' + text));
         list.appendChild(div);
+        __scheduleRemoval(div, ts);
         list.scrollTop = list.scrollHeight + 1000;
         while (list.childElementCount > 200) list.removeChild(list.firstElementChild);
       }
     }catch(e){}
   }
-
-  function selectChannel(ch){
+function selectChannel(ch){
     if (ch !== 'world' && ch !== 'lobby') ch = 'world';
     if (collapsedBtn && ch === 'lobby') { try { collapsedBtn.classList.remove('notify'); } catch(_){} }
     if (tabLobby && ch === 'lobby') { try { tabLobby.classList.remove('notify'); } catch(_){} }
@@ -5929,6 +6125,7 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
           if (!payload) return;
           var __chan = (payload && payload.channel) ? payload.channel : currentChannel;
           chatBuf[__chan] = (payload.history||[]);
+          __pruneBuf(__chan);
           chatSeen[__chan] = new Set((chatBuf[__chan]||[]).map(m => ((m.sid||'')+'|'+(m.text||'')+'|'+Math.floor((m.ts||0)/2000))));
           if (__chan === currentChannel) renderChannel(currentChannel);
           if (pendingHistoryFor === __chan) pendingHistoryFor = null;
@@ -5951,8 +6148,13 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
     collapsedBtn.classList.add('notify');
   }
 } catch(_){ }
+        try {
+          var __self2 = !!(msg && msg.sid && window.socket && (msg.sid === window.socket.id));
+          if (inGame && isCollapsed && !__self2 && typeof window.__igChatNotify==='function') { window.__igChatNotify(); }
+        } catch(_){ }
         pushMsg(msg);
-      });window.socket.on('chat:error', function(e){
+      });window.socket.on('chat:error'
+, function(e){
   try {
     if (!e || !e.type) return;
     if (e.type === 'cooldown') {
@@ -5975,7 +6177,7 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
 });
       window.socket.on('connect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
       window.socket.on('reconnect', function(){ try { __chatBoundTo = null; initSocketBindings(); } catch(_){}});
-      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } if (humans >= 2) { setCollapsed(true); } } catch(_){ }});
+      window.socket.on('gameStarted', function(info){ inGame = true; updateTabs(); positionCollapsedBtn(); try { var humans=0; var pls=(info&&info.players)||{}; for (var k in pls){ if(!Object.prototype.hasOwnProperty.call(pls,k)) continue; var p=pls[k]; if(p&&p.isBot) continue; humans++; } setCollapsed(true); } catch(_){ }});
       return true;
     } catch(e){ return false; }
   }
@@ -6025,7 +6227,7 @@ window.socket.emit('chat:send', { channel: currentChannel, text: t, name: (windo
   }
   // show by default, ignore previous collapsed state
   try { localStorage.removeItem('chatCollapsed'); } catch(_){}
-  setCollapsed(false);
+  setCollapsed(false); try{ if (window.__igChatClearNotify) window.__igChatClearNotify(); }catch(_){ }
   setInterval(refreshLobbyMode, 1500);
   window.addEventListener('resize', positionCollapsedBtn);
 })();</script>
@@ -6722,7 +6924,7 @@ return true;
       }
     } catch(_){}
     loggedUser = loggedIn ? (username || '') : null; try{ window.loggedUser = loggedIn ? (username||'') : null; }catch(_){}
-     try{ window.__meOk = !!loggedIn; }catch(_){ } validatePseudoBlocking(); // re-validate
+     try{ window.__meOk = !!loggedIn; }catch(_){ } validatePseudoBlocking(); try{ if (loggedIn && typeof pseudoInput!=='undefined' && pseudoInput && document.activeElement===pseudoInput) pseudoInput.blur(); }catch(_){} // re-validate
       try{ if (window.enforcePseudoLock) window.enforcePseudoLock(); }catch(_){ }
   }
 
@@ -8353,229 +8555,207 @@ e.preventDefault(); e.stopPropagation();
 
 
 
+
 <script id="build-tooltip-stabilizer">
 (function(){
-  try {
+  try{
     if (window.__buildTooltipStabilizer) return;
     window.__buildTooltipStabilizer = true;
 
-    // Helper: safe query all '#buildTooltip' (duplicates exist in file) and disable them
+    // --- 1) Kill legacy duplicates early (but keep references safe)
+    function nodelistToArray(nl){ try { return Array.prototype.slice.call(nl||[]); } catch(_){ return []; } }
     function disableLegacyTooltips(){
-      try {
+      try{
         var olds = document.querySelectorAll('#buildTooltip');
-        if (!olds || !olds.length) return null;
-        olds.forEach(function(el, idx){
-          try {
+        nodelistToArray(olds).forEach(function(el){
+          try{
             el.style.display = 'none';
             el.setAttribute('aria-hidden','true');
             el.dataset.disabled = '1';
-          } catch(_){}
+            if (el.parentNode) el.parentNode.removeChild(el); // detach from DOM; refs remain safe
+          }catch(_){}
         });
-      } catch(_){}
+      }catch(_){}
     }
+    disableLegacyTooltips();
 
+    // --- 2) Stable tooltip node (single instance, fixed to viewport)
     function ensureStableTooltip(){
-      // Create a single, stable tooltip element once
-      var stable = document.getElementById('buildTooltipStable');
-      if (stable) return stable;
-      // Prefer to attach inside the first #buildBar if present so it's positioned correctly
-      var bar = document.getElementById('buildBar') || document.body;
-      stable = document.createElement('div');
-      stable.id = 'buildTooltipStable';
-      // Copy the original style but make sure it can't capture pointer events
-      stable.style.display = 'none';
-      stable.style.position = 'absolute';
-      stable.style.right = '0';
-      stable.style.bottom = '70px';
-      stable.style.maxWidth = '260px';
-      stable.style.background = '#111c';
-      stable.style.color = '#fff';
-      stable.style.fontSize = '13px';
-      stable.style.padding = '8px 10px';
-      stable.style.borderRadius = '8px';
-      stable.style.boxShadow = '0 4px 18px #000a';
-      stable.style.pointerEvents = 'none';
-      stable.style.whiteSpace = 'nowrap';
-      // Extra: avoid layout jumps during text updates
-      stable.style.willChange = 'contents, opacity';
-      bar.appendChild(stable);
-      return stable;
+      var box = document.getElementById('buildTooltipStable');
+      if (box) return box;
+      box = document.createElement('div');
+      box.id = 'buildTooltipStable';
+      // UI-safe styles
+      box.style.position = 'fixed';
+      box.style.display = 'none';
+      box.style.left = '0';
+      box.style.top = '0';
+      box.style.maxWidth = '320px';
+      box.style.padding = '6px 8px';
+      box.style.borderRadius = '8px';
+      box.style.background = '#111c';
+      box.style.color = '#fff';
+      box.style.fontSize = '13px';
+      box.style.lineHeight = '1.2';
+      box.style.boxShadow = '0 4px 18px #000a';
+      box.style.pointerEvents = 'none';
+      box.style.whiteSpace = 'nowrap';
+      box.style.zIndex = '2147480000';
+      box.setAttribute('role','tooltip');
+      document.body.appendChild(box);
+      return box;
     }
+    window.getBuildTooltipBox = ensureStableTooltip;
 
-    function currentLang(){
-      try { return (window.currentLang || (navigator.language||'en')).slice(0,2); } catch(_){ return 'en'; }
+    // Utility: localized strings where possible (non-throwing)
+    function uiLang(){
+      try {
+        var L = (window.currentLang || (navigator.language||'en')).slice(0,2);
+        var alias = { fr:'fr', en:'en', es:'es', de:'de', it:'it', pt:'pt' };
+        return alias[L] || 'en';
+      } catch(_){ return 'en'; }
     }
-
-    function upperFirstLocalized(s){
-      if (!s) return s;
+    function upperFirstLocalizedSafe(s){
       try{
+        if (!s) return s;
         var i = s.search(/[A-Za-zÀ-ÖØ-öø-ÿĀ-žА-Яа-яЁё]/u);
         if (i < 0) return s;
         return s.slice(0, i) + s.charAt(i).toUpperCase() + s.slice(i + 1);
-      } catch(e){
-        try { return s.charAt(0).toUpperCase() + s.slice(1); } catch(_) { return s; }
+      }catch(_){
+        try { return s.charAt(0).toUpperCase() + s.slice(1); } catch(__){ return s; }
       }
     }
-
     function computeTurretDamageDisplay(type){
-      try {
-        if (typeof window.computeTurretDamageDisplay === 'function') {
-          return window.computeTurretDamageDisplay(type);
-        }
-        // Fallback: base only
-        return (type==='t')?5: (type==='T')?10:25;
-      } catch(_){ return (type==='t')?5: (type==='T')?10:25; }
+      try { if (typeof window.computeTurretDamageDisplay === 'function') return window.computeTurretDamageDisplay(type); }
+      catch(_){}
+      // Fallbacks
+      return (type==='t')?5 : (type==='T')?10 : 25;
     }
-
-    function computeTipFor(btn){
-      if (!btn) return '';
-      var type = btn.getAttribute('data-type') || '';
-      // If some other code already computed a localized tip, prefer it
-      var attrTip = btn.getAttribute('data-tip');
-      // Build a dynamic tip in case we need it
-      var tr = (window.TRANSLATIONS && (TRANSLATIONS[currentLang()] || TRANSLATIONS['en'])) || {};
-      var names = (tr.turretType || {});
+    function computeTipForType(type){
+      try {
+        if (typeof window.computeTipForType === 'function'){
+          var v = window.computeTipForType(type);
+          if (v) return v;
+        }
+      } catch(_){}
+      var T = window.TRANSLATIONS || {};
+      var tr = (T[uiLang()] || T['en']) || {};
+      var names = tr.turretType || {};
       var hpLabel = tr.hpShort || 'HP';
       var dmgLabel = tr.damage || 'Damage';
       var rateLabel = tr.fireRate || 'Fire rate';
-      var perSec = (tr.perSec || '/s');
+      var perSec = tr.perSec || '/s';
       var baseHP = { T:500, t:200, G:2500, B:500, D:500 };
       var name = (type==='B') ? (tr.buildWall || 'Wall')
-                : (type==='D') ? (tr.buildDoor || 'Door')
-                : (names[type] || 'Turret');
-      name = upperFirstLocalized(name);
-      var tip;
-      if (type==='B' || type==='D') {
-        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
-      } else if (type==='t' || type==='T' || type==='G') {
+               : (type==='D') ? (tr.buildDoor || 'Door')
+               : (names[type] || 'Turret');
+      name = upperFirstLocalizedSafe(name);
+      if (type==='B' || type==='D'){
+        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
+      } else {
         var rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
         var dmg = computeTurretDamageDisplay(type);
-        tip = name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + perSec + ')';
-      } else {
-        tip = attrTip || name;
+        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + perSec + ')';
       }
-      // For turret types, always use dynamic text so damage reflects upgrades.
-      // For walls/doors or unknown types, allow static attrTip if present.
-      try {
-        if ((type==='B' || type==='D') && attrTip && attrTip.length >= tip.length - 4) {
-          return attrTip;
-        }
-      } catch(_){}
-      return tip;
     }
 
-    disableLegacyTooltips();
-    var tooltip = ensureStableTooltip();
+    // --- 3) Delegated hover for original Build bar (robust to re-renders)
+    function attachDelegatedTooltip(container){
+      if (!container || container.__tooltipBound) return;
+      container.__tooltipBound = true;
 
-    var showTimer = null, hideTimer = null, lastBtn = null;
+      var box = ensureStableTooltip();
+      var overEl = null;
 
-    function showFor(btn){
-      try {
-        if (!btn) return;
-        var txt = computeTipFor(btn);
-        if (tooltip.textContent !== txt) tooltip.textContent = txt;
-        tooltip.style.display = 'block';
-      } catch(_){}
-    }
-    function scheduleShow(btn){
-      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-      if (showTimer) clearTimeout(showTimer);
-      showTimer = setTimeout(function(){ showFor(btn); }, 30);
-    }
-    function scheduleHide(){
-      if (showTimer) { clearTimeout(showTimer); showTimer = null; }
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function(){ tooltip.style.display = 'none'; lastBtn = null; }, 90);
-    }
-
-    // Expose a helper to recompute tooltip text if it's currently visible
-    try {
-      window.refreshBuildTooltip = function(){
+      function showFor(el, clientX, clientY){
         try{
-          var hovered = document.querySelector('#buildTiles .build-tile:hover');
-          if (hovered) { showFor(hovered); }
-        } catch(_){ }
-      };
-    } catch(_){}
-
-    function isInsideAnyBuildTile(el){
-      return !!(el && el.closest && el.closest('#buildTiles .build-tile'));
-    }
-
-    // Single delegated handlers (works even if DOM is duplicated)
-    document.addEventListener('pointerover', function(e){
-      try {
-        var btn = e.target && e.target.closest && e.target.closest('#buildTiles .build-tile');
-        if (!btn) return;
-        lastBtn = btn;
-        scheduleShow(btn);
-      } catch(_){}
-    }, {passive:true, capture:true});
-
-    document.addEventListener('pointerout', function(e){
-      try {
-        var fromTile = e.target && e.target.closest && e.target.closest('#buildTiles .build-tile');
-        if (!fromTile) return;
-        var toEl = e.relatedTarget || null;
-        if (isInsideAnyBuildTile(toEl)) {
-          // moving between tiles → keep tooltip, update text shortly after
-          var nextBtn = toEl.closest('#buildTiles .build-tile');
-          if (nextBtn && nextBtn !== lastBtn) { lastBtn = nextBtn; scheduleShow(nextBtn); }
-          return;
-        }
-        scheduleHide();
-      } catch(_){}
-    }, {passive:true, capture:true});
-
-    // Safety net: hide tooltip if the whole build bar is hidden/collapsed
-    var bar = document.getElementById('buildBar');
-    if (bar) {
-      var obs = new MutationObserver(function(){
-        try{
-          var visible = !!(bar.offsetParent !== null) && getComputedStyle(bar).display !== 'none';
-          if (!visible) { tooltip.style.display = 'none'; }
+          var type = el.getAttribute('data-type');
+          var tip = computeTipForType(type);
+          box.textContent = tip || '';
+          // Position near cursor if coords provided, else near element
+          var x = clientX, y = clientY;
+          if (typeof x !== 'number' || typeof y !== 'number'){
+            var r = el.getBoundingClientRect();
+            x = r.left + r.width/2;
+            y = r.top - 8;
+          }
+          x = Math.max(8, Math.min((window.innerWidth||800) - 8, x));
+          y = Math.max(8, Math.min((window.innerHeight||600) - 8, y));
+          box.style.left = (x + 10) + 'px';
+          box.style.top  = (y - 10) + 'px';
+          box.style.display = 'block';
         }catch(_){}
-      });
-      try { obs.observe(bar, { attributes:true, childList:false, subtree:false, attributeFilter:['style','class'] }); } catch(_){}
-    }
+      }
+      function hideBox(){
+        try { box.style.display = 'none'; } catch(_){}
+      }
 
-  } catch(_e){}
-
-  // Global, resilient opener (works even if openSkinModal not yet defined)
-  try {
-    if (typeof window.__openCharacterSkin !== 'function') {
-      window.__openCharacterSkin = function(){
-        try {
-          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
-          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
-          if (typeof openSkinModal === 'function') return openSkinModal();
-          var tries = 0;
-          var id = setInterval(function(){
-            tries++;
-            try {
-              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
-              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
-            } catch(_){}
-            if (tries > 40) clearInterval(id);
-          }, 50);
-        } catch(_){}
-      };
-    }
-    // Document-level capture listener (works even if inner containers stop propagation)
-    document.addEventListener('click', function(ev){
-      try {
+      container.addEventListener('mouseover', function(ev){
         var t = ev.target;
         if (!t) return;
-        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        window.__openCharacterSkin();
-      } catch(_){}
-    }, true);
-  } catch(_){}
+        if (!t.classList) return;
+        if (!t.classList.contains('build-tile')){
+          t = t.closest ? t.closest('.build-tile') : null;
+        }
+        if (!t) return;
+        overEl = t;
+        showFor(t, ev.clientX, ev.clientY);
+      }, { passive:true, capture:true });
 
+      container.addEventListener('mousemove', function(ev){
+        try {
+          // If the pointer is no longer over a .build-tile, hide the tooltip
+          var t = ev.target;
+          var tile = (t && t.classList && t.classList.contains('build-tile')) ? t : (t && t.closest ? t.closest('.build-tile') : null);
+          if (!tile) {
+            overEl = null;
+            hideBox();
+            return;
+          }
+          // Otherwise, keep following the cursor for the last tile we hovered
+          if (!overEl) overEl = tile;
+          showFor(overEl, ev.clientX, ev.clientY);
+        } catch(_){}
+      }, { passive:true, capture:true });
+
+      container.addEventListener('mouseleave', function(){
+        overEl = null;
+        hideBox();
+  
+      // Also hide when the mouse truly leaves a tile but remains inside the container
+      container.addEventListener('mouseout', function(ev){
+        try {
+          var t = ev.target;
+          if (!t || !t.classList || !t.classList.contains('build-tile')) return;
+          var rel = ev.relatedTarget;
+          if (rel && (rel===t || (rel.closest && rel.closest('.build-tile')===t))) return; // moving within same tile
+          overEl = null;
+          hideBox();
+        } catch(_){}
+      }, { passive:true, capture:true });
+    }, { passive:true, capture:true });
+    }
+
+    function initDelegation(){
+      var wrap = document.getElementById('buildTiles');
+      if (wrap) { attachDelegatedTooltip(wrap); return; }
+      // Observe until it exists
+      if (window.MutationObserver){
+        var mo = new MutationObserver(function(){
+          var w = document.getElementById('buildTiles');
+          if (w){ try { attachDelegatedTooltip(w); mo.disconnect(); } catch(_){ } }
+        });
+        mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
+      }
+    }
+    initDelegation();
+
+  }catch(e){
+    try { console.error('[build-tooltip-stabilizer] failed', e); } catch(_){}
+  }
 })();
 </script>
+
 <!-- Account Gold Shop Modal -->
 
 
@@ -10539,3 +10719,699 @@ document.getElementById('skinBuy').onclick = buyNow;
 })();
 </script>
 <!-- /[PATCH] character-skin shop & recolor v1 -->
+
+<!-- In‑game Bottom Menu (auto‑injected by patch) -->
+<!-- In-game Bottom Menu (updated patch) -->
+<!-- In-game Bottom Menu (updated patch v2) -->
+<style id="igMenuStyle">
+  #inGameMenu {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 12px;
+    z-index: 10050;
+    display: none;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 14px;
+    background: rgba(12,14,18,0.68);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.06);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: auto;
+  }
+.ig-btn {
+    appearance: none;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: linear-gradient(#1b2027, #13161b);
+    color: #f2f6ff;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font: 600 14px/1 ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    letter-spacing: .2px;
+    cursor: pointer;
+    /* Prevent text selection and focus outline on in‑game buttons. The
+       global form-focus override sets user-select:text on all buttons, so
+       we override it here with !important flags. This also removes the
+       default focus outline to avoid the white border when using keyboard
+       navigation. */
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    outline: none !important;
+    transition: transform .06s ease, background .12s ease, box-shadow .12s ease, border-color .12s ease, color .12s ease;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    min-width: 76px;
+  
+    position: relative;
+  }
+  .ig-btn:active { transform: translateY(1px) scale(0.99); filter: brightness(1.15); }
+  .ig-btn.notify::after{
+    content:''; position:absolute; right:-4px; top:-4px; width:10px; height:10px; border-radius:50%;
+    background:#e33; border:2px solid rgba(18,18,18,0.8);
+  }
+  .ig-btn.active {
+    background: linear-gradient(#2b3a52, #1a2230);
+    border-color: #4b6aa9;
+    box-shadow: 0 0 0 2px rgba(82,136,255,0.25) inset, 0 4px 14px rgba(0,0,0,0.35);
+    color: #dfe9ff;
+  }
+  .ig-btn.danger { border-color: rgba(255,68,68,0.35); }
+  .ig-btn.danger.active, .ig-btn.danger:active { background: linear-gradient(#612226, #3e1518); border-color: #b3363c; color: #fff; }
+
+  /* Stats = reuse legacy #hudStats, but float it like a bubble */
+  #hudStats.ig-floating {
+    position: fixed !important;
+    /* Place stats bubble near the bottom‑left of the screen instead of centered */
+    left: 12px !important;
+    transform: none !important;
+    bottom: 8px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+    z-index: 10051 !important;
+    display: none;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(14,16,20,0.88);
+    color: #fff;
+    box-shadow: 0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06);
+    font: 600 14px/1.25 ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    white-space: nowrap;
+   width: -moz-fit-content; width: fit-content; max-width: min(96vw, 520px);}
+
+  /* Chat floating above menu (narrower) */
+  #chatPanel.ig-floating {
+    position: fixed !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    bottom: 66px !important;
+    z-index: 10051 !important;
+    display: none;
+    max-height: min(50vh, 480px);
+    width: min(84vw, 520px);
+    box-shadow: 0 8px 28px rgba(0,0,0,.6);
+    border-radius: 12px;
+    overflow: hidden auto;
+  }
+
+  /* Build mini panel (larger; fixed hint) */
+  #igBuildPanel {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 66px;
+    z-index: 10051;
+    display: none;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(14,16,20,0.88);
+    color: #fff;
+    box-shadow: 0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06);
+    min-width: unset;
+    width: -moz-fit-content;
+    width: fit-content;
+    max-width: min(96vw, 720px);
+  }
+  #igBuildTiles { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: center; }
+  #igBuildTiles .build-tile { outline: none; }
+  #igBuildHint { margin-top: 6px; text-align: center; font: 600 13px/1.1 ui-sans-serif,system-ui; color:#cfe2ff; opacity:.92; height: 18px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Tooltip bubble outside panel to avoid resizing */
+  #buildTooltip { position:absolute; display:none; left:0; top:0; background:#121418ee; color:#fff; border-radius:10px; padding:8px 10px; font:600 13px ui-sans-serif,system-ui; box-shadow:0 6px 24px #000c; pointer-events:none; white-space:nowrap; z-index:11000; }
+
+  /* Confirm modal (login-like) */
+  #igConfirmOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 12000; display: none; align-items: center; justify-content: center; }
+  #igConfirmBox { width: min(440px, 92vw); background: rgba(27,29,34,.96); border-radius: 16px; box-shadow: 0 12px 48px #000c; padding: 18px; color:#eef3ff; }
+  #igConfirmBox h3 { margin: 0 0 8px; font: 800 22px/1 ui-sans-serif,system-ui; }
+  #igConfirmBox p { margin: 0 0 14px; color:#b9c5d9; }
+  #igConfirmBtns { display:flex; gap:10px; justify-content:flex-end; }
+  #igConfirmBtns .ig-btn { min-width: 96px; }
+
+  /* Upgrades panel: remove green outline */
+  #shopModal { border: none !important; outline: none !important; box-shadow: 0 8px 28px rgba(0,0,0,.7) !important; }
+
+  @media (hover: none) and (pointer: coarse){
+    #inGameMenu{ gap:6px; padding:6px; bottom: 10px; }
+    .ig-btn{ padding:10px 12px; font-size:15px; min-width:72px; }
+    #chatPanel.ig-floating{ bottom: 70px; font-size:15px; }
+    #igBuildPanel{ bottom: 70px; }
+  }
+</style>
+
+<script id="igMenuPatch">
+(function(){
+  try{
+    // ---------- tiny utils
+    function $(id){ return document.getElementById(id); }
+    function show(el){ if (el) el.style.display='block'; }
+    function hide(el){ if (el) el.style.display='none'; }
+    function isShown(el){
+      if (!el) return false;
+      var cs = window.getComputedStyle(el);
+      return !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0');
+    }
+    function toggle(el){ if (!el) return; isShown(el) ? hide(el) : show(el); }
+    function setActive(btn, on){ if (!btn) return; btn.classList[on?'add':'remove']('active'); }
+    function vibr(ms){ try{ if (navigator && navigator.vibrate) navigator.vibrate(ms||6); }catch(_){} }
+
+    // ---------- menu container
+    var menu = $('inGameMenu');
+    if (!menu){
+      menu = document.createElement('div');
+      menu.id = 'inGameMenu';
+      menu.setAttribute('aria-label','In-game quick menu');
+      document.body.appendChild(menu);
+    }
+
+    function mkBtn(key, label){
+      var b = document.createElement('button');
+      b.className = 'ig-btn';
+      b.type = 'button';
+      b.dataset.action = key;
+      b.textContent = label;
+  // Remove the button from the tab order to prevent keyboard focus and
+  // accidental arrow‑key selection. This also helps avoid the white
+  // outline that appears when a button receives focus via the keyboard.
+  b.tabIndex = -1;
+      return b;
+    }
+
+    var T = (window.TRANSLATIONS && (window.TRANSLATIONS[window.currentLang] || window.TRANSLATIONS.en)) || {};
+    var L = {
+      stats   : T.stats     || 'Stats',
+      chat    : T.chat      || 'Chat',
+      autofire: (T.autoFire||T.autofire||'Auto fire'),
+      build   : T.build     || 'Build',
+      upgrade : (T.upgradeLabel || T.shop || (T.upgrades && (T.upgrades.title || T.upgrades.button)) || 'Upgrades'),
+      leave   : T.leaveGame || 'Leave'
+    };
+
+    var btnStats = mkBtn('stats', L.stats);
+    var btnChat  = mkBtn('chat',  L.chat);
+    var btnAuto  = mkBtn('autofire', L.autofire);
+    var btnBuild = mkBtn('build', L.build);
+    var btnShop  = mkBtn('upgrade', L.upgrade);
+    var btnLeave = mkBtn('leave', L.leave); btnLeave.classList.add('danger');
+
+    if (!menu.__filled){
+      menu.__filled = true;
+      menu.appendChild(btnStats);
+      menu.appendChild(btnChat);
+      menu.appendChild(btnAuto);
+      menu.appendChild(btnBuild);
+      menu.appendChild(btnShop);
+      
+menu.appendChild(btnLeave);
+// --- Ensure mutual exclusivity of panels + chat notify clear ---
+try{
+  btnStats.addEventListener('click', function(){
+    try{
+      if (chat) hide(chat);
+      if (buildPanel) hide(buildPanel);
+      try{ if (typeof closeUpgrades==='function') closeUpgrades(); }catch(_){}
+      setActive(btnChat,false); setActive(btnBuild,false); setActive(btnShop,false);
+    }catch(_){}
+  }, true);
+  btnChat.addEventListener('click', function(){
+    try{
+      // Do not hide stats or deselect it when toggling chat; just remove notification.
+      try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
+    }catch(_){}
+  }, true);
+  btnBuild.addEventListener('click', function(){
+    try{
+      // Opening the build panel should not close the stats bubble or deselect the stats button.
+    }catch(_){}
+  }, true);
+  btnShop.addEventListener('click', function(){
+    try{
+      // Opening the upgrades panel should not close the stats bubble or deselect the stats button.
+    }catch(_){}
+  }, true);
+}catch(_){}
+// Chat notification helpers (used by chat module)
+try{
+  if (!window.__igChatNotify) window.__igChatNotify = function(){
+    try{ if (btnChat && chat && chat.style && chat.style.display==='none'){ btnChat.classList.add('notify'); } }catch(_){}
+  };
+  if (!window.__igChatClearNotify) window.__igChatClearNotify = function(){
+    try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
+  };
+}catch(_){}
+
+    // --- Ensure mutual exclusivity of panels + chat notify clear ---
+    try{
+      btnStats.addEventListener('click', function(){
+        try{
+          if (chat) hide(chat);
+          if (buildPanel) hide(buildPanel);
+          try{ if (typeof closeUpgrades==='function') closeUpgrades(); }catch(_){}
+          setActive(btnChat,false); setActive(btnBuild,false); setActive(btnShop,false);
+        }catch(_){}
+      }, true);
+      btnChat.addEventListener('click', function(){
+        try{
+          // Do not hide stats or deselect it; just remove the notification badge
+          try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
+        }catch(_){}
+      }, true);
+      btnBuild.addEventListener('click', function(){
+        try{
+          // Opening the build or upgrades panel should not close the stats bubble or deselect the stats button.
+        }catch(_){ }
+      }, true);
+      btnShop.addEventListener('click', function(){
+        try{
+          // Opening the build or upgrades panel should not close the stats bubble or deselect the stats button.
+        }catch(_){ }
+      }, true);
+    }catch(_){}
+    // Chat notification helpers (used by chat module)
+    try{
+      if (!window.__igChatNotify) window.__igChatNotify = function(){
+        try{ if (btnChat && !(chat && chat.style && chat.style.display!== 'none')){ /* reserved */ } }catch(_){}
+        try{ if (btnChat && chat && chat.style && chat.style.display==='none'){ btnChat.classList.add('notify'); } }catch(_){}
+      };
+      if (!window.__igChatClearNotify) window.__igChatClearNotify = function(){
+        try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
+      };
+    }catch(_){}
+
+    }
+
+    // ---------- floating panels
+    var hudStats = $('hudStats'); if (hudStats){ hudStats.classList.add('ig-floating'); hide(hudStats); }
+    var chat = $('chatPanel');
+
+    // ---------- Build panel and tooltips
+    var buildPanel = $('igBuildPanel');
+    if (!buildPanel){
+      buildPanel = document.createElement('div');
+      buildPanel.id = 'igBuildPanel';
+      buildPanel.innerHTML = '<div id="igBuildTiles"></div><div id="igBuildHint" aria-live="polite"></div>';
+      document.body.appendChild(buildPanel);
+    }
+    var igTiles = $('igBuildTiles');
+
+    function tipForType(dt){
+      try { if (typeof computeTipForType === 'function') { var t = computeTipForType(dt); if (t) return t; } } catch(_){}
+      try {
+        var origWrap = $('buildTiles');
+        if (origWrap){
+          var orig = origWrap.querySelector('.build-tile[data-type="'+dt+'"]');
+          if (orig) return orig.getAttribute('data-tip') || orig.getAttribute('title') || orig.getAttribute('aria-label') || '';
+        }
+      } catch(_){}
+      return '';
+    }
+    function ensureTooltip(){
+      try { if (window.getBuildTooltipBox) { return window.getBuildTooltipBox(); } } catch(_){}
+      var box = document.getElementById('buildTooltip') || document.getElementById('buildTooltipStable');
+      if (!box || box.id === 'buildTooltipStable') {
+        if (box && box.id === 'buildTooltipStable') return box;
+        box = document.createElement('div');
+        box.id = 'buildTooltip';
+        box.style.cssText = 'position:absolute;display:none;left:0;top:0;background:#111c;color:#fff;font-size:13px;padding:8px 10px;border-radius:8px;box-shadow:0 4px 18px #000c;pointer-events:none;white-space:nowrap;z-index:11000;';
+        document.body.appendChild(box);
+      }
+      return box;
+    }
+
+    function positionTooltipNear(el, box){
+      var r = el.getBoundingClientRect();
+      var x = r.left + r.width/2, y = r.top - 10;
+      box.style.left = Math.max(8, Math.min(window.innerWidth - 8, x)) + 'px';
+      box.style.top  = Math.max(8, y) + 'px';
+    }
+
+    function bindTileClone(clone, dt){
+      // prevent native tooltip flicker on clones
+      if (clone.hasAttribute('title')) clone.setAttribute('title','');
+      clone.addEventListener('click', function(){
+        try { var orig = $('buildTiles').querySelector('.build-tile[data-type="'+dt+'"]'); if (orig) orig.click(); } catch(_){}
+      }, { passive:true });
+      clone.addEventListener('mouseenter', function(){
+        try {
+          var tip = tipForType(dt);
+          var box = ensureTooltip();
+          box.textContent = tip || '';
+          positionTooltipNear(clone, box);
+          box.style.display = 'block';
+        } catch(_){}
+      }, { passive:true });
+      clone.addEventListener('mousemove', function(){
+        try { var box = $('buildTooltip'); if (box && box.style.display==='block') positionTooltipNear(clone, box); } catch(_){}
+      }, { passive:true });
+      clone.addEventListener('mouseleave', function(){ try{ var box=$('buildTooltip'); if (box) box.style.display='none'; }catch(_){} }, { passive:true });
+    }
+
+    function cloneTiles(){
+      if (!igTiles) return;
+      igTiles.innerHTML = ''; // always rebuild for safety
+      var src = $('buildTiles');
+      if (src){
+        var tiles = src.querySelectorAll('.build-tile[data-type]');
+        tiles.forEach(function(t){
+          var dt = t.getAttribute('data-type');
+          var clone = t.cloneNode(true);
+          clone.classList.add('build-tile');
+          bindTileClone(clone, dt);
+          igTiles.appendChild(clone);
+        });
+        igTiles.__filled = true;
+      } else {
+        // if not available yet, observe and fill when it appears
+        if (window.MutationObserver && !igTiles.__observing){
+          igTiles.__observing = true;
+          var obs = new MutationObserver(function(){
+            if ($('buildTiles')){ try{ cloneTiles(); obs.disconnect(); }catch(_){ } }
+          });
+          obs.observe(document.body, { childList:true, subtree:true });
+        }
+      }
+    }
+    cloneTiles();
+
+    // ---------- Confirm modal for Leave
+    var confirmOverlay = $('igConfirmOverlay');
+    if (!confirmOverlay){
+      confirmOverlay = document.createElement('div');
+      confirmOverlay.id = 'igConfirmOverlay';
+      confirmOverlay.innerHTML = (function(){var tr=(window.TRANSLATIONS&&(TRANSLATIONS[window.currentLang]||TRANSLATIONS['en']))||{};var title=tr.confirmTitle||tr.confirm||'Confirm';var text=tr.leaveConfirm||tr.leaveConfirmText||'Leave the game and return to the lobby?';var cancel=tr.cancel||'Cancel';var leave=tr.leaveGame||tr.leave||'Leave';return '<div id="igConfirmBox"><h3>'+title+'</h3><p>'+text+'</p><div id="igConfirmBtns"><button id="igCancel" class="ig-btn">'+cancel+'</button><button id="igDoLeave" class="ig-btn danger">'+leave+'</button></div></div>';})();
+      document.body.appendChild(confirmOverlay);
+    }
+    var btnCancel = $('igCancel');
+    var btnDoLeave = $('igDoLeave');
+
+    // ---------- Upgrades panel: ULTRA-robust toggle
+    function getShopModal(){
+      return $('shopModal') || document.querySelector('.shop-modal, #upgradesPanel, .upgrades-panel');
+    }
+    function openUpgrades(){
+      var sm = getShopModal();
+      try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+      if (!sm){
+        try { if (typeof showShopPanel === 'function') showShopPanel(); } catch(_){}
+        sm = getShopModal();
+      }
+      if (sm){
+        // clean hide classes & show
+        ['open','visible','active','show','hidden'].forEach(function(c){ sm.classList.remove(c); });
+        sm.removeAttribute('aria-hidden');
+        show(sm);
+        sm.dataset.igOpen = '1';
+      }
+      setActive(btnShop, true);
+      // second render after paint in case of late data
+      setTimeout(function(){ try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){} }, 50);
+    }
+    function closeUpgrades(){
+      var sm = getShopModal();
+      if (sm){
+        // use native hide API if present
+        try { if (typeof hideShopPanel === 'function') { hideShopPanel(); } } catch(_){}
+        // click on any close control if exists
+        try {
+          var closeBtn = sm.querySelector('[data-close], .close, .btn-close, .x, .close-btn');
+          if (closeBtn) closeBtn.click();
+        } catch(_){}
+        // hard hide
+        hide(sm);
+        ['open','visible','active','show'].forEach(function(c){ sm.classList.remove(c); });
+        sm.setAttribute('aria-hidden','true');
+        delete sm.dataset.igOpen;
+      }
+      setActive(btnShop, false);
+    }
+    function upgradesOpen(){
+      var sm = getShopModal();
+      if (!sm) return false;
+      if (sm.dataset && sm.dataset.igOpen === '1') return true;
+      return isShown(sm);
+    }
+
+    // ---------- Actions
+    btnStats.addEventListener('click', function(){
+      if (!hudStats) return;
+      var willShow = !isShown(hudStats);
+      toggle(hudStats);
+      setActive(btnStats, willShow);
+      vibr(6);
+    }, { passive:true });
+
+    btnChat.addEventListener('click', function(){
+      if (!chat) return;
+      var willShow = !isShown(chat);
+      toggle(chat);
+      setActive(btnChat, willShow);
+      if (willShow) {
+        // Close Build & Upgrades when opening Chat
+        try { hide(buildPanel); setActive(btnBuild, false); } catch(_){}
+        try { if (typeof upgradesOpen==='function' && typeof closeUpgrades==='function' && upgradesOpen()) { closeUpgrades(); } } catch(_){}
+        try { setActive(btnShop, false); } catch(_){}
+      }
+      try { var inp = $('chatInput'); if (willShow && inp) inp.focus({ preventScroll:true }); } catch(_){}
+    }, { passive:true });
+
+    btnAuto.addEventListener('click', function(){
+      try { var ab = $('autoFireBtn'); if (ab) { ab.click(); } } catch(_){}
+      setTimeout(syncAutoBtn, 20);
+    }, { passive:true });
+
+    btnBuild.addEventListener('click', function(){
+      cloneTiles();
+      var willShow = !isShown(buildPanel);
+      toggle(buildPanel);
+      setActive(btnBuild, willShow);
+      if (willShow) {
+        // Close Chat & Upgrades when opening Build
+        try { hide(chat); setActive(btnChat, false); } catch(_){}
+        try { if (typeof upgradesOpen==='function' && typeof closeUpgrades==='function' && upgradesOpen()) { closeUpgrades(); } } catch(_){}
+        try { setActive(btnShop, false); } catch(_){}
+      }
+      vibr(6);
+    }, { passive:true });
+
+    btnShop.addEventListener('click', function(){
+      try {
+        var wasOpen = (typeof upgradesOpen==='function') ? upgradesOpen() : false;
+        if (wasOpen) {
+          if (typeof closeUpgrades==='function') closeUpgrades();
+          setActive(btnShop, false);
+        } else {
+          // Close Chat & Build before opening Upgrades
+          try { hide(chat); setActive(btnChat, false); } catch(_){}
+          try { hide(buildPanel); setActive(btnBuild, false); } catch(_){}
+          if (typeof openUpgrades==='function') openUpgrades();
+          setActive(btnShop, true);
+        }
+      } catch(_){}
+    }, { passive:true });
+
+    btnLeave.addEventListener('click', function(){
+      try { confirmOverlay.style.display = 'flex'; } catch(_){}
+    }, { passive:true });
+
+    if (btnCancel) btnCancel.addEventListener('click', function(){ try{ confirmOverlay.style.display='none'; }catch(_){} }, { passive:true });
+    if (btnDoLeave) btnDoLeave.addEventListener('click', function(){
+      try { confirmOverlay.style.display='none'; } catch(_){}
+      try { if (window.socket && socket.emit) socket.emit('leaveLobby'); } catch(_){}
+      // Full refresh to guarantee clean lobby state
+      setTimeout(function(){
+        try { window.location.reload(); } catch(e){ try{ window.location.href = window.location.href; }catch(_){ } }
+      }, 50);
+    }, { passive:true });
+
+    // --- Apply i18n to bottom menu + confirm modal ---
+    function applyIgMenuI18n(){
+      try{
+        var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+        if (btnStats) btnStats.textContent = T.stats || 'Stats';
+        if (btnChat)  btnChat.textContent  = T.chat || 'Chat';
+        if (btnAuto)  btnAuto.textContent  = (T.autoFire || T.autofire || 'Auto fire');
+        if (btnBuild) btnBuild.textContent = T.build || 'Build';
+        if (btnShop)  btnShop.textContent  = (T.upgradeLabel || T.shop || (T.upgrades && (T.upgrades.title||T.upgrades.button)) || 'Upgrades');
+        if (btnLeave) btnLeave.textContent = T.leaveGame || 'Leave';
+        // Refresh confirm box contents in-place
+        var title = T.confirmTitle || T.confirm || 'Confirm';
+        var text  = T.leaveConfirm || T.leaveConfirmText || 'Leave the game and return to the lobby?';
+        var cancel= T.cancel || 'Cancel';
+        var leave = T.leaveGame || T.leave || 'Leave';
+        var box = document.getElementById('igConfirmBox');
+        if (confirmOverlay && box){
+          box.innerHTML = '<h3>'+title+'</h3><p>'+text+'</p><div id="igConfirmBtns"><button id="igCancel" class="ig-btn">'+cancel+'</button><button id="igDoLeave" class="ig-btn danger">'+leave+'</button></div>';
+          btnCancel = document.getElementById('igCancel');
+          btnDoLeave = document.getElementById('igDoLeave');
+          if (btnCancel) btnCancel.addEventListener('click', function(){ try{ confirmOverlay.style.display='none'; }catch(_){ } }, {passive:true});
+          if (btnDoLeave) btnDoLeave.addEventListener('click', function(){
+            try { confirmOverlay.style.display='none'; } catch(_){}
+            try { if (window.socket && socket.emit) socket.emit('leaveLobby'); } catch(_){}
+            setTimeout(function(){ try{ window.location.reload(); } catch(e){ try{ window.location.href = window.location.href; }catch(_){ } } }, 50);
+          }, {passive:true});
+        }
+      }catch(_){}
+    }
+    // initial call; will be called again on language changes
+    applyIgMenuI18n();
+
+    // Prevent arrow or WASD keys from focusing in‑game buttons and causing a focus outline.
+    // When a navigation key is pressed while a bottom menu button has focus, we blur the button
+    // so that the browser does not draw a white outline. We do not prevent the default action
+    // to ensure that the keys still control the player.
+    try {
+      document.addEventListener('keydown', function(e){
+        try {
+          var k = e.key ? e.key.toLowerCase() : '';
+          if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright' || k === 'w' || k === 'a' || k === 's' || k === 'd') {
+            var ae = document.activeElement;
+            if (ae && ae.classList && ae.classList.contains('ig-btn')) {
+              ae.blur();
+            }
+          }
+        } catch(_) { }
+      }, true);
+    } catch(_){ }
+    if (typeof window.updateUITexts === 'function'){
+      try{
+        var __prev = window.updateUITexts;
+        window.updateUITexts = function(){ try{ __prev.apply(this, arguments); }catch(_){ } applyIgMenuI18n(); };
+      }catch(_){}
+    }
+
+    // ---------- Sync toggles
+    function syncAutoBtn(){
+      try {
+        var enabled = false;
+        try { enabled = !!window.AUTO_FIRE_ENABLED || !!(typeof AUTO_FIRE_ENABLED!=='undefined' && AUTO_FIRE_ENABLED); } catch(_){}
+        if (!enabled) {
+          var lbl = $('autoFireLabel');
+          enabled = !!(lbl && /on/i.test(String(lbl.textContent||'')));
+        }
+        setActive(btnAuto, enabled);
+      } catch(_){}
+    }
+    function syncShopBtn(){ try { setActive(btnShop, upgradesOpen()); } catch(_){} }
+
+    // ---------- In-game visibility
+    function showInGameUI(){
+      try {
+        if (menu) menu.style.display = 'flex';
+        // Place the chat panel into floating mode and hide it by default
+        var c = document.getElementById('chatPanel');
+        if (c){ c.classList.add('ig-floating'); c.style.display='none'; }
+        // Automatically show the stats bubble and mark its button as active when entering the game
+        if (typeof hudStats !== 'undefined' && hudStats){
+          hudStats.style.display = 'block';
+          try { setActive(btnStats, true); } catch(_){}
+        }
+      } catch(_){ }
+    }
+    function hideInGameUI(){
+      try {
+        hide(hudStats); setActive(btnStats,false);
+        hide(buildPanel); setActive(btnBuild,false);
+        setActive(btnChat,false);
+        var c=document.getElementById('chatPanel'); if (c){ c.classList.remove('ig-floating'); c.style.display='flex'; }
+        closeUpgrades();
+        if (menu) menu.style.display='none';
+        var tip = $('buildTooltip'); if (tip) tip.style.display='none';
+      } catch(_){ }
+    }
+
+    try {
+      if (window.socket && socket.on) {
+        socket.on('gameStarted', function(){ showInGameUI(); });
+        socket.on('lobbyUpdate', function(data){ try { if (!data || !data.started) hideInGameUI(); } catch(_){ } });
+      }
+    } catch(_){}
+
+    try {
+      var lobby = $('lobbyScreen');
+      if (lobby && window.MutationObserver) {
+        var obs = new MutationObserver(function(){
+          var inLobby = (lobby.style.display !== 'none');
+          if (inLobby) hideInGameUI(); else showInGameUI();
+        });
+        obs.observe(lobby, { attributes:true, attributeFilter:['style','class'] });
+      }
+    } catch(_){}
+
+    try { var lobby = $('lobbyScreen'); if (!lobby || lobby.style.display === 'none') showInGameUI(); } catch(_){}
+
+    setInterval(function(){ syncAutoBtn(); syncShopBtn(); }, 500);
+
+  }catch(e){ console.error('[igMenuPatch] init failed', e); }
+})();
+</script>
+
+
+<script id="build-tooltip-guard">
+(function(){
+  try{
+    function getBox(){
+      try{ if (window.getBuildTooltipBox) return window.getBuildTooltipBox(); }catch(_){}
+      return document.getElementById('buildTooltipStable') || document.getElementById('buildTooltip');
+    }
+    function hideTooltip(){
+      try{
+        var b = getBox();
+        if (b) b.style.display = 'none';
+      }catch(_){}
+    }
+    function isOverTile(target){
+      try{
+        if (!target) return false;
+        if (target.closest && target.closest('.build-tile')) return true;
+      }catch(_){}
+      return false;
+    }
+
+    // Hide when moving and not over any tile
+    document.addEventListener('pointermove', function(ev){
+      try{
+        if (!isOverTile(ev.target)) hideTooltip();
+      }catch(_){}
+    }, {passive:true});
+
+    // Hide on leave of containers
+    function bindContainer(id){
+      var c = document.getElementById(id);
+      if (!c) return;
+      var fn = function(){ hideTooltip(); };
+      c.addEventListener('pointerleave', fn, {passive:true});
+      c.addEventListener('mouseleave', fn, {passive:true});
+      c.addEventListener('pointerout', function(ev){
+        try{
+          var rel = ev.relatedTarget;
+          // When pointer moves to an element outside this container, hide
+          if (!rel || !c.contains(rel)) hideTooltip();
+        }catch(_){ hideTooltip(); }
+      }, {passive:true});
+    }
+    function bind(){
+      ['buildTiles','igBuildTiles'].forEach(bindContainer);
+    }
+    bind();
+
+    // Observe DOM to (re)bind when containers appear later
+    if (window.MutationObserver){
+      var mo = new MutationObserver(function(){ bind(); });
+      mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
+    }
+
+    // Hide when page loses focus or becomes hidden
+    window.addEventListener('blur', hideTooltip);
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) hideTooltip(); });
+
+    // Safety: hide when scrolling and nothing hovered
+    window.addEventListener('scroll', function(){
+      try{
+        var b = getBox();
+        if (!b || b.style.display === 'none') return;
+        if (!document.querySelector('.build-tile:hover')) hideTooltip();
+      }catch(_){}
+    }, {passive:true});
+  } catch(e){
+    try{ console.warn('[build-tooltip-guard] failed', e); }catch(__){}
+  }
+})();
+</script>
+
+
