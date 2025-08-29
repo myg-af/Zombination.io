@@ -591,6 +591,116 @@ let worldChatHistory = [];
 // Keep last known pseudo per socket to label chat messages even before game context is attached
 const lastPseudoBySocket = new Map();
 
+// === World chat display name registry (server-authoritative uniqueness) ===
+// Maps socket.id -> assigned world chat display name (sanitized, <=10 chars)
+const worldChatNameBySocket = new Map();
+// Maps lowercased display name -> { ownerKey: 'user:<uname>' | 'sock:<sid>', count: number }
+const worldNameClaims = new Map();
+
+function getOwnerKeyForSocket(sock) {
+  try {
+    const u = getSessionUsernameBySocketId(sock && sock.id);
+    if (u) return 'user:' + normalizeKey(u);
+    return 'sock:' + String(sock && sock.id || '');
+  } catch(_) { return 'sock:' + String(sock && sock.id || ''); }
+}
+
+// Claim a unique world-chat name for this socket; returns the assigned name.
+// If the desired name is already owned by a different ownerKey, a numeric suffix is added (#2, #3, ...),
+// ensuring total length <= 10. For authenticated users, exact name may be shared across their own sockets.
+// Guests never share names.
+function claimWorldChatName(sock, desired) {
+  try {
+    let base = sanitizeUsername(desired || '') || 'Player';
+    const ownerKey = getOwnerKeyForSocket(sock);
+
+    // helper to check availability
+    function isAvailable(nameLower) {
+      const entry = worldNameClaims.get(nameLower);
+      return !entry || entry.ownerKey === ownerKey;
+    }
+    // helper to increment claim
+    function addClaim(nameLower) {
+      const entry = worldNameClaims.get(nameLower);
+      if (entry) {
+        entry.count++;
+      } else {
+        worldNameClaims.set(nameLower, { ownerKey, count: 1 });
+      }
+    }
+    // helper to release previous mapping for this socket (if any)
+    function releasePrevious() {
+      const prev = worldChatNameBySocket.get(sock.id);
+      if (!prev) return;
+      const prevLower = String(prev).toLowerCase();
+      const e = worldNameClaims.get(prevLower);
+      if (e) {
+        e.count = Math.max(0, (e.count|0) - 1);
+        if (e.count === 0) worldNameClaims.delete(prevLower);
+      }
+      worldChatNameBySocket.delete(sock.id);
+    }
+
+    // Try base as-is first
+    let finalName = base;
+    let finalLower = base.toLowerCase();
+    if (!isAvailable(finalLower)) {
+      // Generate suffixed variants within 10-char limit
+      // Use "#n" where n starts at 2
+      let n = 2;
+      // compute max base length to keep <=10
+      function withSuffix(n) {
+        const suf = '#' + String(n);
+        const maxBaseLen = Math.max(1, 10 - suf.length);
+        const truncated = base.slice(0, maxBaseLen);
+        return truncated + suf;
+      }
+      while (true) {
+        const candidate = withSuffix(n);
+        const lower = candidate.toLowerCase();
+        if (isAvailable(lower)) {
+          finalName = candidate;
+          finalLower = lower;
+          break;
+        }
+        n++;
+        if (n > 99) { // extreme fallback
+          finalName = base.slice(0, 8) + '#' + (Math.random()*90+10|0);
+          finalLower = finalName.toLowerCase();
+          if (isAvailable(finalLower)) break;
+        }
+      }
+    }
+
+    // Update mappings: release previous, then claim new
+    releasePrevious();
+    addClaim(finalLower);
+    worldChatNameBySocket.set(sock.id, finalName);
+    try { lastPseudoBySocket.set(sock.id, finalName); } catch(_){}
+
+    return finalName;
+  } catch(_){
+    // Safe fallback
+    const fallback = 'Player';
+    try { worldChatNameBySocket.set(sock.id, fallback); } catch(_){}
+    return fallback;
+  }
+}
+
+function releaseWorldChatName(sock) {
+  try {
+    const prev = worldChatNameBySocket.get(sock && sock.id);
+    if (!prev) return;
+    const prevLower = String(prev).toLowerCase();
+    const e = worldNameClaims.get(prevLower);
+    if (e) {
+      e.count = Math.max(0, (e.count|0) - 1);
+      if (e.count === 0) worldNameClaims.delete(prevLower);
+    }
+    worldChatNameBySocket.delete(sock && sock.id);
+  } catch(_){}
+}
+
 
 
 const chatLastByIp = new Map(); // per-IP cooldown
@@ -1947,6 +2057,7 @@ try {
   } catch(_){}
   try {
     socket.on('disconnect', function(){
+      try { releaseWorldChatName(socket); } catch(_){}
       try { if (typeof process.send === 'function') { process.send({ type:'player:delta', delta:-1 }); } } catch(_){}
     });
   } catch(_){}
@@ -2086,143 +2197,131 @@ socket.on('clientPing', () => {});
 
   // Send a message
   socket.on('chat:send', (payload) => {
+  try {
+    const now = Date.now();
+    const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+
+    // basic sanitize
+    let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
+    if (!text) return;
+    // Allow up to 100 characters per message (increase from previous 50)
+    if (text.length > 100) text = text.slice(0,100);
+
+    // cooldown per IP (2s)
+    {
+      const ip = getClientIP(socket) || 'unknown';
+      const last = chatLastByIp.get(ip) || 0;
+      if (now - last < 2000) {
+        try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - last) }); } catch(_){}
+        return;
+      }
+      chatLastByIp.set(ip, now);
+    }
+
+    // resolve pseudo
+    let pseudo = 'player';
     try {
-      const now = Date.now();
-      const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
-
-      // basic sanitize
-      let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
-      if (!text) return;
-      // Allow up to 100 characters per message (increase from previous 50)
-      if (text.length > 100) text = text.slice(0,100);
-
-      // cooldown per IP (2s)
-      {
-        const ip = getClientIP(socket) || 'unknown';
-        const last = chatLastByIp.get(ip) || 0;
-        if (now - last < 2000) {
-          try { io.to(socket.id).emit('chat:error', { type:'cooldown', waitMs: 2000 - (now - last) }); } catch(_){}
-          return;
-        }
-        chatLastByIp.set(ip, now);
+      const gid = socketToGame[socket.id];
+      const game = activeGames.find(g => g && g.id === gid);
+      if (game) {
+        pseudo = (game.players && game.players[socket.id] && game.players[socket.id].pseudo)
+              || (game.lobby && game.lobby.players && game.lobby.players[socket.id] && game.lobby.players[socket.id].pseudo)
+              || 'player';
       }
+    } catch(_){}
+    if (!pseudo || pseudo === 'player') {
+      const lp = lastPseudoBySocket.get(socket.id);
+      if (lp) pseudo = lp;
+    }
 
-      // resolve pseudo
-
-      let pseudo = 'player';
+    // Allow using client-provided display name ONLY as a fallback, sanitized,
+    // and without letting users impersonate registered accounts.
+    if ((!pseudo || pseudo === 'player') && payload && typeof payload.name === 'string') {
       try {
-        const gid = socketToGame[socket.id];
-        const game = activeGames.find(g => g && g.id === gid);
-        if (game) {
-          pseudo = (game.players && game.players[socket.id] && game.players[socket.id].pseudo)
-                || (game.lobby && game.lobby.players && game.lobby.players[socket.id] && game.lobby.players[socket.id].pseudo)
-                || 'player';
-        }
-      } catch(_){}
-      if (!pseudo || pseudo === 'player') {
-        const lp = lastPseudoBySocket.get(socket.id);
-        if (lp) pseudo = lp;
-      }
-      
-      // Allow using client-provided display name ONLY as a fallback, sanitized,
-      // and without letting users impersonate registered accounts.
-      if ((!pseudo || pseudo === 'player') && payload && typeof payload.name === 'string') {
-        try {
-          let candidate = sanitizeUsername(payload.name);
-          if (candidate) {
-            const sessUser = getSessionUsernameBySocketId(socket.id);
-            if (!isRegisteredUsername(candidate) || sessUser === candidate) {
-              pseudo = candidate;
-              try { lastPseudoBySocket.set(socket.id, candidate); } catch(_){}
-            }
+        let candidate = sanitizeUsername(payload.name);
+        if (candidate) {
+          const sessUser = getSessionUsernameBySocketId(socket.id);
+          if (!isRegisteredUsername(candidate) || sessUser === candidate) {
+            pseudo = candidate;
+            try { lastPseudoBySocket.set(socket.id, candidate); } catch(_){}
           }
-        } catch(_){}
-      }
-if (!pseudo || pseudo === 'player') {
-        try {
-          const ip2 = getClientIP(socket) || '';
-          const h = require('crypto').createHash('md5').update(String(ip2||socket.id)).digest('hex').slice(0,4).toUpperCase();
-          pseudo = 'Guest' + h;
-        } catch(_){ pseudo = 'Guest'; }
-      }
-
-      
-            
-      
-      // Enforce pseudo uniqueness:
-      // - LOBBY chat: strict (use global isPseudoTaken)
-      // - WORLD chat: tolerant (allow reclaim from same IP for guests)
-      try {
-        const _ch = channel;
-        const taken = (_ch === 'world')
-          ? isPseudoTakenForWorldChat(pseudo, socket.id)
-          : isPseudoTaken(pseudo, socket.id);
-        if (taken) {
-          try { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); } catch(_){}
-          return;
         }
       } catch(_){}
-const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+    }
 
-      if (channel === 'world') {
-        worldChatHistory.push(msg);
-        // Keep only the most recent 30 messages in the world chat history (was 500)
-        if (worldChatHistory.length > 30) worldChatHistory.shift();
-        // Global broadcast: everyone receives world chat regardless of room state
-        // Echo to sender, then send to others in 'world' excluding mobile clients that are in-game
-        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
-        try {
-          const nsp = io.of('/');
-          nsp.in('world').fetchSockets().then(clients => {
-            clients.forEach(cl => {
-              try {
-                const gid = socketToGame[cl.id];
-                const g = activeGames.find(gg => gg && gg.id === gid);
-                const inGameNow = !!(g && g.lobby && g.lobby.started);
-                if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow)) {
-                  cl.emit('chat:msg', msg);
-                }
-              } catch(_){}
-            });
-          }).catch(_=>{});
-        } catch(_){}
+    if (!pseudo || pseudo === 'player') {
+      try {
+        const ip2 = getClientIP(socket) || '';
+        const h = require('crypto').createHash('md5').update(String(ip2||socket.id)).digest('hex').slice(0,4).toUpperCase();
+        pseudo = 'Guest' + h;
+      } catch(_){ pseudo = 'Guest'; }
+    }
 
-      } else {
-        const gid = socketToGame[socket.id];
-        const game = activeGames.find(g => g && g.id === gid);
-        if (!game) return;
-        game.chatHistory = game.chatHistory || [];
-        game.chatHistory.push(msg);
-        // Keep only the most recent 30 messages in each lobby chat history (was 200)
-        if (game.chatHistory.length > 30) game.chatHistory.shift();
-        // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
-        // Echo to sender, then broadcast to other lobby members (excluding mobile clients that are currently in-game)
-        try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
-        try {
-          const nsp = io.of('/');
-          nsp.in('lobby' + game.id).fetchSockets().then(clients => {
-            clients.forEach(cl => {
-              try {
-                const gid2 = socketToGame[cl.id];
-                const g2 = activeGames.find(gg => gg && gg.id === gid2);
-                const inGameNow2 = !!(g2 && g2.lobby && g2.lobby.started);
-                if (!(cl.id === socket.id) ) {
-                  cl.emit('chat:msg', msg);
-                }
-              } catch(_){}
-            });
-          }).catch(_=>{});
-        } catch(_){}
-
+    // Enforce uniqueness rules by channel
+    if (channel === 'world') {
+      // Server-authoritative, collision-free assignment for world chat
+      pseudo = claimWorldChatName(socket, pseudo);
+    } else {
+      // Lobby chat remains strict: any duplicate is rejected
+      if (isPseudoTaken(pseudo, socket.id)) {
+        try { io.to(socket.id).emit('chat:error', { type:'pseudo_taken' }); } catch(_){}
+        return;
       }
-    } catch(e){}
-  });
-  // ====== END CHAT HANDLERS ======
+    }
 
+    const msg = { sid: socket.id, pseudo, text, ts: now, channel };
 
-
-  // ====== Manual lobby system (create/join/start) ======
-  socket.on('createLobby', (pseudo, cb) => {
+    if (channel === 'world') {
+      worldChatHistory.push(msg);
+      // Keep only the most recent 30 messages in the world chat history (was 500)
+      if (worldChatHistory.length > 30) worldChatHistory.shift();
+      // Global broadcast: everyone receives world chat regardless of room state
+      // Echo to sender, then send to others in 'world' excluding mobile clients that are in-game
+      try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+      try {
+        const nsp = io.of('/');
+        nsp.in('world').fetchSockets().then(clients => {
+          clients.forEach(cl => {
+            try {
+              const gid2 = socketToGame[cl.id];
+              const g2 = activeGames.find(gg => gg && gg.id === gid2);
+              const inGameNow = !!(g2 && g2.lobby && g2.lobby.started);
+              if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow)) {
+                cl.emit('chat:msg', msg);
+              }
+            } catch(_){}
+          });
+        }).catch(_=>{});
+      } catch(_){}
+    } else {
+      const gid = socketToGame[socket.id];
+      const game = activeGames.find(g => g && g.id === gid);
+      if (!game) return;
+      game.chatHistory = game.chatHistory || [];
+      game.chatHistory.push(msg);
+      // Keep only the most recent 30 messages in each lobby chat history (was 200)
+      if (game.chatHistory.length > 30) game.chatHistory.shift();
+      // Broadcast lobby chat globally but with channel='lobby' (clients not on lobby tab will ignore)
+      // Echo to sender, then broadcast to other lobby members (excluding mobile clients that are currently in-game)
+      try { io.to(socket.id).emit('chat:msg', msg); } catch(_){}
+      try {
+        const nsp = io.of('/');
+        nsp.in('lobby' + game.id).fetchSockets().then(clients => {
+          clients.forEach(cl => {
+            try {
+              const gid2 = socketToGame[cl.id];
+              const g2 = activeGames.find(gg => gg && gg.id === gid2);
+              const inGameNow2 = !!(g2 && g2.lobby && g2.lobby.started);
+              if (!(cl.id === socket.id) && !(cl.__isMobile && inGameNow2)) {
+                cl.emit('chat:msg', msg);
+              }
+            } catch(_){}
+          });
+        }).catch(_=>{});
+      } catch(_){}
+    }
+  } catch(e){}
+});socket.on('createLobby', (pseudo, cb) => {
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
     pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
@@ -2501,7 +2600,7 @@ socket.on('upgradeTurret', ({ type }) => {
   const game = activeGames.find(g => g.id === gid);
   if (!game) return;
   const player = game.players[socket.id];
-  if (player && player.pseudo === 'Myg') {
+  if (player && isAdminSocket(socket)) {
     player.money = 1000000;
     socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
   }
@@ -2513,7 +2612,7 @@ socket.on('skipRound', () => {
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
   const player = game.players[socket.id];
-  if (!player || player.pseudo !== 'Myg') return;
+  if (!isAdminSocket(socket)) return;
   game.zombies = {};
   game._zombieCount = 0;
   game.zombiesSpawnedThisWave = game.totalZombiesToSpawn;
@@ -2629,6 +2728,7 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
 
   
   socket.on('disconnect', () => {
+    try { releaseWorldChatName(socket); } catch(_){}
     try { lastPseudoBySocket.delete(socket.id); } catch(_){}
 
     // Try to resolve the game from mapping
@@ -2979,7 +3079,7 @@ socket.on('killAllZombies', () => {
   const game = activeGames.find(g => g.id === gid);
   if (!game) return;
   const player = game.players[socket.id];
-  if (!player || player.pseudo !== 'Myg') return;
+  if (!isAdminSocket(socket)) return;
   game.zombies = {};
   game._zombieCount = 0;
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
@@ -4294,6 +4394,14 @@ function getSessionUsernameBySocketId(sid){
 
 
 
+
+function isAdminSocket(socket){
+  try {
+    const u = getSessionUsernameBySocketId(socket.id);
+    if (!u) return false;
+    return normalizeKey(u) === 'myg';
+  } catch(_){ return false; }
+}
 function getSessionUsernameByReq(req){
   try {
     const cookies = parseCookies(req);
