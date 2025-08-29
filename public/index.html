@@ -2601,7 +2601,7 @@ function createJoystick(container, baseX, baseY, id) {
   base.className = 'joystick-base';
   base.style.width = size + 'px';
   base.style.height = size + 'px';
-  base.style.background = 'rgba(255,255,255,0.12)';
+  base.style.background = 'rgba(255,255,255,0.06)';
   base.style.borderRadius = '50%';
   base.style.position = 'absolute';
   base.style.left = '0px';
@@ -2613,7 +2613,7 @@ function createJoystick(container, baseX, baseY, id) {
   stick.className = 'joystick-stick';
   stick.style.width = (size * 0.52) + 'px';
   stick.style.height = (size * 0.52) + 'px';
-  stick.style.background = 'rgba(160,255,240,0.45)';
+  stick.style.background = 'rgba(160,255,240,0.225)';
   stick.style.borderRadius = '50%';
   stick.style.position = 'absolute';
   stick.style.left = (size * 0.24) + 'px';
@@ -12001,10 +12001,24 @@ if (!hudStats) return;
         var c = document.getElementById('chatPanel');
         if (c){ c.classList.add('ig-floating'); try { setCollapsed(true); } catch(_){ c.style.display='none'; try{ var b=document.getElementById('chatCollapsedBtn'); if(b) b.style.display='flex'; }catch(_){} } }
         // Automatically show the stats bubble and mark its button as active when entering the game
-        if (typeof hudStats !== 'undefined' && hudStats){
-          hudStats.style.display = 'block';
-          try { setActive(btnStats, true); } catch(_){}
-        }
+// MOBILE-ONLY CHANGE: keep it CLOSED by default on touch devices.
+(function(){
+  try {
+    var touch = false;
+    try { touch = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches); } catch(_){ touch = false; }
+    if (!touch) {
+      if (typeof hudStats !== 'undefined' && hudStats){
+        hudStats.style.display = 'block';
+        try { setActive(btnStats, true); } catch(_){}
+      }
+    } else {
+      if (typeof hudStats !== 'undefined' && hudStats){
+        hudStats.style.display = 'none';
+        try { setActive(btnStats, false); } catch(_){}
+      }
+    }
+  } catch(_e){}
+})();
       } catch(_){ }
     }
     function hideInGameUI(){
