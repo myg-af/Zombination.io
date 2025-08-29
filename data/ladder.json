@@ -193,6 +193,12 @@
       "ts": 1700000032000
     },
     {
+      "player": "Myghh",
+      "wave": 5,
+      "kills": 0,
+      "ts": 1756484913572
+    },
+    {
       "player": "Yvemav749",
       "wave": 4,
       "kills": 56,
@@ -593,12 +599,6 @@
       "wave": 2,
       "kills": 5,
       "ts": 1700000099000
-    },
-    {
-      "player": "HyirpyNeo",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000100000
     }
   ]
 }

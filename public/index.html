@@ -3928,7 +3928,21 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
         // succès confirmé → sortir du mode placement
         buildMode = null;
         buildHover = { tx: -1, ty: -1 };
-      } else {
+      
+        // [MOBILE-ONLY PATCH] After a successful purchase, fully de-select the Build menu (mobile only)
+        try {
+          var __isMobile = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches)
+                           || (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||''));
+          if (__isMobile) {
+            try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
+            try {
+              var __sel = document.querySelectorAll('#buildTiles .mb-selected, #igBuildTiles .mb-selected');
+              __sel.forEach(function(el){ try{ el.classList.remove('mb-selected'); }catch(_){} });
+            } catch(_){}
+            try { if (typeof updateBuildTilesState === 'function') updateBuildTilesState(); } catch(_){}
+          }
+        } catch(_) {}
+} else {
         // refus: on reste en mode placement pour réessayer ailleurs
         const reason = ack && ack.reason ? ack.reason : 'unknown';
         console.warn('[build] Refusé par le serveur:', reason);
