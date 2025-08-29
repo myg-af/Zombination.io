@@ -1912,6 +1912,28 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
   buildCentralEnclosure(game, 1);
 
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
+  // Ensure each spawned player gets the LATEST account-level shop upgrades (hp/dmg)
+  try {
+    const usersNow = loadUsers();
+    for (const sid of socketsArr) {
+      try {
+        const p = game.players[sid];
+        if (!p) continue;
+        const u = getSessionUsernameBySocketId(sid);
+        if (!u) continue;
+        const rec = usersNow[normalizeKey(u)] || null;
+        if (!rec) continue;
+        p.accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
+        try {
+          const stats = getPlayerStats(p);
+          p.maxHealth = stats.maxHp;
+          p.health = stats.maxHp;
+          p.damage = stats.damage;
+        } catch(_) {}
+      } catch(_) {}
+    }
+  } catch(_) {}
+
 
   // === SANITY: ensure all sockets in socketsArr have a player object ===
   try {
@@ -1954,7 +1976,38 @@ try {
 }
 
 
-  try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
+  
+// === FINAL SYNC: ensure account-level shop upgrades are applied and stats are correct ===
+try {
+  for (const sid of socketsArr) {
+    try {
+      if (!game.players || !game.players[sid]) continue;
+      // Refresh accountShop from persistent store if available
+      try {
+        const authUser = getSessionUsernameBySocketId(sid);
+        if (authUser) {
+          const urec = loadUsers()[normalizeKey(authUser)] || null;
+          if (urec && urec.shopUpgrades) {
+            game.players[sid].accountShop = {
+              hp: (urec.shopUpgrades.hp|0)||0,
+              dmg: (urec.shopUpgrades.dmg|0)||0
+            };
+          }
+        }
+      } catch(_) {}
+      // Recompute stats and rescale health proportionally
+      try {
+        const oldMax = game.players[sid].maxHealth || 100;
+        const stats = getPlayerStats(game.players[sid]);
+        const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
+        game.players[sid].maxHealth = stats.maxHp;
+        game.players[sid].health = Math.round(stats.maxHp * ratio);
+      } catch(_) {}
+    } catch(_) {}
+  }
+} catch(_) {}
+// === END FINAL SYNC ===
+try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
   for (const sid in (game.players||{})) {
     try {
       const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
@@ -1963,9 +2016,10 @@ try {
         players: pubPlayers,
         round: game.currentRound,
         structures: game.structures,
-        structurePrices: SHOP_BUILD_PRICES
+        structurePrices: SHOP_BUILD_PRICES,
+        accountShop: (game && game.players && game.players[sid] && game.players[sid].accountShop) ? game.players[sid].accountShop : { hp:0, dmg:0 }
       });
-    } catch(_){}
+} catch(_){}
   }
 io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
   io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
@@ -3101,8 +3155,8 @@ const baseWithShop = {
   goldGain: base.goldGain
 };
 const up = player && player.upgrades || {};
-const maxHp = Math.round(baseWithShop.maxHp * (1 + 0.10 * (up.maxHp || 0)));
-const damage = Math.round(baseWithShop.damage * (1 + 0.10 * (up.damage || 0)));
+const maxHp = Math.round(baseWithShop.maxHp * Math.pow(1.1, (up.maxHp || 0)));
+const damage = Math.round(baseWithShop.damage * Math.pow(1.1, (up.damage || 0)));
 const speed  = +(baseWithShop.speed * (1 + 0.05 * (up.speed || 0))).toFixed(1);
 const goldGain = Math.round(baseWithShop.goldGain * Math.pow(1.1, up.goldGain || 0));
 const baseStats = { maxHp, speed, regen, damage, goldGain };
@@ -4732,7 +4786,34 @@ try {
     rec.shopUpgrades = rec.shopUpgrades || { hp:0, dmg:0 };
     rec.shopUpgrades[type] = lv + 1;
     if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
-    return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+    
+// LIVE-APPLY shop upgrades to any connected sockets for this user
+try {
+  const key = normalizeKey(uname);
+  for (const [sid, sock] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
+    try {
+      const u = getSessionUsernameBySocketId(sid);
+      if (!u || normalizeKey(u) !== key) continue;
+      // Update any active player state
+      const mappedId = (typeof socketToGame !== 'undefined' && socketToGame[sid]) ? socketToGame[sid] : null;
+      const g = activeGames.find(gg => gg && gg.id === mappedId) || null;
+      if (g && g.players && g.players[sid]) {
+        g.players[sid].accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
+        try {
+          const oldMax = g.players[sid].maxHealth || 100;
+          const stats = getPlayerStats(g.players[sid]);
+          const ratio = Math.max(0, Math.min(1, (g.players[sid].health || 0) / (oldMax || 100)));
+          g.players[sid].maxHealth = stats.maxHp;
+          g.players[sid].health = Math.round(stats.maxHp * ratio);
+        } catch(_) {}
+      }
+      // Notify client to refresh its cached view
+      try { io.to(sid).emit('accountShopUpdated', { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 }); } catch(_) {}
+    } catch(_) {}
+  }
+} catch(_) {}
+return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+
   } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
 });
 

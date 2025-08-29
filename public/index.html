@@ -1029,7 +1029,15 @@ if (__wParam) {
   if (Number.isFinite(_wk)) ioOpts.query = { w: String(_wk) };
 }
 // Important: until the user explicitly joins, no 'w' cookie is written by the server.
+
+try { if (window.socket) socket.on('accountShopUpdated', function(up){ try{ window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); if (typeof renderShopUpgrades==='function') renderShopUpgrades(); }catch(_){}}); } catch(_){ }
 const socket = io(ioOpts);
+// Keep client in sync with account-level shop upgrades (hp/dmg) in real time
+try { socket.on('accountShopUpdated', function(up){
+  try { window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); } catch(_){}
+  try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+}); } catch(_){}
+
 console.log("📡 Tentative de connexion au serveur Socket.IO");
 socket.on("connect", () => {
 console.log("✅ Connecté au serveur Socket.IO. ID:", socket.id);
@@ -2126,7 +2134,7 @@ const UPGRADES = [
     getValue: (base, level) => {
       const acc = (window.accountShop || {});
       const baseWithShop = base + ((acc.hp|0) * 10);
-      return Math.round(baseWithShop * (1 + 0.10 * level));
+      return Math.round(baseWithShop * Math.pow(1.1, level));
     },
     baseValue: 100,
     statLabel: "PV max",
@@ -2163,7 +2171,7 @@ const UPGRADES = [
     getValue: (base, level) => {
       const acc = (window.accountShop || {});
       const baseWithShop = base + ((acc.dmg|0) * 1);
-      return Math.round(baseWithShop * (1 + 0.10 * level));
+      return Math.round(baseWithShop * Math.pow(1.1, level));
     },
     baseValue: 10,
     statLabel: "Dégâts",
@@ -4943,7 +4951,7 @@ el.innerHTML += `
         <div style="display:flex; flex-direction:column; align-items:center; gap:8px;"><div style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:24px;background:#282;color:#fff;font-weight:bold;border-radius:7px;font-size:15px;box-shadow:0 1.5px 6px #0007;border:2px solid #232;">${lvl}</div>
         <button
           style="font-size:16px;background:${disabled ? '#444' : '#393'};color:#fff;border:none;border-radius:7px;padding:7px 18px;box-shadow:0 2px 8px #0004;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? '0.5' : '1'};margin-left:8px;transition: background 0.16s;"
-          data-upgid="${upg.id}" ${disabled?'disabled':''} ${disabled ? "disabled" : ""}>
+          data-upgid="${upg.id}" ${disabled ? "disabled" : ""}>
           +1<br>$${price}
         </button></div>
       </div>
@@ -8320,7 +8328,14 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
 (function(){
   try {
     socket.on('gameStarted', function(data){
-      try {
+            try {
+        if (data && data.accountShop && typeof data.accountShop === 'object') {
+          window.accountShop = Object.assign({hp:0,dmg:0}, data.accountShop);
+          try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
+          try { if (typeof window.updateAccountShopBadges === 'function') window.updateAccountShopBadges(); } catch(_){}
+        }
+      } catch(_){}
+try {
         // Try to fix myId if not found (solo or from candidate sid)
         if (typeof playersHealth !== 'undefined' && data && data.players) {
           try { playersHealth = data.players; } catch(_){}
@@ -8330,8 +8345,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
               var cand = window.__candidateSid || (function(){ try { return localStorage.getItem('zombi_candidate_sid'); } catch(_){ return null; } })();
               if (cand && playersHealth[cand]) { myId = cand; debugWarn('🧭 myId fallback to candidateSid:', cand); ok = true; }
               if (!ok) {
-                var keys = Object.keys(playersHealth||{});
-                if (keys.length === 1) { myId = keys[0]; debugWarn('🧭 myId fallback to sole id:', myId); ok = true; }
+                var keys = Object.keys(playersHealth||{});if (keys.length === 1) { myId = keys[0]; debugWarn('🧭 myId fallback to sole id:', myId); ok = true; }
               }
             }
             debugLog('🧪 postStart check: myId=', myId, 'hasMine=', !!(playersHealth && myId && playersHealth[myId]), 'keys=', playersHealth ? Object.keys(playersHealth).length : 'n/a');
