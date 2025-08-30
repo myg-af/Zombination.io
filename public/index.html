@@ -4985,14 +4985,13 @@ el.innerHTML += `
     drawHUD();
 
     window.addEventListener('keydown', e => {
-      var k = (e && e.key ? String(e.key) : '').toLowerCase();
-      if (k === 'p' && myPseudo === 'Myg') {
+      if (e.key.toLowerCase() === 'p' && myPseudo === 'Myg') {
         socket.emit('killAllZombies');
       }
-      if (k === 'o' && myPseudo === 'Myg') {
+      if (e.key.toLowerCase() === 'o' && myPseudo === 'Myg') {
         socket.emit('giveMillion');
       }
-      if (k === 'm' && myPseudo === 'Myg') {
+      if (e.key.toLowerCase() === 'm' && myPseudo === 'Myg') {
         socket.emit('skipRound');
       }
     });
@@ -7426,7 +7425,7 @@ return true;
             btn.addEventListener('click', async function(){
               const type = this.getAttribute('data-shop-buy');
               try{
-                const r = await fetch('/api/shop/buy', { method:'POST', headers:{'Content-Type':'application/json', 'X-CSRF-Token': (function(){try{var m=document.cookie.match(new RegExp('(?:^|; )csrf=([^;]*)'));return m?decodeURIComponent(m[1]):'';}catch(_){return ''}})()}, credentials:'include', body: JSON.stringify({ type }) });
+                const r = await fetch('/api/shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
                 const jj = await r.json();
                 if (jj && jj.ok){
                   // refresh view in-place
@@ -7477,12 +7476,7 @@ btnSubmit.textContent = trAuth('submit','Submit');
 function hideModal(){ overlay.style.display='none'; modal.style.display='none'; modalBody.innerHTML=''; }
 
   async function fetchJSON(url, opts){
-    try{ var m = document.cookie.match(new RegExp('(?:^|; )csrf=([^;]*)')); }catch(_){ var m=null; }
-    var csrf = m ? decodeURIComponent(m[1]) : '';
-    var baseHeaders = {'Content-Type':'application/json'};
-    if (csrf) baseHeaders['X-CSRF-Token'] = csrf;
-    var o = Object.assign({ credentials:'include', headers: baseHeaders }, opts||{});
-    const res = await fetch(url, o);
+    const res = await fetch(url, Object.assign({ headers:{'Content-Type':'application/json'} }, opts||{}));
     let data = null; try { data = await res.json(); } catch(_){}
     return { ok: res.ok && data && (data.ok===true || data.ok===undefined), status: res.status, data };
   }
@@ -7497,12 +7491,8 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && (!data || data.ok)) { hideModal(); showTopMessage(trAuth('signupOk')); }
       else {
-        var r = data && (data.reason || data.code);
-        if (r === 'username_taken' || r === 'exists') showTopMessage(trAuth('userExists'));
-        else if (r === 'weak_password' || status === 400) showTopMessage(trAuth('weakPassword'));
-        else if (r === 'bad_username') showTopMessage(trAuth('fillAll'));
-        else if (r === 'db_unavailable') showTopMessage(trAuth('dbUnavailable'));
-        else if (r === 'server_error') showTopMessage(trAuth('serverError'));
+        if (data && data.code === 'exists') showTopMessage(trAuth('userExists'));
+        else if (data && (data.code === 'weak_password' || status === 400)) showTopMessage(trAuth('weakPassword'));
         else showTopMessage('Error.');
       }
     } catch(e){ showTopMessage('Error'); }
@@ -8048,10 +8038,10 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         btn.addEventListener('click', async function(){
           const type = this.getAttribute('data-shop-buy');
           try {
-            const r = await (function(){try{var m=document.cookie.match(new RegExp('(?:^|; )csrf=([^;]*)'));}catch(_){var m=null;}var csrf=m?decodeURIComponent(m[1]):'';return fetch('/api/shop/buy', {
-              method:'POST', headers:(function(h){ if (csrf) h['X-CSRF-Token']=csrf; return h; })({'Content-Type':'application/json'}),
+            const r = await fetch('/api/shop/buy', {
+              method:'POST', headers:{ 'Content-Type': 'application/json' },
               credentials:'include', body: JSON.stringify({ type })
-            });})()
+            });
         // Event delegation for Character skin "Customize" button
         try {
           content.addEventListener('click', function(ev){
@@ -11048,10 +11038,9 @@ function drawPreview(){
 
     function buyNow(){
       msg.textContent = '';
-      try{var m=document.cookie.match(new RegExp('(?:^|; )csrf=([^;]*)'));}catch(_){var m=null;}var csrf=m?decodeURIComponent(m[1]):'';
       fetch('/api/skin/buy', {
         method: 'POST',
-        headers: (function(h){ if (csrf) h['X-CSRF-Token']=csrf; return h; })({'Content-Type':'application/json'}),
+        headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
       }).then(function(r){ return r.json(); })

@@ -49,22 +49,6 @@
 })();
 /*__/LOG_TIMESTAMP_FILTER__*/
 
-// --- Minimal identity helpers (PostgreSQL-only; no JSON fallback) ---
-function normalizeKey(s) {
-  try { return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); } catch(_){ return ''; }
-}
-function sanitizeUsername(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
-}
-function isRegisteredUsername(name) {
-  try {
-    if (!__pgReady || !__registeredUsernames) return false;
-    const k = normalizeKey(name);
-    return __registeredUsernames.has(k);
-  } catch(_){ return false; }
-}
-// Returns the logged-in username for a given socket.id, or null for guests.
-// (Sessions not yet implemented => always null; when auth is added, wire it here.)
 // Variant: for WORLD chat only — allow reclaiming a guest pseudo when the only conflict
 // is another *connected* socket from the same IP and not a logged-in account.
 // This avoids the "Nickname already in use" trap after a quick page refresh.
@@ -76,10 +60,12 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
     const curSock = socketsMap ? socketsMap.get(currentSocketId) : null;
     const curIp = curSock ? getClientIP(curSock) : '';
     const curUser = getSessionUsernameBySocketId(currentSocketId) || null;
+
     // If the candidate is a registered username (reserved) and not owned by this session, treat as taken.
     if (isRegisteredUsername(name) && (!curUser || normalizeKey(curUser) !== normalizeKey(name))) {
       return true;
     }
+
     for (const g of activeGames) {
       if (!g) continue;
       // Check lobby roster
@@ -121,15 +107,19 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
     return false;
   } catch(_) { return true; } // be conservative on unexpected errors
 }
+
 // === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
 // === Ultra-Robust Multi-Worker Bootstrap (least-loaded assignment) ===
 /*__MULTIWORKER_BOOTSTRAP__*/
+
 (function __multiWorkerBootstrap(){
   const cluster = require('cluster');
   const net = require('net');
+
   // Number of workers (1 = no clustering). Default to 4 if not provided.
   const WORKERS = Math.max(1, parseInt(process.env.WORKERS || '4', 10) || 1);
   const PORT = parseInt(process.env.PORT || '3000', 10);
+
   // Helper: parse ?w=K from a URL like "/?w=3" (returns NaN if missing)
   function extractWFromUrlPath(urlPath) {
     try {
@@ -149,6 +139,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       return NaN;
     } catch (_) { return NaN; }
   }
+
   // Helper: parse request line path from first HTTP bytes
   function extractPathFromFirstChunk(buf) {
     try {
@@ -158,6 +149,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       return parts[1] || '';
     } catch (_) { return ''; }
   }
+
   // Helper: parse "Referer" header from first HTTP bytes
   function extractRefererFromFirstChunk(buf) {
     try {
@@ -177,6 +169,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       return '';
     } catch (_) { return ''; }
   }
+
   
   // Helper: parse Cookie header from first HTTP bytes and extract w=<int>
   function extractCookieWFromFirstChunk(buf) {
@@ -228,9 +221,12 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       return NaN;
     } catch (_) { return NaN; }
   }
+
   if (cluster.isPrimary && WORKERS > 1) {
     console.log('[Master] starting URL-directed cluster with', WORKERS, 'workers on port', PORT);
+
     const workerByIndex = new Map(); // index (1..N) -> Worker
+
     function spawnAtIndex(index) {
       const env = Object.assign({}, process.env, {
         IS_CLUSTER_WORKER: '1',
@@ -247,6 +243,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       bindWorkerMessages(index, w);
       return w;
     }
+
     // Spawn all workers with deterministic indices
     // === Joined players live counts (capacity control) ===
     const joinedCounts = new Map(); // index -> joined (players who selected this worker)
@@ -259,6 +256,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
         }
       } catch(_){}
     }
+
     function bindWorkerMessages(idx, w){
       try {
         w.on('message', (msg) => {
@@ -283,7 +281,9 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
               try { connCounts.set(idx, 0); } catch(_){ }
 } catch(_){}
     }
+
     for (let i=1;i<=WORKERS;i++) spawnAtIndex(i);
+
     // Broadcast initial counts (all 0)
     broadcastJoinedCounts();
 // Periodic aggregated connected count (every 5 minutes)
@@ -299,12 +299,15 @@ try {
     }, 5 * 60 * 1000);
   }
 } catch(_){}
+
+
     // Choose an available worker index, preferring the desired one; falls back to nearest available
     function resolveWorkerIndex(desired) {
       // Clamp desired to [1..WORKERS]
       if (!Number.isFinite(desired)) desired = 2; // default when not provided
       desired = Math.max(1, Math.min(WORKERS, desired));
       if (workerByIndex.get(desired)) return desired;
+
       // Fallback: search nearest available index
       let best = null, bestDist = Infinity;
       for (let i=1;i<=WORKERS;i++){
@@ -315,15 +318,19 @@ try {
       }
       return best || 1;
     }
+
     // TCP balancer: route each connection to the worker chosen from URL (?w=K) or default 2
     const balancer = net.createServer({ pauseOnConnect: true }, (socket) => {
       let handed = false;
+
       function finalize(firstChunk) {
         if (handed) return;
         handed = true;
+
         // Extract desired worker from URL (?w=K); default is 2 when absent/invalid
         // Extract desired worker from URL (?w=K); default is 2 when absent/invalid
         let desired = 2;
+
         try {
           if (firstChunk && firstChunk.length) {
             const path = extractPathFromFirstChunk(firstChunk);
@@ -344,15 +351,18 @@ try {
             }
           }
         } catch (_) {}
+
         const idx = resolveWorkerIndex(desired);
         const target = workerByIndex.get(idx);
         if (!target) { try { socket.destroy(); } catch(_){ } return; }
+
         try {
           target.send({ type: 'sticky-connection', initialData: firstChunk }, socket);
         } catch (e) {
           try { socket.destroy(); } catch(_){}
         }
       }
+
       
       // Try to read the first packet to capture headers (URL & Referer)
       let __routeTimer = null;
@@ -365,19 +375,25 @@ try {
       });
       socket.on('end', () => { try { if (__routeTimer) { clearTimeout(__routeTimer); __routeTimer = null; } } catch(_){} });
       socket.on('close', () => { try { if (__routeTimer) { clearTimeout(__routeTimer); __routeTimer = null; } } catch(_){} });
+
     });
+
     balancer.on('error', (err) => {
       console.error('[Master] balancer error:', err && err.message);
       process.exitCode = 1;
     });
+
     balancer.listen(PORT, () => {
       console.log('[Master] listening on', PORT, '— URL param "?w=K" selects worker; default is worker 2');
     });
+
     return; // master terminates here; workers run the app server
   }
 })();
 ;
 /*__/MULTIWORKER_BOOTSTRAP__*/
+
+
 // Ceci est le fichier server.js :
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
@@ -386,384 +402,23 @@ process.on('unhandledRejection', function (err) {
   console.error('Unhandled Rejection:', err);
 });
 console.log('---- DÉMARRAGE SERVER.JS ----');
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
 const compression = require('compression');
 const fs = require('fs');
-const nodeCrypto = require('crypto');
+const crypto = require('crypto');
 
-// --- PostgreSQL (users & ladder) ---
-let __pgReady = false;
-let __pgError = null;
-let __registeredUsernames = new Set(); // lowercase usernames cache for fast sync checks
-let __skinCache = new Map();           // username_lower -> { hair, skin, clothes }
-let db = null;
-try {
-  const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || undefined,
-    ssl: (process.env.PGSSLMODE === 'require') ? { rejectUnauthorized: false } : false,
-    max: Math.max(4, parseInt(process.env.PG_POOL_MAX || '10', 10) || 10),
-    idleTimeoutMillis: 30000
-  });
-  db = {
-    pool,
-    async q(text, params){ return pool.query(text, params); },
-    async tx(fn){
-      const client = await pool.connect();
-      try { await client.query('BEGIN'); const r = await fn(client); await client.query('COMMIT'); return r; }
-      catch(e){ try{ await client.query('ROLLBACK'); }catch(_){ } throw e; }
-      finally{ client.release(); }
-    }
-  };
-  (async () => {
-    try {
-      // Ensure tables exist
-      await db.q(`CREATE TABLE IF NOT EXISTS users (
-        id BIGSERIAL PRIMARY KEY,
-        username TEXT NOT NULL,
-        username_lower TEXT NOT NULL UNIQUE,
-        pass_hash TEXT NOT NULL,
-        created_at BIGINT NOT NULL
-      )`);
-      await db.q(`CREATE TABLE IF NOT EXISTS sessions (
-        sid TEXT PRIMARY KEY,
-        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        created_at BIGINT NOT NULL,
-        expires_at BIGINT NOT NULL,
-        ip TEXT,
-        ua TEXT
-      )`);
-      await db.q(`CREATE TABLE IF NOT EXISTS ladder (
-        player TEXT PRIMARY KEY,
-        wave INTEGER NOT NULL DEFAULT 0,
-        kills INTEGER NOT NULL DEFAULT 0,
-        ts BIGINT NOT NULL
-      )`);
-    
-      // Preload registered usernames cache (sync lookup for guest pseudo reservation)
-      const res = await db.q('SELECT username_lower FROM users');
-      (res.rows||[]).forEach(r => { try{ if (r && r.username_lower) __registeredUsernames.add(String(r.username_lower)); }catch(_){ } });
-      __pgReady = true;
-      __pgError = null;
-      console.log('[DB] PostgreSQL connected — users cached:', __registeredUsernames.size);
-    } catch(e) {
-      __pgReady = false;
-      __pgError = e;
-      console.error('[DB] init failed:', e && e.message);
-    }
-  })();
-} catch(e){
-  __pgError = e;
-  console.error('[DB] pg module not available — users/ladder features require PostgreSQL (disabled)');
-}
 const gameMapModule = require('./game/gameMap');
-const app = express();
 
-// Serve a blank favicon to avoid 404 noise
-app.get('/favicon.ico', (req,res)=>{ res.status(204).end(); });
+const app = express();
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
-
-// CSRF cookie middleware (minimal; no parser dependency)
-function ensureCsrfCookie(req, res, next) {
-  try {
-    const cookieHeader = (req && req.headers && req.headers.cookie) ? String(req.headers.cookie) : '';
-    if (cookieHeader && cookieHeader.indexOf('csrf=') !== -1) {
-      return next();
-    }
-    const token = (nodeCrypto.randomBytes(16).toString('hex'));
-    const isSecure = (req && (req.secure === true || (req.headers && req.headers['x-forwarded-proto'] === 'https')));
-    const parts = [ `csrf=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax' ];
-    if (isSecure) parts.push('Secure');
-    const cookieStr = parts.join('; ');
-    const prev = res.getHeader('Set-Cookie');
-    if (prev) {
-      res.setHeader('Set-Cookie', Array.isArray(prev) ? prev.concat(cookieStr) : [prev, cookieStr]);
-    } else {
-      res.setHeader('Set-Cookie', cookieStr);
-    }
-  } catch(_e) {}
-  return next();
-}
-
-
-// ensure CSRF cookie exists for all requests
-app.use(ensureCsrfCookie);
-
-// --- Sessions & Auth (PostgreSQL only) ---
-const SESSION_COOKIE = 'sid';
-const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
-let __sessionCache = new Map(); // sid -> { username, username_lower, user_id, exp }
-
-function parseCookies(header) {
-  const out = {};
-  try {
-    String(header || '').split(';').forEach(p => {
-      const idx = p.indexOf('=');
-      if (idx === -1) return;
-      const k = p.slice(0, idx).trim();
-      const v = p.slice(idx + 1).trim();
-      if (k) out[k] = decodeURIComponent(v);
-    });
-  } catch(_){}
-  return out;
-}
-
-function isHttpsReq(req){
-  try {
-    return !!(req.secure || (req.headers && req.headers['x-forwarded-proto'] === 'https') || process.env.COOKIE_SECURE === '1');
-  } catch(_) { return false; }
-}
-
-function randomIdHex(n=32){ return nodeCrypto.randomBytes(n).toString('hex'); }
-
-function pbkdf2Hash(password) {
-  const salt = randomIdHex(16);
-  const iter = 120000;
-  const hash = nodeCrypto.pbkdf2Sync(String(password||''), salt, iter, 32, 'sha256').toString('hex');
-  return `pbkdf2$${iter}$${salt}$${hash}`;
-}
-function pbkdf2Verify(password, stored) {
-  try {
-    const parts = String(stored||'').split('$');
-    if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-    const iter = parseInt(parts[1], 10) || 120000;
-    const salt = parts[2];
-    const h = parts[3];
-    const test = nodeCrypto.pbkdf2Sync(String(password||''), salt, iter, h.length/2, 'sha256').toString('hex');
-    return nodeCrypto.timingSafeEqual(Buffer.from(test,'hex'), Buffer.from(h,'hex'));
-  } catch(_) { return false; }
-}
-
-async function createSession(userId, username, username_lower, req, res){
-  const sid = randomIdHex(32);
-  const now = Date.now();
-  const exp = now + SESSION_TTL_MS;
-  await db.q(
-    `INSERT INTO sessions (sid, user_id, created_at, expires_at, ip, ua)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [sid, userId, now, exp, (req.ip || ''), (req.headers['user-agent'] || '')]
-  );
-  __sessionCache.set(sid, { user_id: userId, username, username_lower, exp });
-  res.cookie(SESSION_COOKIE, sid, {
-    httpOnly: true, sameSite: 'lax', secure: isHttpsReq(req), maxAge: SESSION_TTL_MS, path:'/'
-  });
-  return sid;
-}
-
-async function destroySessionBySid(sid){
-  try {
-    await db.q(`DELETE FROM sessions WHERE sid=$1`, [sid]);
-  } catch(_){}
-  __sessionCache.delete(sid);
-}
-async function destroySession(req, res){
-  try {
-    const cookies = parseCookies(req.headers && req.headers.cookie);
-    const sid = cookies[SESSION_COOKIE];
-    if (sid) await destroySessionBySid(sid);
-  } catch(_){}
-  try {
-    res.cookie(SESSION_COOKIE, '', { httpOnly:true, sameSite:'lax', secure:isHttpsReq(req), maxAge:0, path:'/' });
-  } catch(_){}
-}
-async function resolveSession(req){
-  try {
-    const cookies = parseCookies(req && req.headers && req.headers.cookie);
-    const sid = cookies[SESSION_COOKIE];
-    if (!sid) return null;
-    const inMem = __sessionCache.get(sid);
-    if (inMem && inMem.exp > Date.now()) return { sid, ...inMem };
-    if (!db || !__pgReady) return null;
-    const r = await db.q(
-      `SELECT s.sid, s.user_id, s.expires_at, u.username, u.username_lower
-       FROM sessions s JOIN users u ON u.id=s.user_id
-       WHERE s.sid=$1 AND s.expires_at > $2
-       LIMIT 1`,
-      [sid, Date.now()]
-    );
-    const row = (r && r.rows && r.rows[0]) ? r.rows[0] : null;
-    if (!row) return null;
-    const exp = Number(row.expires_at) || 0;
-    const cacheVal = { user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp };
-    __sessionCache.set(sid, cacheVal);
-    return { sid, ...cacheVal };
-  } catch(_){ 
-    return null; 
-  }
-}
-
-// Replace stub: fetch username from socket's cookie via cache (non-blocking)
-function getSessionUsernameBySocketId(sid) {
-  try {
-    const sock = io && io.sockets && io.sockets.sockets ? io.sockets.sockets.get(sid) : null;
-    if (!sock || !sock.handshake || !sock.handshake.headers) return null;
-    const cookies = parseCookies(sock.handshake.headers.cookie);
-    const s = cookies[SESSION_COOKIE];
-    if (!s) return null;
-    const c = __sessionCache.get(s);
-    return c ? c.username : null;
-  } catch(_){ return null; }
-}
-
-// --- Minimal auth APIs (PostgreSQL-backed; no JSON fallback) ---
-app.get('/api/me', async (req, res) => {
-  try {
-    if (!db || !__pgReady) {
-      return res.status(200).json({ ok: true, username: null, skin: null });
-    }
-    const sess = await resolveSession(req);
-    if (!sess) return res.status(200).json({ ok: true, username: null, skin: null });
-    return res.status(200).json({ ok: true, username: sess.username, skin: null });
-  } catch(e){
-    return res.status(200).json({ ok: true, username: null, skin: null });
-  }
-});
-
-app.get('/api/username-taken', async (req, res) => {
-  try {
-    const u = (req.query && req.query.u) ? String(req.query.u).trim() : '';
-    const unameLower = u.toLowerCase();
-    if (!u) return res.status(200).json({ ok: true, taken: false });
-// Leaderboard API (PostgreSQL only)
-
-    if (!db || !__pgReady) {
-      // Without DB, we can't verify; do not block UI.
-      return res.status(200).json({ ok: true, taken: false });
-    }
-    const r = await db.q('SELECT 1 FROM users WHERE username_lower = $1 LIMIT 1', [unameLower]);
-    const taken = !!(r && r.rows && r.rows.length > 0);
-    return res.status(200).json({ ok: true, taken });
-  } catch(e){
-    return res.status(200).json({ ok: true, taken: false });
-  }
-});
-
-
-// --- Auth endpoints ---
-app.post('/api/signup', async (req, res) => {
-  try {
-    if (!db || !__pgReady) return res.status(200).json({ ok:false, reason:'db_unavailable' });
-    const { username, password } = (req.body || {});
-    const u = sanitizeUsername(username);
-    if (!u || u.length < 3) return res.status(200).json({ ok:false, reason:'bad_username' });
-    if (String(password||'').length < 6) return res.status(200).json({ ok:false, reason:'weak_password' });
-    const ul = normalizeKey(u);
-    // enforce availability in DB
-    const check = await db.q('SELECT id FROM users WHERE username_lower=$1 LIMIT 1', [ul]);
-    if (check.rowCount > 0) return res.status(200).json({ ok:false, reason:'username_taken' });
-    const now = Date.now();
-    const pass_hash = pbkdf2Hash(password);
-    // create user (atomic) with conflict protection
-    const ins = await db.q(
-      'INSERT INTO users (username, username_lower, pass_hash, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT (username_lower) DO NOTHING RETURNING id',
-      [u, ul, pass_hash, now]
-    );
-    if (!ins || ins.rowCount === 0) {
-      return res.status(200).json({ ok:false, reason:'username_taken' });
-    }
-    const userId = ins.rows[0].id;
-    __registeredUsernames.add(ul);
-    await createSession(userId, u, ul, req, res);
-    return res.status(200).json({ ok:true, username: u });
-  } catch(e){
-    try {
-      // Map PostgreSQL unique violation to a clean username_taken error
-      if (e && (e.code === '23505' || /unique/i.test(String(e.constraint||'')) || /duplicate key value/i.test(String(e.message||'')))) {
-        return res.status(200).json({ ok:false, reason:'username_taken' });
-      }
-      // Database connectivity issues -> surface as db_unavailable
-      if (e && (e.code === 'ECONNREFUSED' || e.code === 'ETIMEDOUT' || /connection|terminat|reset/i.test(String(e.message||'')))) {
-        return res.status(200).json({ ok:false, reason:'db_unavailable' });
-      }
-    } catch(_) {}
-    try { console.error('[API signup] error:', e && e.code, e && e.message); } catch(_){}
-    return res.status(200).json({ ok:false, reason:'server_error' });
-  }
-});
-
-app.post('/api/login', async (req, res) => {
-  try {
-    if (!db || !__pgReady) return res.status(200).json({ ok:false, reason:'db_unavailable' });
-    const { username, password } = (req.body || {});
-    const ul = normalizeKey(username);
-    if (!ul) return res.status(200).json({ ok:false, reason:'bad_username' });
-    const r = await db.q('SELECT id, username, username_lower, pass_hash FROM users WHERE username_lower=$1 LIMIT 1', [ul]);
-    if (r.rowCount === 0) return res.status(200).json({ ok:false, reason:'invalid_credentials' });
-    const row = r.rows[0];
-    if (!pbkdf2Verify(password, row.pass_hash)) return res.status(200).json({ ok:false, reason:'invalid_credentials' });
-    await createSession(row.id, row.username, row.username_lower, req, res);
-    return res.status(200).json({ ok:true, username: row.username });
-  } catch(e){
-    return res.status(200).json({ ok:false, reason:'server_error' });
-  }
-});
-
-app.post('/api/logout', async (req, res) => {
-  try {
-    await destroySession(req, res);
-    return res.status(200).json({ ok:true });
-  } catch(_){
-    return res.status(200).json({ ok:true });
-  }
-});
-
-
-
-app.get('/api/ladder', async (req, res) => {
-  try {
-    if (!db || !__pgReady) return res.status(200).json({ ok: true, ladder: [] });
-    const r = await db.q(
-      `SELECT player, wave, kills, ts
-         FROM ladder
-         ORDER BY wave DESC, kills DESC, ts ASC
-         LIMIT 100`
-    );
-    const ladder = (r && r.rows) ? r.rows.map(row => ({
-      player: row.player,
-      wave: Number(row.wave)||0,
-      kills: Number(row.kills)||0,
-      ts: Number(row.ts)||0
-    })) : [];
-    return res.status(200).json({ ok: true, ladder });
-  } catch(e){
-    return res.status(200).json({ ok: true, ladder: [] });
-  }
-});
-
-
-/* --- Ladder (PostgreSQL only) --- */
-function sanitizePlayerName(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
-}
-function recordLadderScoreServer(playerName, wave, kills) {
-  try {
-    if (!db || !__pgReady) return false;
-    const name = sanitizePlayerName(playerName);
-    const w = Number(wave) || 0;
-    const k = Number(kills) || 0;
-    if (!name) return false;
-    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
-    const now = Date.now();
-    db.q(
-      `INSERT INTO ladder (player, wave, kills, ts)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (player) DO UPDATE
-         SET wave = EXCLUDED.wave,
-             kills = EXCLUDED.kills,
-             ts = EXCLUDED.ts
-         WHERE (EXCLUDED.wave > ladder.wave)
-            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills > ladder.kills)
-            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills = ladder.kills AND EXCLUDED.ts < ladder.ts)`,
-      [name, w|0, k|0, now]
-    ).catch(()=>{});
-    return true;
-  } catch(_){ return false; }
-}
 const server = http.createServer(app);
+
+
 // Persist chosen worker when a specific server is requested via the URL (?w=K).
 // Do NOT set any worker by default — but if ?w=K is present, consider it an explicit join.
 app.use((req, res, next) => {
@@ -772,6 +427,7 @@ app.use((req, res, next) => {
     const wParam = parseInt(String((req.query && req.query.w) || ''), 10);
     const joinParam = String((req.query && req.query.join) || '').trim().toLowerCase();
 const isJoin = true; // legacy param no longer required; presence of ?w=K is considered a join
+
     function setWorkerCookie(val){
       try {
         const v = Math.max(1, Math.min(WORKERS, parseInt(val,10)||2));
@@ -793,6 +449,7 @@ const isJoin = true; // legacy param no longer required; presence of ?w=K is con
         }
       } catch(_){}
     }
+
     // If user is joining a specific worker, persist cookie and ensure request is served by that worker.
     if (Number.isFinite(wParam)) {
       try {
@@ -824,6 +481,7 @@ const isJoin = true; // legacy param no longer required; presence of ?w=K is con
           }
         }
       } catch(_){}
+
       // Persist cookie (sticky routing) and redirect to the correct worker if needed
       setWorkerCookie(wParam);
       try {
@@ -871,6 +529,7 @@ const io = socketIo(server, {
   perMessageDeflate: { threshold: 1024 }, // compresse les gros payloads
   transports: ['polling','websocket'],
 });
+
 // === Periodic connected count (single-process or non-cluster) ===
 try {
   const __isClusterWorker = String(process.env.IS_CLUSTER_WORKER||'0') === '1' && (parseInt(process.env.WORKERS||'1',10)>1);
@@ -890,6 +549,7 @@ try {
     }
   }
 } catch(_){}
+
 // --- Worker capacity & aggregated counts ---
 const WORKER_INDEX = Math.max(1, parseInt(process.env.WORKER_INDEX || '1', 10) || 1);
 const WORKER_CAPACITY = Math.max(1, parseInt(process.env.WORKER_CAPACITY || '60', 10) ||   60);
@@ -898,6 +558,7 @@ global.__joinedCountLocal = global.__joinedCountLocal || 0;
 let __joinedCountLocal = global.__joinedCountLocal;
 // Cluster-wide joined counts snapshot (broadcast by master)
 let __clusterJoinedCounts = Array.from({ length: Math.max(1, parseInt(process.env.WORKERS||'1',10) || 1) }, () => 0);
+
 // Receive cluster-wide counts from master
 try {
   process.on('message', (m) => {
@@ -906,6 +567,7 @@ try {
     }
   });
 } catch(_) {}
+
 // Public endpoint: returns server list with joined counts (auto-refresh friendly)
 app.get('/api/servers', (req, res) => {
   try {
@@ -922,15 +584,19 @@ app.get('/api/servers', (req, res) => {
     res.status(500).json({ ok:false, error: 'internal' });
   }
 });
+
 // --- Chat globals ---
 let worldChatHistory = [];
+
 // Keep last known pseudo per socket to label chat messages even before game context is attached
 const lastPseudoBySocket = new Map();
+
 // === World chat display name registry (server-authoritative uniqueness) ===
 // Maps socket.id -> assigned world chat display name (sanitized, <=10 chars)
 const worldChatNameBySocket = new Map();
 // Maps lowercased display name -> { ownerKey: 'user:<uname>' | 'sock:<sid>', count: number }
 const worldNameClaims = new Map();
+
 function getOwnerKeyForSocket(sock) {
   try {
     const u = getSessionUsernameBySocketId(sock && sock.id);
@@ -938,6 +604,7 @@ function getOwnerKeyForSocket(sock) {
     return 'sock:' + String(sock && sock.id || '');
   } catch(_) { return 'sock:' + String(sock && sock.id || ''); }
 }
+
 // Claim a unique world-chat name for this socket; returns the assigned name.
 // If the desired name is already owned by a different ownerKey, a numeric suffix is added (#2, #3, ...),
 // ensuring total length <= 10. For authenticated users, exact name may be shared across their own sockets.
@@ -946,6 +613,7 @@ function claimWorldChatName(sock, desired) {
   try {
     let base = sanitizeUsername(desired || '') || 'Player';
     const ownerKey = getOwnerKeyForSocket(sock);
+
     // helper to check availability
     function isAvailable(nameLower) {
       const entry = worldNameClaims.get(nameLower);
@@ -972,6 +640,7 @@ function claimWorldChatName(sock, desired) {
       }
       worldChatNameBySocket.delete(sock.id);
     }
+
     // Try base as-is first
     let finalName = base;
     let finalLower = base.toLowerCase();
@@ -1002,11 +671,13 @@ function claimWorldChatName(sock, desired) {
         }
       }
     }
+
     // Update mappings: release previous, then claim new
     releasePrevious();
     addClaim(finalLower);
     worldChatNameBySocket.set(sock.id, finalName);
     try { lastPseudoBySocket.set(sock.id, finalName); } catch(_){}
+
     return finalName;
   } catch(_){
     // Safe fallback
@@ -1015,6 +686,7 @@ function claimWorldChatName(sock, desired) {
     return fallback;
   }
 }
+
 function releaseWorldChatName(sock) {
   try {
     const prev = worldChatNameBySocket.get(sock && sock.id);
@@ -1028,6 +700,9 @@ function releaseWorldChatName(sock) {
     worldChatNameBySocket.delete(sock && sock.id);
   } catch(_){}
 }
+
+
+
 const chatLastByIp = new Map(); // per-IP cooldown
 // === Helper: normalize client IP (supports proxies) ===
 function getClientIP(socket) {
@@ -1039,6 +714,7 @@ function getClientIP(socket) {
     if (Array.isArray(peer)) peer = peer[0] || '';
     if (typeof peer === 'string' && peer.startsWith('::ffff:')) peer = peer.slice(7);
     let ip = String(peer || '').trim();
+
     // Only honor X-Forwarded-For if the immediate peer is a trusted proxy
     const headers = (socket && socket.handshake && socket.handshake.headers) || {};
     const xff = headers['x-forwarded-for'];
@@ -1060,6 +736,7 @@ function getClientIP(socket) {
     return '';
   }
 }
+
 const {
   MAP_ROWS,
   MAP_COLS,
@@ -1070,6 +747,7 @@ const {
   isCollision,
   isDiagonalBlocked
 } = gameMapModule;
+
 /*__IP_CONN_LIMIT_HTTP__*/
 const __ipConnCounts = new Map();
 function getIpFromReq(req){
@@ -1105,10 +783,12 @@ app.use((req,res,next)=>{
   next();
 });
 app.use(express.static(path.join(__dirname, 'public')));
+
 const MAX_PLAYERS = 6;
 const LOBBY_TIME = 5 * 1000;
 const MAX_ACTIVE_ZOMBIES = 130;
 const MAX_ZOMBIES_PER_WAVE = 500;
+
 // --- Shop constants envoyées au client ---
 const SHOP_CONST = {
   base: { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 },
@@ -1116,6 +796,7 @@ const SHOP_CONST = {
   priceTiers: [10, 25, 50, 75, 100],// niv 1..5
   priceStepAfterTier: 75            // après niv 5 → +50/niv
 };
+
 // --- Prix d'achat des structures (serveur autoritatif) ---
 const SHOP_BUILD_PRICES = {
   T: 2000, // Tourelle
@@ -1124,8 +805,11 @@ const SHOP_BUILD_PRICES = {
   B: 250,  // Mur
   D: 500   // Porte
 };
+
 // Cooldown for placing walls/doors (applies to both types)
 const BLOCK_PLACE_COOLDOWN_MS = 5000;
+
+
 function getUpgradePrice(nextLevel) {
   const tiers = SHOP_CONST.priceTiers;
   const step = SHOP_CONST.priceStepAfterTier;
@@ -1135,8 +819,10 @@ function getUpgradePrice(nextLevel) {
   const k = nextLevel - 7;
   return Math.round(priceAt7 * Math.pow(1.2, k));
 }
+
 let activeGames = [];
 let nextGameId = 1;
+
 // === Helper: check global nickname uniqueness (case-insensitive) ===
 function isPseudoTaken(name, exceptSocketId) {
   try {
@@ -1169,11 +855,12 @@ function isPseudoTaken(name, exceptSocketId) {
   } catch(_){}
   return false;
 }
+
 function createNewGame() {
   let game = {
     structures: null,
     id: nextGameId++,
-    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, joinCode: null, timer: null, manual: false, hostId: null, kickedUntilByIp: {} },
+    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null, kickedUntilByIp: {} },
     // map: ip -> timestamp until which the ip is blocked from rejoining this lobby
     // only relevant for manual lobbies
     kickedUntilByIp: {},
@@ -1189,8 +876,10 @@ function createNewGame() {
     map: null,
     spawnInterval: null,
     spawningActive: false,
+
     // Throttle réseau par joueur
     _lastNetSend: {},
+
     // ---- Compteurs O(1) ----
     _zombieCount: 0,
     _bulletCount: 0,
@@ -1201,23 +890,30 @@ function createNewGame() {
   activeGames.push(game);
   return game;
 }
+
+
 function buildCentralEnclosure(game, spacingTiles = 1) {
   // Taille fixe 11x11 (bords inclus)
   const HALF = 5; // car 2*5 + 1 = 11
+
   // 1) Init grille des structures si besoin
   game.structures = Array.from({ length: MAP_ROWS }, () =>
     Array.from({ length: MAP_COLS }, () => null)
   );
+
   // 2) Centre de la carte en indices de tuile
   const cR = Math.floor(MAP_ROWS / 2);
   const cC = Math.floor(MAP_COLS / 2);
+
   // 3) Bornes du carré 11x11, clamp pour rester dans la map
   let r0 = Math.max(1, cR - HALF);
   let r1 = Math.min(MAP_ROWS - 2, cR + HALF);
   let c0 = Math.max(1, cC - HALF);
   let c1 = Math.min(MAP_COLS - 2, cC + HALF);
+
   // Sécurité : si la carte est trop petite on sort
   if (r1 - r0 !== 10 || c1 - c0 !== 10) return;
+
   // 4) Murs barricades autour du carré (épaisseur 1 case)
   for (let c = c0; c <= c1; c++) {
     setStruct(game, c, r0, { type: 'B', hp: 500 });
@@ -1227,6 +923,7 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
     setStruct(game, c0, r, { type: 'B', hp: 500 });
     setStruct(game, c1, r, { type: 'B', hp: 500 });
   }
+
   // 5) Portes au milieu de chaque côté (HP = 200)
   const midC = Math.floor((c0 + c1) / 2);
   const midR = Math.floor((r0 + r1) / 2);
@@ -1234,8 +931,10 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
   setStruct(game, midC, r1, { type: 'D', hp: 500 });
   setStruct(game, c0, midR, { type: 'D', hp: 500 });
   setStruct(game, c1, midR, { type: 'D', hp: 500 });
+
   // 6) Grande tourelle au centre (HP = 500)
   setStruct(game, midC, midR, { type: 'T', hp: 500, lastShot: 0 });
+
   // 7) Mini-tourelles : décalage fixe de 2 cases depuis les coins internes
   const inset = 2;
   const miniPositions = [
@@ -1248,6 +947,8 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
     setStruct(game, pos.tx, pos.ty, { type: 't', hp: 200, lastShot: 0 });
   }
 }
+
+
 function cleanupEmptyManualLobbies() {
   // Remove manual lobbies with no players and not started
   activeGames = activeGames.filter(g => {
@@ -1255,24 +956,30 @@ function cleanupEmptyManualLobbies() {
     return !(g.lobby && g.lobby.manual && !g.lobby.started && count === 0);
   });
 }
+
 function getAvailableLobby() {
   let game = activeGames.find(g => !g.lobby.started);
   if (!game) game = createNewGame();
   return game;
 }
+
+
 function getAvailableAutoLobby() {
   // Returns a NON-manual, NOT-started lobby; creates a fresh one if needed.
   let g = activeGames.find(g => g && g.lobby && !g.lobby.manual && !g.lobby.started && Object.keys(g.lobby.players||{}).length < MAX_PLAYERS);
   if (!g) g = createNewGame();
   return g;
 }
+
 const socketToGame = {};
+
 const PLAYER_RADIUS = 10;
 const ZOMBIE_RADIUS = 10;
 // === Interest management (zone de vue par joueur) ===
 const SERVER_VIEW_RADIUS = 400; // rayon en px (monde) pour ce qu'on ENVOIE à chaque client
 const BUILD_VIEW_RADIUS = 300; // rayon de halo autorisant le placement
 const SERVER_VIEW_RADIUS_SQ = SERVER_VIEW_RADIUS * SERVER_VIEW_RADIUS;
+
 function getPlayersHealthStateFiltered(game, cx, cy, r) {
   const r2 = r * r;
   const out = {};
@@ -1297,6 +1004,7 @@ function getPlayersHealthStateFiltered(game, cx, cy, r) {
   }
   return out;
 }
+
 // Build a public map for a specific recipient: keep self under real sid, others as p1, p2...
 // If hostId is provided and differs from self, also include 'host' alias for the host player's entry.
 function buildPublicMapForRecipient(selfSid, fullMap, hostId) {
@@ -1323,6 +1031,9 @@ function buildPublicMapForRecipient(selfSid, fullMap, hostId) {
   }
   return out;
 }
+
+
+
 function getZombiesFiltered(game, cx, cy, r) {
   const r2 = r * r;
   const out = {};
@@ -1334,6 +1045,7 @@ function getZombiesFiltered(game, cx, cy, r) {
   }
   return out;
 }
+
 function getBulletsFiltered(game, cx, cy, r) {
   const r2 = r * r;
   const out = {};
@@ -1345,6 +1057,8 @@ function getBulletsFiltered(game, cx, cy, r) {
   }
   return out;
 }
+
+
 // ======= Structures (barricades/portes) helpers =======
 function worldToTile(x, y) {
   return { tx: Math.floor(x / TILE_SIZE), ty: Math.floor(y / TILE_SIZE) };
@@ -1357,13 +1071,17 @@ function getStruct(game, tx, ty) {
 function setStruct(game, tx, ty, s) {
   if (!game.structures) return;
   if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return;
+
   // Compteur de tourelles en cache (évite de scanner la grille à chaque tick)
   if (typeof game._turretCount !== 'number') game._turretCount = 0;
+
   const prev = game.structures[ty][tx];
   const prevIsTurret = !!(prev && (prev.type === 'T' || prev.type === 't' || prev.type === 'G') && prev.hp > 0);
   const nextIsTurret = !!(s && (s.type === 'T' || s.type === 't' || s.type === 'G') && s.hp > 0);
+
   if (prevIsTurret && !nextIsTurret) game._turretCount = Math.max(0, game._turretCount - 1);
   if (!prevIsTurret && nextIsTurret) game._turretCount++;
+
   
   /* COOLDOWN_ON_DESTROY */
   if (prev && (!s || (s && s.hp<=0)) && (prev.type==='t' || prev.type==='T' || prev.type==='G')) {
@@ -1377,14 +1095,19 @@ function setStruct(game, tx, ty, s) {
   }
 game.structures[ty][tx] = s;
 }
+
+
 function canPlaceStructureAt(game, tx, ty, buyerId) {
   if (!game || !game.map) return false;
   if (ty < 0 || ty >= MAP_ROWS || tx < 0 || tx >= MAP_COLS) return false;
+
   // 1) pas un mur de la map
   if (game.map[ty][tx] === 1) return false;
+
   // 2) pas de structure existante
   const existing = getStruct(game, tx, ty);
   if (existing) return false;
+
   
   // 2bis) doit être dans le halo de visibilité de l'acheteur
   if (buyerId && game.players && game.players[buyerId]) {
@@ -1404,19 +1127,25 @@ function canPlaceStructureAt(game, tx, ty, buyerId) {
     // Empêche la pose si le disque du joueur chevauche le rectangle [tx,ty]
     if (circleIntersectsTile(p.x, p.y, PLAYER_RADIUS, tx, ty)) return false;
   }
+
   // 4) aucun zombie dont le CERCLE touche la tuile
   for (const z of Object.values(game.zombies)) {
     if (!z) continue;
     if (circleIntersectsTile(z.x, z.y, ZOMBIE_RADIUS, tx, ty)) return false;
   }
+
   return true;
 }
+
+
 function isSolidForPlayer(struct) {
   // Joueurs traversent les portes, mais PAS barricades ni tourelles (grandes ou mini)
   return struct && (
     (struct.type === 'B' || struct.type === 'T' || struct.type === 't' || struct.type === 'G') && struct.hp > 0
   );
 }
+
+
 function isSolidForZombie(struct) {
   // Zombies bloqués par portes ET barricades tant que HP > 0
   return struct && struct.hp > 0;
@@ -1436,13 +1165,16 @@ function circleBlockedByStructures(game, x, y, radius, solidCheckFn) {
   const s = getStruct(game, tx, ty);
   return solidCheckFn(s);
 }
+
 // Variante pour un joueur précis : ignore la tuile de grâce (p.graceTile) si définie
 function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
   const points = 8;
+
   // Helper: teste si (tx,ty) est la tuile de grâce du joueur
   function isGrace(tx, ty) {
     return !!(player && player.graceTile && player.graceTile.tx === tx && player.graceTile.ty === ty);
   }
+
   // échantillonnage du cercle
   for (let a = 0; a < points; a++) {
     const ang = (2 * Math.PI * a) / points;
@@ -1456,25 +1188,33 @@ function circleBlockedByStructuresForPlayer(game, x, y, radius, player) {
   const { tx, ty } = worldToTile(x, y);
   const s = getStruct(game, tx, ty);
   if (!isGrace(tx, ty) && isSolidForPlayer(s)) return true;
+
   return false;
 }
+
 function tickTurrets(game) {
   if (!game?.structures) return;
   const now = Date.now();
+
   let shotsLeft = TURRET_SHOTS_PER_TICK;
   const laserBatch = [];
   const zombiesMap = game.zombies;
+
   outer_loop:
   for (let ty = 0; ty < MAP_ROWS; ty++) {
     for (let tx = 0; tx < MAP_COLS; tx++) {
       const s = getStruct(game, tx, ty);
       if (!s || (s.type !== 'T' && s.type !== 't' && s.type !== 'G') || s.hp <= 0) continue;
+
       if (!s.lastShot) s.lastShot = 0;
       const interval = (s.type === 't') ? MINI_TURRET_SHOOT_INTERVAL : (s.type === 'G' ? BIG_TURRET_SHOOT_INTERVAL : TURRET_SHOOT_INTERVAL);
+
       if (typeof s._jitterCur !== 'number') s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
       if ((now - s.lastShot) < (interval + s._jitterCur)) continue;
+
       const cx = tx * TILE_SIZE + TILE_SIZE / 2;
       const cy = ty * TILE_SIZE + TILE_SIZE / 2;
+
       // Cache cible
       let target = null;
       if (s._targetId) {
@@ -1487,6 +1227,7 @@ function tickTurrets(game) {
           }
         }
       }
+
       if (!target) {
         if (!s._nextRetargetAt || now >= s._nextRetargetAt) {
           s._nextRetargetAt = now + TURRET_RETARGET_MS;
@@ -1512,11 +1253,14 @@ function tickTurrets(game) {
           continue;
         }
       }
+
       if (!target) continue;
       if (shotsLeft <= 0) break outer_loop;
+
       shotsLeft--;
       s.lastShot = now;
       s._jitterCur = (Math.random() - 0.5) * TURRET_JITTER_MS;
+
       let baseDmg = (s.type === 't') ? 5 : (s.type === 'T' ? 10 : (s.type === 'G' ? 25 : 5));
       // Upgrades bonus per owner: sum of geometric series (+10% per level on the added amount)
       let bonus = 0;
@@ -1531,7 +1275,9 @@ function tickTurrets(game) {
       }
       const dmg = Math.round(baseDmg + bonus);
       target.hp -= dmg;
+
       laserBatch.push({ x0: cx, y0: cy, x1: target.x, y1: target.y, color: (s.type === 'G') ? '#c9a9ff' : ((s.type === 'T') ? '#ff3b3b' : '#3aa6ff') });
+
       if (target.hp <= 0) {
         // gains propriétaire inchangés...
         if (s.placedBy) {
@@ -1546,9 +1292,11 @@ function tickTurrets(game) {
             io.to(s.placedBy).emit('killsUpdate', ownerPlayer.kills);
           }
         }
+
         game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
         const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
         io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
+
         // suppression zombie + décrément O(1)
         for (const zid in zombiesMap) {
           if (zombiesMap[zid] === target) {
@@ -1561,28 +1309,37 @@ function tickTurrets(game) {
       }
     }
   }
+
   if (laserBatch.length > 0) {
     io.to('lobby' + game.id).emit(TURRET_LASER_BATCH_EVENT, laserBatch);
   }
 }
+
+
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
   if (dist < 1) return false;
+
   // Pas d'échantillonnage plus fin et surtout test "cercle" (rayon zombie)
   // pour empêcher les tentatives de passage en diagonale entre 2 blocs.
   const stepLen = Math.max(4, Math.min(8, TILE_SIZE / 3)); // ~4..8 px
   const steps = Math.ceil(dist / stepLen);
+
   for (let s = 1; s < steps; s++) {
     const ix = x0 + (dx * s / steps);
     const iy = y0 + (dy * s / steps);
+
     // Mur de la MAP (avec rayon)
     if (isCircleColliding(game.map, ix, iy, ZOMBIE_RADIUS)) return true;
+
     // Structures solides pour zombies (barricades, portes, tourelles) avec rayon
     if (circleBlockedByStructures(game, ix, iy, ZOMBIE_RADIUS, isSolidForZombie)) return true;
   }
   return false;
 }
+
+
 // LOS des tourelles : bloquée uniquement par les murs de la MAP (pas par barricades/portes)
 function losBlockedForTurret(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
@@ -1596,6 +1353,8 @@ function losBlockedForTurret(game, x0, y0, x1, y1) {
   }
   return false;
 }
+
+
 function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   const dx = ax - bx;
   const dy = ay - by;
@@ -1603,6 +1362,8 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   // <= au lieu de <
   return dist <= (aradius + bradius + bonus);
 }
+
+
 // Remplace TOUT le corps de isCircleColliding par ceci (dans server.js)
 function isCircleColliding(map, x, y, radius) {
   // Balayage intelligent : on ne teste que les tuiles qui peuvent toucher le cercle
@@ -1610,6 +1371,7 @@ function isCircleColliding(map, x, y, radius) {
   const maxTx = Math.min(MAP_COLS - 1, Math.floor((x + radius) / TILE_SIZE));
   const minTy = Math.max(0, Math.floor((y - radius) / TILE_SIZE));
   const maxTy = Math.min(MAP_ROWS - 1, Math.floor((y + radius) / TILE_SIZE));
+
   for (let ty = minTy; ty <= maxTy; ty++) {
     for (let tx = minTx; tx <= maxTx; tx++) {
       if (map[ty][tx] === 1) {
@@ -1620,6 +1382,8 @@ function isCircleColliding(map, x, y, radius) {
   }
   return false;
 }
+
+
 function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   let spawnX, spawnY, border, tries = 0;
   do {
@@ -1642,19 +1406,24 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   } while (isCollision(game.map, spawnX, spawnY));
   return { x: spawnX, y: spawnY, hp: hp, maxHp: hp, lastAttack: 0, speed: speed };
 }
+
+
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
   const centerY = (MAP_ROWS / 2) * TILE_SIZE;
   const angleStep = (2 * Math.PI) / Math.max(1, pseudosArr.length);
   const radius = 60 + pseudosArr.length * 8;
   const usedPos = [];
+
   for (let i = 0; i < pseudosArr.length; i++) {
     let angle = i * angleStep;
     let tries = 0, found = false, spawnX = centerX, spawnY = centerY;
+
     // 1) Tentatives aléatoires autour du centre (collision cercle + structures)
     while (!found && tries < 30) {
       const candX = Math.floor(centerX + Math.cos(angle) * radius + (Math.random() - 0.5) * 12);
       const candY = Math.floor(centerY + Math.sin(angle) * radius + (Math.random() - 0.5) * 12);
+
       if (
         !isCircleColliding(game.map, candX, candY, PLAYER_RADIUS) &&
         !circleBlockedByStructures(game, candX, candY, PLAYER_RADIUS, isSolidForPlayer) &&
@@ -1668,6 +1437,7 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       tries++;
       angle += Math.PI / 9;
     }
+
     // 2) FALLBACK déterministe : anneaux concentriques + 16 directions
     if (!found) {
       const maxRing = Math.min(MAP_COLS, MAP_ROWS) * TILE_SIZE * 0.45;
@@ -1690,9 +1460,11 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
         }
       }
     }
+
     const pseudo = pseudosArr[i];
     const sid = socketsArr[i];
     const isBot = sid.startsWith('bot');
+
     game.players[sid] = {
       x: spawnX,
       y: spawnY,
@@ -1714,34 +1486,28 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       _lastSpectateMoveAt: 0,
     };
     try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
     // Attach account shop upgrades (hp/dmg) to player if logged-in
     try {
       const authUser = getSessionUsernameBySocketId(sid);
-      if (authUser && db && __pgReady) {
-        db.q('SELECT shop_hp, shop_dmg FROM users WHERE username_lower=$1 LIMIT 1', [ normalizeKey(authUser) ])
-          .then(r=>{
-            const row = r.rows && r.rows[0];
-            if (!row) return;
-            if (game && game.players && game.players[sid]) {
-              game.players[sid].accountShop = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
-              try { io.to(sid).emit('accountShopUpdated', game.players[sid].accountShop); } catch(_){}
-              try {
-                const oldMax = game.players[sid].maxHealth || 100;
-                const stats = getPlayerStats(game.players[sid]);
-                const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
-                game.players[sid].maxHealth = stats.maxHp;
-                game.players[sid].health = Math.round(stats.maxHp * ratio);
-              } catch(_){}
-            }
-          }).catch(()=>{});
+      if (authUser) {
+        const urec = loadUsers()[normalizeKey(authUser)] || null;
+        if (urec) {
+          game.players[sid].accountShop = { hp: (urec.shopUpgrades&&urec.shopUpgrades.hp|0)||0, dmg: (urec.shopUpgrades&&urec.shopUpgrades.dmg|0)||0 };
+        }
       }
     } catch(_){}
+
+
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
     game.players[sid].health = stats.maxHp;
+
     usedPos.push({ x: spawnX, y: spawnY });
   }
 }
+
+
 function isNearObstacle(map, cx, cy, radius, tileSize) {
   const margin = Math.ceil(radius / tileSize);
   for (let dx = -margin; dx <= margin; dx++) {
@@ -1754,6 +1520,7 @@ function isNearObstacle(map, cx, cy, radius, tileSize) {
   }
   return false;
 }
+
 function findPath(game, startX, startY, endX, endY) {
   // On travaille en cases (grid)
   const start = {
@@ -1764,19 +1531,24 @@ function findPath(game, startX, startY, endX, endY) {
     x: Math.floor(endX / TILE_SIZE),
     y: Math.floor(endY / TILE_SIZE)
   };
+
   if (start.x === end.x && start.y === end.y) return [start, end];
+
   // BFS (coût uniforme). Diagonales PRIORITAIRES pour favoriser les trajets en diagonale.
   const key = (x, y) => `${x},${y}`;
   const queue = [start];
   const visited = new Set([key(start.x, start.y)]);
   const parent = {};
+
   // ⚠️ Diagonales d'abord, puis orthogonales
   const DIRS = [
     [ 1,  1], [ 1, -1], [-1,  1], [-1, -1],
     [ 1,  0], [-1,  0], [ 0,  1], [ 0, -1],
   ];
+
   while (queue.length > 0) {
     const node = queue.shift();
+
     if (node.x === end.x && node.y === end.y) {
       // Reconstruire le chemin
       const path = [];
@@ -1789,13 +1561,16 @@ function findPath(game, startX, startY, endX, endY) {
       }
       return path;
     }
+
     for (const [dx, dy] of DIRS) {
       const nx = node.x + dx;
       const ny = node.y + dy;
+
       // bornes carte
       if (nx < 0 || nx >= MAP_COLS || ny < 0 || ny >= MAP_ROWS) continue;
       // pas dans un mur
       if (game.map[ny][nx] === 1) continue;
+
       // si mouvement diagonal, empêcher de traverser un coin (corner cutting)
       if (dx !== 0 && dy !== 0) {
         if (typeof isDiagonalBlocked === 'function') {
@@ -1804,16 +1579,21 @@ function findPath(game, startX, startY, endX, endY) {
           if (game.map[node.y][nx] === 1 || game.map[ny][node.x] === 1) continue;
         }
       }
+
       const k = key(nx, ny);
       if (visited.has(k)) continue;
+
       visited.add(k);
       parent[k] = node;
       queue.push({ x: nx, y: ny });
     }
   }
+
   // Aucun chemin trouvé
   return null;
 }
+
+
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
@@ -1825,12 +1605,15 @@ const TURRET_RANGE_SQ = TURRET_RANGE * TURRET_RANGE;
 // --- Anti-burst tourelles ---
 // Décalage aléatoire de cadence par tir, centré sur 0 (moyenne nulle) → ne change pas le DPS moyen
 const TURRET_JITTER_MS = 120;              // ex. ±120 ms par tir
+
 // Nombre maximum de tirs de tourelles autorisés par "stepOnce" (un tick physique)
 const TURRET_SHOTS_PER_TICK = 8;           // ajuste si besoin (ex. 6..12 selon charge)
+
 // Événement de batch pour les lasers (un tableau de segments)
 const TURRET_LASER_BATCH_EVENT = 'laserBeams';
 const PATHFIND_BUDGET_PER_TICK = 8;     // nb max de findPath autorisés / tick (ajuste 8..20)
 const TURRET_RETARGET_MS = 120;          // une tourelle ne re-choisit pas une cible + souvent que ça
+
 // ---- PATHFINDING ADAPTATIF PAR TICK ----
 // Retourne le nombre d'appels findPath autorisés ce tick pour UNE partie.
 function computePathfindBudget(game) {
@@ -1838,6 +1621,7 @@ function computePathfindBudget(game) {
   const z = game._zombieCount || 0;
   const t = game._turretCount || 0;
   const b = game._bulletCount || 0;
+
   // Base plus généreuse quand peu d'ennemis, plus stricte quand ça charge
   // 0 → 50 zombies : 8
   // 51 → 150 zombies : 6
@@ -1845,26 +1629,37 @@ function computePathfindBudget(game) {
   let base = 8;
   if (z > 150) base = 4;
   else if (z > 50) base = 6;
+
   // Petite correction si vraiment calme (pas de bullets, pas de spawn)
   const calmish = (z === 0 && b === 0 && !game.spawningActive && t === 0);
   if (calmish) return 0;
+
   return base;
 }
+
+
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
+
 // --- Modes basse consommation ---
 const NET_INTERVAL_IDLE_MS = 250;    // envoi réseau plus rare quand calme
 const CALM_TICK_HZ = 10;            // tick serveur si partie(s) calmes (pas d'IA/tourelles/bullets)
 const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
+
 // Timestamp du dernier tick pour cadence adaptative
 let _lastTickAtMs = 0;
+
+
 const TICK_HZ = 60;
-const FIXED_DT = 1 / TICK_HZ;  // seconds per fixed step
+const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
 const MAX_STEPS = 5;              // anti-spirale si gros retard
 // Budget courant de pathfinding pour CE tick (réinitialisé dans stepOnce)
 let PF_BUDGET_THIS_TICK = 0;
+
 let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 let accumulator = 0;
+
+
 function broadcastLobby(game) {
   try {
     const playersOrig = (game && game.lobby && game.lobby.players) ? game.lobby.players : {};
@@ -1924,18 +1719,23 @@ function startLobbyTimer(game) {
     }
   }, 1000);
 }
+
 function spawnZombies(game, count) {
   if (game.totalZombiesToSpawn > MAX_ZOMBIES_PER_WAVE) game.totalZombiesToSpawn = MAX_ZOMBIES_PER_WAVE;
+
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) return;
   if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) return;
+
 	const hp = Math.round(10 * Math.pow(1.15, game.currentRound - 1));
   const baseSpeed = 40;
   const speedIncreasePercent = 0.05;
   const speed = baseSpeed * (1 + speedIncreasePercent * (game.currentRound - 1));
+
   let spawnedCount = 0;
   for (let i = 0; i < count; i++) {
     if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn) break;
     if (game._zombieCount >= MAX_ACTIVE_ZOMBIES) break;
+
     const z = spawnZombieOnBorder(game, hp, speed);
     let tries = 0;
     let ok = false;
@@ -1955,6 +1755,7 @@ function spawnZombies(game, count) {
     spawnedCount++;
   }
 }
+
 function checkWaveEnd(game) {
   if (game.zombiesSpawnedThisWave >= game.totalZombiesToSpawn && game._zombieCount === 0) {
     const prevRound = game.currentRound;
@@ -1965,8 +1766,9 @@ function checkWaveEnd(game) {
     try {
       if (prevRound >= 5 && game._lastAwardedRound !== prevRound) {
         const bonus = prevRound - 4;
-        // Build map of connected sockets per account
+        const users = loadUsers();
         const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
+        // Group sockets by account username to award once per account
         const perUserSids = {};
         for (const sid in game.players) {
           try {
@@ -1977,33 +1779,33 @@ function checkWaveEnd(game) {
             perUserSids[key].sids.push(sid);
           } catch(_){}
         }
-        if (db && __pgReady) {
-          db.tx(async (c)=>{
-            for (const key in perUserSids) {
-              const r = await c.query('SELECT gold FROM users WHERE username_lower=$1 FOR UPDATE', [key]);
-              if (!r.rows.length) continue;
-              const g0 = r.rows[0].gold|0;
-              const g1 = g0 + bonus;
-              await c.query('UPDATE users SET gold=$2 WHERE username_lower=$1', [key, g1]);
-              if (socketsMap) {
-                for (const sid of perUserSids[key].sids) {
-                  if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: g1 }); } catch(_){ } }
-                }
+        for (const key in perUserSids) {
+          try {
+            const rec = users[key] || (users[key] = { username: perUserSids[key].username, createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+            rec.gold = (rec.gold|0) + bonus;
+            // emit to all sockets of this account if connected
+            if (socketsMap) {
+              for (const sid of perUserSids[key].sids) {
+                if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: rec.gold|0 }); } catch(_){ } }
               }
             }
-          }).catch(()=>{});
+          } catch(_){}
         }
+        saveUsers(users);
         game._lastAwardedRound = prevRound;
       }
-    } catch(_){ } 
-const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
+    } catch(_){ }
+    const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
     game.totalZombiesToSpawn = Math.min(_nextTotal, MAX_ZOMBIES_PER_WAVE);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
     io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
     io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
+
   }
 }
+
+
 function startSpawning(game) {
   if (game.spawnInterval) clearInterval(game.spawnInterval);
   game.spawningActive = true;
@@ -2013,6 +1815,7 @@ function startSpawning(game) {
     checkWaveEnd(game);
   }, 1000);
 }
+
 function stopSpawning(game) {
   game.spawningActive = false;
   if (game.spawnInterval) {
@@ -2020,6 +1823,7 @@ function stopSpawning(game) {
     game.spawnInterval = null;
   }
 }
+
 function launchGame(game, readyPlayersArr = null) {
   
   try{ console.log('[LAUNCH] game', game && game.id, 'readyCount=', (game && game.lobby && Object.values(game.lobby.players||{}).filter(p=>p&&p.ready).length)); }catch(_){ }
@@ -2042,18 +1846,22 @@ function launchGame(game, readyPlayersArr = null) {
     console.error('[launchGame] ready reconstruction failed', e);
   }
   // === ROBUST START FIX END ===
+
 Object.keys(game.players).forEach(id => delete game.players[id]);
   Object.keys(game.zombies).forEach(id => delete game.zombies[id]);
   Object.keys(game.bullets).forEach(id => delete game.bullets[id]);
+
   // compteurs O(1)
   game._zombieCount = 0;
   game._bulletCount = 0;
   game._turretCount = 0;
+
   game.currentRound = 1;
   game.totalZombiesToSpawn = Math.min(50, MAX_ZOMBIES_PER_WAVE);
   game.zombiesSpawnedThisWave = 0;
   game.zombiesKilledThisWave = 0;
   game.spawningActive = false;
+
   if (readyPlayersArr === null) {
     readyPlayersArr = Object.entries(game.lobby.players).filter(([sid, p]) => p.ready);
   }
@@ -2066,6 +1874,7 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
   }
   const nbPlayers = pseudosArr.length;
   const nbBots = Math.max(0, MAX_PLAYERS - nbPlayers);
+
   for (let i = 1; i <= nbBots; i++) {
     const botId = `bot${i}_${Date.now()}`;
     const botName = `[BOT${i}]`;
@@ -2077,6 +1886,7 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
     pseudosArr.push(botName);
     socketsArr.push(botId);
   }
+
   // (re)construire l’enceinte centrale
   
   // --- Ensure only ready sockets stay in the room before starting ---
@@ -2098,50 +1908,107 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
     }
     broadcastLobby(game);
   } catch(e) { console.error('[launchGame] evac non-ready error', e); }
+
   buildCentralEnclosure(game, 1);
+
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
   // Ensure each spawned player gets the LATEST account-level shop upgrades (hp/dmg)
   try {
-    if (db && __pgReady) {
-      const lowers = [];
-      const sidToLower = {};
-      for (const sid of socketsArr) {
+    const usersNow = loadUsers();
+    for (const sid of socketsArr) {
+      try {
+        const p = game.players[sid];
+        if (!p) continue;
+        const u = getSessionUsernameBySocketId(sid);
+        if (!u) continue;
+        const rec = usersNow[normalizeKey(u)] || null;
+        if (!rec) continue;
+        p.accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
         try {
-          const u = getSessionUsernameBySocketId(sid);
-          if (!u) continue;
-          const lower = normalizeKey(u);
-          sidToLower[sid] = lower;
-          lowers.push(lower);
-        } catch(_){}
-      }
-      if (lowers.length) {
-        db.q('SELECT username_lower, shop_hp, shop_dmg FROM users WHERE username_lower = ANY($1)', [lowers])
-          .then(r=>{
-            const map = new Map();
-            for (const row of (r.rows||[])) map.set(row.username_lower, row);
-            for (const sid of socketsArr) {
-              const lower = sidToLower[sid];
-              if (!lower) continue;
-              const row = map.get(lower);
-              if (!row) continue;
-              if (game && game.players && game.players[sid]) {
-                game.players[sid].accountShop = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
-                try {
-                  const oldMax = game.players[sid].maxHealth || 100;
-                  const stats = getPlayerStats(game.players[sid]);
-                  const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
-                  game.players[sid].maxHealth = stats.maxHp;
-                  game.players[sid].health = Math.round(stats.maxHp * ratio);
-                } catch(_){}
-                try { io.to(sid).emit('accountShopUpdated', game.players[sid].accountShop); } catch(_){}
-              }
-            }
-          })
-          .catch(()=>{});
+          const stats = getPlayerStats(p);
+          p.maxHealth = stats.maxHp;
+          p.health = stats.maxHp;
+          p.damage = stats.damage;
+        } catch(_) {}
+      } catch(_) {}
+    }
+  } catch(_) {}
+
+
+  // === SANITY: ensure all sockets in socketsArr have a player object ===
+  try {
+    for (const sid of socketsArr) {
+      if (!game.players[sid]) {
+        const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+        const x = cC * TILE_SIZE + TILE_SIZE/2;
+        const y = cR * TILE_SIZE + TILE_SIZE/2;
+        const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
+        game.players[sid] = {
+          x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+          damage:10, speed:40, goldGain:10, regen:0,
+          lastShot:0, pseudo, kills:0, money:0, spectator:false
+        };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
       }
     }
-  } catch(_){}
-for (const sid in (game.players||{})) {
+  } catch(e) { console.error('[launchGame] post-spawn sanity failed', e); }
+// 🔒 ROBUST: Sanity—ensure every ready socket has a player object
+try {
+  for (const sid of socketsArr) {
+    if (!game.players[sid]) {
+      // Fallback spawn near center (safe)
+      const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
+      const x = cC * TILE_SIZE + TILE_SIZE/2;
+      const y = cR * TILE_SIZE + TILE_SIZE/2;
+      game.players[sid] = {
+        x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
+        damage:10, speed:40, goldGain:10, regen:0,
+        lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
+        kills:0, money:0, spectator:false
+      };
+    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+
+    }
+  }
+} catch(e) {
+  console.error('[launchGame] post-spawn sanity failed', e);
+}
+
+
+  
+// === FINAL SYNC: ensure account-level shop upgrades are applied and stats are correct ===
+try {
+  for (const sid of socketsArr) {
+    try {
+      if (!game.players || !game.players[sid]) continue;
+      // Refresh accountShop from persistent store if available
+      try {
+        const authUser = getSessionUsernameBySocketId(sid);
+        if (authUser) {
+          const urec = loadUsers()[normalizeKey(authUser)] || null;
+          if (urec && urec.shopUpgrades) {
+            game.players[sid].accountShop = {
+              hp: (urec.shopUpgrades.hp|0)||0,
+              dmg: (urec.shopUpgrades.dmg|0)||0
+            };
+          }
+        }
+      } catch(_) {}
+      // Recompute stats and rescale health proportionally
+      try {
+        const oldMax = game.players[sid].maxHealth || 100;
+        const stats = getPlayerStats(game.players[sid]);
+        const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
+        game.players[sid].maxHealth = stats.maxHp;
+        game.players[sid].health = Math.round(stats.maxHp * ratio);
+      } catch(_) {}
+    } catch(_) {}
+  }
+} catch(_) {}
+// === END FINAL SYNC ===
+try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
+  for (const sid in (game.players||{})) {
     try {
       const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
       io.to(sid).emit('gameStarted', { gameId: game.id,
@@ -2156,6 +2023,7 @@ for (const sid in (game.players||{})) {
   }
 io.to('lobby' + game.id).emit('waveStarted', { totalZombies: game.totalZombiesToSpawn });
   io.to('lobby' + game.id).emit('zombiesRemaining', game.totalZombiesToSpawn);
+
   console.log(`---- Partie lancée : ${nbPlayers} joueur(s) dans la partie !`);
   startSpawning(game);
  // --- Reset du temps pour éviter l'accélération initiale après le lobby ---
@@ -2163,7 +2031,10 @@ lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now())
 accumulator = 0;
 _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 }
+
+
 io.on('connection', socket => {
+
 // Per-IP connection limiter (max 6 sockets/IP). Counts exactly once per socket.
 try {
   if (!socket.__ipCounted) {
@@ -2186,6 +2057,8 @@ try {
     });
   }
 } catch(_){}
+
+
   try {
     // Determine if this socket is a joined player for this worker (cookie 'w=<idx>')
     const ck = String((socket && socket.handshake && socket.handshake.headers && socket.handshake.headers.cookie) || '');
@@ -2214,6 +2087,7 @@ try {
       socket.once('disconnect', () => {});
     }
   } catch(_){}
+
     
   /*__WORKER_CONN_METRICS__*/
   try {
@@ -2233,6 +2107,7 @@ try {
         } catch(_){}
       });
     } catch(_){}
+
   } catch(_){}
   try {
     socket.on('disconnect', function(){
@@ -2245,17 +2120,21 @@ try {
       const ua = (socket && socket.handshake && socket.handshake.headers && socket.handshake.headers['user-agent']) || '';
       socket.__isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(String(ua));
     } catch(_){ socket.__isMobile = false; }
+
   // Ultra-aggressive: host cleanup BEFORE disconnect completes
     // Soft handling: do NOT auto-close manual lobbies on transient disconnects.
   socket.on('disconnecting', () => { /* no-op (grace handled on 'disconnect') */ });
+
   // Token-based reclaim is now handled via 'reclaimHost' event from client after connect.
   let __reclaimed = false;
+
       if (!__reclaimed) {
 // Attache tout de suite le joueur à un lobby pour avoir "game" dispo
     const game = getAvailableLobby();
     socketToGame[socket.id] = game.id;
     socket.join('lobby' + game.id);
   }
+
   // Allow non-host players to reclaim their previous lobby seat after a reconnect (by gameId + pseudo)
   socket.on('reclaimPlayer', (payload, cb) => {
     try {
@@ -2266,6 +2145,7 @@ try {
       const currentGid = socketToGame[socket.id];
       const target = activeGames.find(g => g && g.id === targetId);
       if (!target || !target.lobby || target.lobby.started) { try { if (cb) cb({ ok:false, reason:'not_joinable' }); } catch(_){} return; }
+
       // Find a stale roster entry matching this pseudo (socket no longer connected)
       const roster = (target.lobby && target.lobby.players) || {};
       const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
@@ -2279,11 +2159,13 @@ try {
         }
       }
       if (!oldSid) { try { if (cb) cb({ ok:false, reason:'no_match' }); } catch(_){} return; }
+
       // Move the roster entry to this new socket id
       try {
         roster[socket.id] = roster[oldSid];
         delete roster[oldSid];
       } catch(_) {}
+
       // Move the socket to the right room and update mapping
       try {
         const prev = activeGames.find(g => g && g.id === currentGid);
@@ -2291,12 +2173,14 @@ try {
       } catch(_) {}
       try { socket.join('lobby' + target.id); } catch(_) {}
       socketToGame[socket.id] = target.id;
+
       broadcastLobby(target);
       try { if (cb) cb({ ok:true, gameId: target.id }); } catch(_) {}
     } catch(e) {
       try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
     }
   });
+
   // Client asked for an explicit lobby state snapshot
   socket.on('requestLobbyState', () => {
     try {
@@ -2317,6 +2201,7 @@ try {
     } catch(_) {}
   });
 socket.on('clientPing', () => {});
+
   
   // Emit initial lobby state for this socket's current lobby
   try {
@@ -2328,6 +2213,7 @@ socket.on('clientPing', () => {});
   } catch(e) { console.error('emit lobbyUpdate failed', e); }
 // ====== ULTRA-AGGRESSIVE CHAT HANDLERS ======
   try { socket.join('world'); } catch(_) {}
+
   // Client asks history for a channel
   socket.on('chat:join', (payload) => {
     try {
@@ -2344,6 +2230,7 @@ socket.on('clientPing', () => {});
       }
     } catch(e){}
   });
+
   // Fallback pull (explicit request)
   socket.on('chat:pull', (payload, cb) => {
     try {
@@ -2361,16 +2248,19 @@ socket.on('clientPing', () => {});
       else io.to(socket.id).emit('chat:history', { channel, history: arr });
     } catch(e){ if (cb) cb({ ok:false }); }
   });
+
   // Send a message
   socket.on('chat:send', (payload) => {
   try {
     const now = Date.now();
     const channel = (payload && payload.channel) === 'lobby' ? 'lobby' : 'world';
+
     // basic sanitize
     let text = String((payload && payload.text) || '').replace(/[\r\n\t]/g,' ').trim();
     if (!text) return;
     // Allow up to 100 characters per message (increase from previous 50)
     if (text.length > 100) text = text.slice(0,100);
+
     // cooldown per IP (2s)
     {
       const ip = getClientIP(socket) || 'unknown';
@@ -2381,6 +2271,7 @@ socket.on('clientPing', () => {});
       }
       chatLastByIp.set(ip, now);
     }
+
     // resolve pseudo
     let pseudo = 'player';
     try {
@@ -2396,6 +2287,7 @@ socket.on('clientPing', () => {});
       const lp = lastPseudoBySocket.get(socket.id);
       if (lp) pseudo = lp;
     }
+
     // Allow using client-provided display name ONLY as a fallback, sanitized,
     // and without letting users impersonate registered accounts.
     if ((!pseudo || pseudo === 'player') && payload && typeof payload.name === 'string') {
@@ -2410,6 +2302,7 @@ socket.on('clientPing', () => {});
         }
       } catch(_){}
     }
+
     if (!pseudo || pseudo === 'player') {
       try {
         const ip2 = getClientIP(socket) || '';
@@ -2417,6 +2310,7 @@ socket.on('clientPing', () => {});
         pseudo = 'Guest' + h;
       } catch(_){ pseudo = 'Guest'; }
     }
+
     // Enforce uniqueness rules by channel
     if (channel === 'world') {
       // Server-authoritative, collision-free assignment for world chat
@@ -2428,7 +2322,9 @@ socket.on('clientPing', () => {});
         return;
       }
     }
+
     const msg = { sid: socket.id, pseudo, text, ts: now, channel };
+
     if (channel === 'world') {
       worldChatHistory.push(msg);
       // Keep only the most recent 30 messages in the world chat history (was 500)
@@ -2493,6 +2389,8 @@ socket.on('clientPing', () => {});
         }
       }
 if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
+
 // Enforce limit: up to two manual lobbies per public IP at the same time (as founder)
     const __hostIp = getClientIP(socket);
     // Count existing manual lobbies for this IP whose host is currently connected (not started)
@@ -2507,23 +2405,29 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
       }
     } catch(_){}
     if (__hostingCount >= 2) { if (cb) cb({ ok:false, reason:'ip_limit' }); return; }
+
     const oldGameId = socketToGame[socket.id];
     const oldGame = activeGames.find(g => g.id === oldGameId);
+
     const newGame = createNewGame();
     newGame.lobby.manual = true;
     newGame.lobby.hostId = socket.id;
     newGame.lobby.hostIp = __hostIp;
     // Generate a host token for secure reclaim
-    newGame.lobby.hostToken = nodeCrypto.randomBytes(16).toString('hex');
+    newGame.lobby.hostToken = crypto.randomBytes(16).toString('hex');
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
     try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
+
+
     // Move socket room + mapping
     if (oldGame) { try { socket.leave('lobby' + oldGame.id); } catch(_){} }
     socketToGame[socket.id] = newGame.id;
     socket.join('lobby' + newGame.id);
+
     broadcastLobby(newGame);
     if (cb) cb({ ok:true, gameId:newGame.id , hostToken: newGame.lobby.hostToken});
   });
+
   // === Secure host reclaim by token ===
   socket.on('reclaimHost', (payload, cb) => {
     try {
@@ -2533,6 +2437,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
       const g = activeGames.find(x => x && x.id === gameId);
       if (!g || !g.lobby || !g.lobby.manual || g.lobby.started) { if (cb) cb({ ok:false }); return; }
       if (!token || token !== g.lobby.hostToken) { if (cb) cb({ ok:false }); return; }
+
       // Transfer host to this socket
       const prevHostId = g.lobby.hostId;
       let pseudo = 'Player';
@@ -2542,18 +2447,22 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
           delete g.lobby.players[prevHostId];
         }
       } catch(_) {}
+
       g.lobby.hostId = socket.id;
       g.lobby.players[socket.id] = { pseudo, ready: true };
       socketToGame[socket.id] = g.id;
       try { socket.join('lobby' + g.id); } catch(_) {}
+
       // Cancel any grace timers if they exist
       try { if (g.lobby._hostGraceTimer) { clearTimeout(g.lobby._hostGraceTimer); g.lobby._hostGraceTimer = null; } } catch(_){}
+
       broadcastLobby(g);
       if (cb) cb({ ok:true });
     } catch(e) {
       try { if (cb) cb({ ok:false, err: String(e && e.message || e) }); } catch(_) {}
     }
   });
+
   socket.on('requestLobbies', () => {
     cleanupEmptyManualLobbies();
     const list = activeGames
@@ -2567,6 +2476,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
       }));
     io.to(socket.id).emit('lobbiesList', list);
   });
+
   socket.on('joinLobbyById', (data, cb) => {
     const targetId = data && data.gameId;
     let pseudo = (data && data.pseudo) || '';
@@ -2582,6 +2492,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
         }
       }
 if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error', { type:'pseudo_taken' }); } catch(_){ } if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
+
     const target = activeGames.find(g => g.id === targetId);
     if (!target || !target.lobby.manual || target.lobby.started) { if (cb) cb({ ok:false, reason:'not_joinable' }); return; }
     const count = Object.keys(target.lobby.players||{}).length;
@@ -2595,6 +2506,7 @@ if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error'
         return;
       }
     } catch(_) {}
+
     const currentId = socketToGame[socket.id];
     const current = activeGames.find(g => g.id === currentId);
     if (current) {
@@ -2603,14 +2515,19 @@ if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error'
       try { socket.leave('lobby' + current.id); } catch(_) {}
       broadcastLobby(current);
     }
+
     socketToGame[socket.id] = target.id;
     socket.join('lobby' + target.id);
     target.lobby.players[socket.id] = { pseudo, ready: true };
     broadcastLobby(target);
     if (cb) cb({ ok:true, gameId: target.id });
   });
+
   
+
+
 // Host-only: kick a player from the manual lobby and block their IP for 30s
+
 // Host-only: kick a player from the manual lobby and block their IP for 30s
 socket.on('kickPlayer', (data, cb) => {
   try {
@@ -2635,26 +2552,34 @@ socket.on('kickPlayer', (data, cb) => {
       }
     }
     if (!game.lobby.players[targetId]) { if (cb) cb && cb({ ok:false, reason:'not_in_lobby' }); return; }
+
+
     // compute IP of target socket
     const targetSock = io.sockets.sockets.get(targetId);
     const ip = targetSock ? getClientIP(targetSock) : null;
     const until = Date.now() + 30000; // 30s
     if (!game.lobby.kickedUntilByIp) game.lobby.kickedUntilByIp = {};
     if (ip) game.lobby.kickedUntilByIp[ip] = until;
+
     // Remove from this lobby
     try { delete game.lobby.players[targetId]; } catch(_){}
     try { if (targetSock) targetSock.leave('lobby' + game.id); } catch(_){}
+
     // Clear mapping so the client is effectively "in menu"
     try { delete socketToGame[targetId]; } catch(_){}
+
     // Notify the kicked client; client will show main menu
     try { if (targetSock) io.to(targetId).emit('kicked', { gameId: game.id, until }); } catch(_){}
+
     // Update the original lobby for everyone else
     broadcastLobby(game);
     if (cb) cb({ ok:true, until });
+
   } catch (e) {
     try { if (cb) cb({ ok:false, reason:'error' }); } catch(_){}
   }
 });
+
   socket.on('startManualLobby', (cb) => {
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
@@ -2668,13 +2593,17 @@ socket.on('kickPlayer', (data, cb) => {
     launchGame(game, readyPlayers);
     if (cb) cb({ ok:true });
 });
+
+
 socket.on('hostBackManual', (cb) => {
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gid);
     if (!game || !game.lobby || !game.lobby.manual || game.lobby.started) { if (cb) cb({ ok:false }); return; }
     if (game.lobby.hostId !== socket.id) { if (cb) cb({ ok:false, reason:'not_host' }); return; }
+
     // Notify room that lobby is closed and force everyone out
     try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch(_){}
+
     const room = io.sockets.adapter.rooms.get('lobby' + game.id);
     const cids = room ? Array.from(room) : [];
     for (const cid of cids) {
@@ -2692,6 +2621,7 @@ socket.on('hostBackManual', (cb) => {
     activeGames = activeGames.filter(g => g !== game);
     if (cb) cb({ ok:true });
 });
+
 // --- Turret upgrades (t/T/G) ---
 socket.on('upgradeTurret', ({ type }) => {
   try {
@@ -2717,6 +2647,8 @@ socket.on('upgradeTurret', ({ type }) => {
     socket.emit('upgradeTurretResult', { ok:false, reason:'server_error' });
   }
 });
+
+
   socket.on('giveMillion', () => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -2727,6 +2659,8 @@ socket.on('upgradeTurret', ({ type }) => {
     socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
   }
 });
+
+
 socket.on('skipRound', () => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
@@ -2739,6 +2673,7 @@ socket.on('skipRound', () => {
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
   checkWaveEnd(game);
 });
+
   socket.on('setPseudoAndReady', (pseudo) => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
@@ -2756,6 +2691,7 @@ socket.on('skipRound', () => {
       }
     }
 if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAndReadyResult', { ok:false, reason:'pseudo_taken' }); } catch(_) {} return; }
+
   game.lobby.players[socket.id] = { pseudo, ready: true };
   try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
   broadcastLobby(game);
@@ -2772,6 +2708,7 @@ if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('setPseudoAn
   return;
 }
 });
+
 socket.on('renamePseudo', (data, cb) => {
   try {
     // Accept either a string or an object: { pseudo: '...' }
@@ -2782,6 +2719,7 @@ socket.on('renamePseudo', (data, cb) => {
       try { io.to(socket.id).emit('renameResult', { ok:false, reason:'invalid_pseudo' }); } catch(_){}
       return;
     }
+
     
     // Reserved username enforcement
     {
@@ -2795,16 +2733,19 @@ socket.on('renamePseudo', (data, cb) => {
 if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_taken' }); } catch(_){} try { io.to(socket.id).emit('renameResult', { ok:false, reason:'pseudo_taken' }); } catch(_){} return; }
     const gid = socketToGame[socket.id];
     const game = activeGames.find(g => g && g.id === gid);
+
     if (game) {
       // Update pseudo in both lobby roster and active players if present
       try { if (game.lobby && game.lobby.players && game.lobby.players[socket.id]) game.lobby.players[socket.id].pseudo = p; } catch(_){}
       try { if (game.players && game.players[socket.id]) game.players[socket.id].pseudo = p; } catch(_){}
       try { lastPseudoBySocket.set(socket.id, p); } catch(_){ }
+
       // Notify lobby UIs
       try { broadcastLobby(game); } catch(_){}
       // Also refresh health/name overlays for clients already in-game
       try { for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl) continue; const _cx = (_pl.spectator && _pl.viewX != null) ? _pl.viewX : (_pl.x || 0); const _cy = (_pl.spectator && _pl.viewY != null) ? _pl.viewY : (_pl.y || 0); io.to(sid).emit('playersHealthUpdate', getPlayersHealthStateFiltered(game, _cx, _cy, SERVER_VIEW_RADIUS)); } } catch(_){}
     }
+
     try { if (cb) cb({ ok:true, pseudo: p }); } catch(_){}
     try { io.to(socket.id).emit('renameResult', { ok:true, pseudo: p }); } catch(_){}
   } catch(e) {
@@ -2812,7 +2753,9 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
     try { io.to(socket.id).emit('renameResult', { ok:false, reason:'server_error' }); } catch(_){}
   }
 });
+
   
+
   socket.on('leaveLobby', () => {
     const gameId = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gameId);
@@ -2820,8 +2763,10 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
     // Remove from current lobby's players
     delete game.lobby.players[socket.id];
     broadcastLobby(game);
+
     // Leave the old room
     try { socket.leave('lobby' + game.id); } catch(_) {}
+
     // Move the socket back to an auto lobby (non-manual), so UI stays consistent
     let target = activeGames.find(g => g && g.lobby && !g.lobby.manual && !g.lobby.started && Object.keys(g.lobby.players||{}).length < MAX_PLAYERS);
     if (!target) target = getAvailableLobby();
@@ -2829,20 +2774,27 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
     socket.join('lobby' + target.id);
     // Do not auto-mark ready; just broadcast target state
     broadcastLobby(target);
+
     // Cleanup manual lobbies that might have become empty
     cleanupEmptyManualLobbies();
   });
+
+
   
   socket.on('disconnect', () => {
     try { releaseWorldChatName(socket); } catch(_){}
     try { lastPseudoBySocket.delete(socket.id); } catch(_){}
+
     // Try to resolve the game from mapping
     const mappedId = socketToGame[socket.id];
     let game = activeGames.find(g => g && g.id === mappedId) || null;
+
     // Fallback: direct lookup by hostId (covers cases where mapping was lost)
     if (!game) {
       game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
     }
+
+
     // Immediate cleanup for NON-HOST players who are sitting in any lobby (not started)
     // This prevents a refreshed page from leaving a ghost seat.
     try {
@@ -2871,8 +2823,10 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
             // If the current hostId is connected again, cancel.
             const hostSock = io.sockets.sockets.get(game.lobby.hostId);
             if (hostSock) return;
+
             // Notify and force everyone out of this manual lobby
             try { io.to('lobby' + game.id).emit('lobbyClosed'); io.to('lobby' + game.id).emit('forceReload'); } catch (_) {}
+
             const room = io.sockets.adapter.rooms.get('lobby' + game.id);
             const ids = room ? Array.from(room) : [];
             for (const cid of ids) {
@@ -2885,6 +2839,7 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
                 try { delete socketToGame[cid]; } catch (_){}
               } catch(_){}
             }
+
     // For NON-HOST players or non-manual lobbies: immediately remove the player from the lobby on disconnect
     // (treat as if they pressed "Back"). This prevents ghost seats when a page is refreshed.
     try {
@@ -2932,18 +2887,23 @@ socket.on('moveDir', (dir) => {
   if (!player || !player.alive) return;
   player.moveDir = dir;
 });
+
   socket.on('upgradeBuy', ({ upgId }) => {
     const gameId = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gameId);
     if (!game) return;
     const player = game.players[socket.id];
     if (!player) return;
+
     if (!player.upgrades) player.upgrades = { maxHp:0, speed:0, regen:0, damage:0, goldGain:0 };
+
     const lvl = player.upgrades[upgId] || 0;
     const price = getUpgradePrice(lvl + 1); // prix du prochain niveau
+
     if (player.money >= price) {
       player.money -= price;
       player.upgrades[upgId] = lvl + 1;
+
       if (upgId === "maxHp") {
         const oldMaxHp = player.maxHealth || 100;
         const oldRatio = player.health / oldMaxHp;
@@ -2952,6 +2912,7 @@ socket.on('moveDir', (dir) => {
         player.health = Math.round(player.maxHealth * oldRatio);
         fixHealth(player);
       }
+
       socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
       socket.emit('upgradeBought', {
         upgId,
@@ -2960,6 +2921,8 @@ socket.on('moveDir', (dir) => {
       });
     }
   });
+
+
 socket.on('buyStructure', ({ type, tx, ty }) => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
@@ -2972,6 +2935,7 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'player_invalid' });
     return;
   }
+
   // Validation entrée
   if (!['T','t','G','B','D'].includes(type)) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'invalid_type' });
@@ -2982,6 +2946,7 @@ socket.on('buyStructure', ({ type, tx, ty }) => {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'tile_blocked' });
     return;
   }
+
   
   // Limits and cooldowns per player
   const TURRET_LIMITS = { 't': 2, 'T': 2, 'G': 1 };
@@ -3028,11 +2993,13 @@ if (type === 'B' || type === 'D') {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'not_enough_money' });
     return;
   }
+
   // Vérifs de placement sur (tx, ty)
   if (!canPlaceStructureAt(game, tx, ty, socket.id)) {
     io.to(socket.id).emit('buildResult', { ok: false, reason: 'tile_blocked' });
     return;
   }
+
   // Création structure
   let s = null;
   if (type === 'B') s = { type: 'B', hp: 500, placedBy: socket.id };
@@ -3040,10 +3007,13 @@ if (type === 'B' || type === 'D') {
   if (type === 'T') s = { type: 'T', hp: 500, lastShot: 0, placedBy: socket.id };
   if (type === 't') s = { type: 't', hp: 200, lastShot: 0, placedBy: socket.id };
   if (type === 'G') s = { type: 'G', hp: 2500, lastShot: 0, placedBy: socket.id };
+
   // Débit argent
   player.money = (player.money || 0) - price;
+
   // Pose
   setStruct(game, tx, ty, s);
+
   // Grâce de collision
 if (type === 'B' || type === 'D') {
   player.lastBlockPlaceAt = Date.now();
@@ -3055,10 +3025,13 @@ if (type === 'B' || type === 'D') {
   if (cur.tx === tx && cur.ty === ty) {
     player.graceTile = { tx, ty };
   }
+
   // Broadcast
   io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
   io.to(socket.id).emit('buildResult', { ok: true, type, tx, ty, newMoney: player.money });
 });
+
+
 socket.on('shoot', (data) => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -3076,6 +3049,7 @@ socket.on('shoot', (data) => {
   game.bullets[bulletId] = { id: bulletId, owner: socket.id, x: player.x, y: player.y, dx: dx / dist, dy: dy / dist, createdAt: now };
   game._bulletCount = (game._bulletCount||0) + 1;
 });
+
 socket.on('requestZombies', () => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -3085,11 +3059,13 @@ socket.on('requestZombies', () => {
   const now = Date.now();
   if (now - (p._lastZsnapAt || 0) < 200) return;
   p._lastZsnapAt = now;
+
   const cx_req = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
   const cy_req = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
   const zSnap = getZombiesFiltered(game, cx_req, cy_req, SERVER_VIEW_RADIUS);
   io.to(socket.id).emit('zombiesUpdate', zSnap);
 });
+
 socket.on('playerDied', () => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -3101,7 +3077,7 @@ socket.on('playerDied', () => {
       const _p = game.players[socket.id];
       if (_p && !_p.isBot && !_p._ladderSubmitted) {
         _p._ladderSubmitted = true;
-        recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
+        recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
       }
     } catch(_e) { console.error('[LADDER] record error', _e); } })();
 for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl) continue; const _cx = (_pl.spectator && _pl.viewX != null) ? _pl.viewX : (_pl.x || 0); const _cy = (_pl.spectator && _pl.viewY != null) ? _pl.viewY : (_pl.y || 0); io.to(sid).emit('playersHealthUpdate', getPlayersHealthStateFiltered(game, _cx, _cy, SERVER_VIEW_RADIUS)); }
@@ -3117,11 +3093,13 @@ for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl)
     // Only possible if game still running and player exists
     if (!game.lobby.started) return;
     if (p.alive) return;
+
     p.spectator = true;
     p.viewX = (p.x || 0);
     p.viewY = (p.y || 0);
     p._lastSpectateMoveAt = Date.now();
   });
+
   // Spectator movement: WASD/Arrows at 500 px/s, clamped to map bounds
   socket.on('spectatorMove', (dir) => {
     const gameId = socketToGame[socket.id];
@@ -3147,6 +3125,8 @@ for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl)
     if (p.viewX > worldW) p.viewX = worldW;
     if (p.viewY > worldH) p.viewY = worldH;
   });
+
+
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
 socket.on('killAllZombies', () => {
   const gid = socketToGame[socket.id];
@@ -3159,11 +3139,13 @@ socket.on('killAllZombies', () => {
   io.to('lobby' + game.id).emit('zombiesUpdate', game.zombies);
 });
 });
+
 function getPlayerStats(player) {
   const u = player?.upgrades || {};
   const base = { maxHp: 100, speed: 40, regen: 0, damage: 10, goldGain: 10 }; // regen à 0 pour éviter la confusion
   const lvl = u.regen || 0;
   const regen = (lvl <= 10) ? lvl : +(10 * Math.pow(1.1, lvl - 10)).toFixed(2);
+
   const acc = (player && player.accountShop) || {hp:0,dmg:0};
 // Apply account-level additive bonuses FIRST, so in-game upgrades scale off the true base
 const baseWithShop = {
@@ -3180,6 +3162,8 @@ const goldGain = Math.round(baseWithShop.goldGain * Math.pow(1.1, up.goldGain ||
 const baseStats = { maxHp, speed, regen, damage, goldGain };
 return baseStats;
 }
+
+
 function getPlayersHealthState(game) {
   const obj = {};
   for (const id in game.players) {
@@ -3197,21 +3181,28 @@ function getPlayersHealthState(game) {
   }
   return obj;
 }
+
 const zombieAttackCooldown = 350;
+
 // ---- FIN DE PARTIE FORCÉE QUAND AUCUN JOUEUR CONNECTÉ ----
 function endGame(game, reason = 'no_players') {
   if (!game.lobby.started) return;
+
   console.log(`---- Fin de partie (game ${game.id}) : ${reason}`);
   game.lobby.started = false;
+
   // arrêter le spawn
   stopSpawning(game);
+
   // vider entités + remettre compteurs O(1)
   game.zombies = {};
   game.bullets = {};
   game.players = {};
+
   game._zombieCount = 0;
   game._bulletCount = 0;
   game._turretCount = 0;
+
   io.to('lobby' + game.id).emit('gameEnded', { reason });
   // on nettoie le lobby un peu après (conservé)
   setTimeout(() => {
@@ -3219,10 +3210,14 @@ function endGame(game, reason = 'no_players') {
     broadcastLobby(game);
   }, 500);
 }
+
+
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
 const ATTACK_REACH_STRUCT = ZOMBIE_RADIUS + 2;    // contact (avant ~36)
 const ZOMBIE_ATTACK_COOLDOWN_MS = 300;            // avant 350
 const ZOMBIE_DAMAGE_BASE = 15;                                 // base dmg
+
+
 function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
   // pousse doucement l’entity hors des zombies si chevauchement (spawn/lag)
   for (const z of Object.values(game.zombies)) {
@@ -3237,14 +3232,19 @@ function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
     }
   }
 }
+
+
 function movePlayers(game, deltaTime) {
   const MAX_STEP = 6;   // px par micro-pas
   const NUDGE    = 1.6; // petit décalage anti-coin
+
   for (const pid in game.players) {
     const p = game.players[pid];
     if (!p || !p.alive) continue;
+
     const stats = getPlayerStats(p);
     const distToTravel = stats.speed * deltaTime;
+
     let dirX = (p.moveDir?.x || 0);
     let dirY = (p.moveDir?.y || 0);
     const len = Math.hypot(dirX, dirY);
@@ -3259,6 +3259,7 @@ function movePlayers(game, deltaTime) {
       continue;
     }
     dirX /= len; dirY /= len;
+
     const blockedForPlayer = (x, y) =>
       isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
       // ⚠️ tient compte d’une éventuelle tuile “grâce” pour CE joueur
@@ -3267,22 +3268,28 @@ function movePlayers(game, deltaTime) {
       Object.values(game.zombies).some(z =>
         entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
       );
+
     let remaining = distToTravel;
     while (remaining > 0.0001) {
       const step = Math.min(remaining, MAX_STEP);
       remaining -= step;
+
       let nx = p.x + dirX * step;
       let ny = p.y + dirY * step;
+
       if (!blockedForPlayer(nx, ny)) {
         p.x = nx; p.y = ny;
         continue;
       }
+
       // slide X
       nx = p.x + Math.sign(dirX) * step;
       if (!blockedForPlayer(nx, p.y)) { p.x = nx; continue; }
+
       // slide Y
       ny = p.y + Math.sign(dirY) * step;
       if (!blockedForPlayer(p.x, ny)) { p.y = ny; continue; }
+
       // anti-coin léger
       if (!blockedForPlayer(p.x + Math.sign(dirX) * NUDGE, p.y)) {
         p.x += Math.sign(dirX) * NUDGE;
@@ -3291,6 +3298,7 @@ function movePlayers(game, deltaTime) {
       }
       break;
     }
+
     // ✅ Si le joueur a quitté la tuile de grâce, on réactive la collision définitivement
     if (p.graceTile) {
       const { tx, ty } = worldToTile(p.x, p.y);
@@ -3300,12 +3308,15 @@ function movePlayers(game, deltaTime) {
     }
   }
 }
+
+
 function moveBots(game, deltaTime) {
   const MAX_STEP = 6;
   const NUDGE    = 1.6;
   const now = Date.now();
   const ZOMBIE_DETECTION_RADIUS = 400;
   const shootingRange = 250;
+
   // ❗ Les BOTS ne traversent plus les portes : on utilise isSolidForZombie (tout struct hp>0 est solide)
   const blockedForBot = (x, y) =>
     isCircleColliding(game.map, x, y, PLAYER_RADIUS) ||
@@ -3313,6 +3324,7 @@ function moveBots(game, deltaTime) {
     Object.values(game.zombies).some(z =>
       entitiesCollide(x, y, PLAYER_RADIUS, z.x, z.y, ZOMBIE_RADIUS, 1)
     );
+
   const canShoot = (fromX, fromY, tx, ty) => {
     const dx = tx - fromX, dy = ty - fromY;
     const dist = Math.hypot(dx, dy);
@@ -3324,41 +3336,52 @@ function moveBots(game, deltaTime) {
     }
     return true;
   };
+
   for (const [botId, bot] of Object.entries(game.players)) {
     if (!bot.isBot || !bot.alive) continue;
+
     const stats = getPlayerStats(bot);
     const speed = stats.speed;
+
     // zombie le plus proche
     let closestZombie = null, closestDist = Infinity;
     for (const z of Object.values(game.zombies)) {
       const d = Math.hypot(z.x - bot.x, z.y - bot.y);
       if (d < closestDist) { closestDist = d; closestZombie = z; }
     }
+
     if (closestZombie && closestDist <= ZOMBIE_DETECTION_RADIUS) {
       const dx = closestZombie.x - bot.x;
       const dy = closestZombie.y - bot.y;
       const dist = Math.hypot(dx, dy);
+
       // kite + tir si LOS
       if (dist > 1e-6 && dist <= shootingRange && canShoot(bot.x, bot.y, closestZombie.x, closestZombie.y)) {
         let dirx = -dx / dist, diry = -dy / dist;
         let remaining = speed * deltaTime;
+
         while (remaining > 0.0001) {
           const step = Math.min(remaining, MAX_STEP);
           remaining -= step;
+
           let nx = bot.x + dirx * step, ny = bot.y + diry * step;
           if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; }
           else {
             nx = bot.x + Math.sign(dirx) * step;
             if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
+
             ny = bot.y + Math.sign(diry) * step;
             if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
+
             if (!blockedForBot(bot.x + Math.sign(dirx)*NUDGE, bot.y))
               bot.x += Math.sign(dirx)*NUDGE;
             else if (!blockedForBot(bot.x, bot.y + Math.sign(diry)*NUDGE))
               bot.y += Math.sign(diry)*NUDGE;
+
             break;
           }
         }
+
 if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
   bot.lastShot = now;
   const bulletId = `${botId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
@@ -3373,8 +3396,10 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
   };
   game._bulletCount++; // O(1)
 }
+
         continue;
       }
+
       // sinon : avancer (path si besoin)
       let tx = closestZombie.x, ty = closestZombie.y;
       const forwardBlocked = isCollision(game.map, bot.x + (dx/dist), bot.y + (dy/dist));
@@ -3386,60 +3411,79 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
           ty = n.y * TILE_SIZE + TILE_SIZE / 2;
         }
       }
+
       let mvx = tx - bot.x, mvy = ty - bot.y;
       const md = Math.hypot(mvx, mvy);
       if (md > 1e-6) { mvx /= md; mvy /= md; }
+
       let remaining = speed * deltaTime;
       while (remaining > 0.0001) {
         const step = Math.min(remaining, MAX_STEP);
         remaining -= step;
+
         let nx = bot.x + mvx * step, ny = bot.y + mvy * step;
         if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; continue; }
+
         nx = bot.x + Math.sign(mvx) * step;
         if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
+
         ny = bot.y + Math.sign(mvy) * step;
         if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
+
         if (!blockedForBot(bot.x + Math.sign(mvx)*NUDGE, bot.y))
           bot.x += Math.sign(mvx)*NUDGE;
         else if (!blockedForBot(bot.x, bot.y + Math.sign(mvy)*NUDGE))
           bot.y += Math.sign(mvy)*NUDGE;
+
         break;
       }
       continue;
     }
+
     // errance
     if (!bot.wanderDir || now > bot.wanderChangeTime) {
       const a = Math.random() * Math.PI * 2;
       bot.wanderDir = { x: Math.cos(a), y: Math.sin(a) };
       bot.wanderChangeTime = now + 800 + Math.random() * 1200;
     }
+
     let tx = bot.x + bot.wanderDir.x * 100;
     let ty = bot.y + bot.wanderDir.y * 100;
+
     let dx = tx - bot.x, dy = ty - bot.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 1e-6) { dx /= dist; dy /= dist; }
+
     let remaining = speed * deltaTime;
     while (remaining > 0.0001) {
       const step = Math.min(remaining, MAX_STEP);
       remaining -= step;
+
       let nx = bot.x + dx * step, ny = bot.y + dy * step;
       if (!blockedForBot(nx, ny)) { bot.x = nx; bot.y = ny; continue; }
+
       nx = bot.x + Math.sign(dx) * step;
       if (!blockedForBot(nx, bot.y)) { bot.x = nx; continue; }
+
       ny = bot.y + Math.sign(dy) * step;
       if (!blockedForBot(bot.x, ny)) { bot.y = ny; continue; }
+
       if (!blockedForBot(bot.x + Math.sign(dx)*NUDGE, bot.y))
         bot.x += Math.sign(dx)*NUDGE;
       else if (!blockedForBot(bot.x, bot.y + Math.sign(dy)*NUDGE))
         bot.y += Math.sign(dy)*NUDGE;
+
       break;
     }
   }
 }
+
+
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;
   const BASE_NUDGE = 1.6;
   const now = Date.now();
+
   const turretTargets = [];
   if (game.structures) {
     for (let ty = 0; ty < MAP_ROWS; ty++) {
@@ -3455,20 +3499,25 @@ function moveZombies(game, deltaTime) {
       }
     }
   }
+
   const collidesPlayerAtR = (x, y, r) =>
     Object.values(game.players).some(p =>
       p && p.alive && entitiesCollide(x, y, r, p.x, p.y, PLAYER_RADIUS, 0)
     );
+
   const blockedAt = (x, y, r) =>
     isCircleColliding(game.map, x, y, r) ||
     circleBlockedByStructures(game, x, y, r, isSolidForZombie) ||
     collidesPlayerAtR(x, y, r);
+
   const rotated = (vx, vy, rad) => {
     const c = Math.cos(rad), s = Math.sin(rad);
     return { x: vx * c - vy * s, y: vx * s + vy * c };
   };
+
   for (const [id, z] of Object.entries(game.zombies)) {
     if (!z) continue;
+
     if (z._lastTrackAt == null) {
       z._lastTrackAt = now;
       z._lastTrackX = z.x;
@@ -3478,6 +3527,7 @@ function moveZombies(game, deltaTime) {
       z._wallSide = (Math.random() < 0.5 ? -1 : 1);
       z._localBlockStrikes = 0;
     }
+
     if (z.attackFreezeUntil && now < z.attackFreezeUntil) {
       if (now - z._lastTrackAt >= 450) {
         z._lastTrackAt = now;
@@ -3488,6 +3538,7 @@ function moveZombies(game, deltaTime) {
       }
       continue;
     }
+
     let target = null, bestDist = Infinity;
     for (const p of Object.values(game.players)) {
       if (!p || !p.alive) continue;
@@ -3499,8 +3550,11 @@ function moveZombies(game, deltaTime) {
       if (d < bestDist) { bestDist = d; target = { x: t.x, y: t.y }; }
     }
     if (!target) continue;
+
     const speed = z.speed || 40;
+
     let tx, ty, usingPath = false;
+
     if (!losBlockedForZombie(game, z.x, z.y, target.x, target.y)) {
       tx = target.x; ty = target.y;
       z.path = null; z.pathStep = 1; z.pathTarget = null;
@@ -3509,6 +3563,7 @@ function moveZombies(game, deltaTime) {
       }
     } else {
       const dueForPeriodicRepath = now >= (z.nextRepathAt || 0);
+
       const needNewPath =
         dueForPeriodicRepath ||
         !z.path || !z.pathTarget ||
@@ -3517,6 +3572,7 @@ function moveZombies(game, deltaTime) {
         z.path.length < 2 ||
         z.pathStep == null ||
         z.pathStep >= z.path.length;
+
       if (needNewPath) {
         // ---- BUDGET de pathfinding ----
         if (PF_BUDGET_THIS_TICK > 0) {
@@ -3530,6 +3586,7 @@ function moveZombies(game, deltaTime) {
           z.nextRepathAt = now + 120 + Math.floor(Math.random() * 120);
         }
       }
+
       if (z.path && z.path.length > z.pathStep) {
         const n = z.path[z.pathStep];
         tx = n.x * TILE_SIZE + TILE_SIZE / 2;
@@ -3541,10 +3598,12 @@ function moveZombies(game, deltaTime) {
         ty = z.y + Math.sin(a) * 14;
       }
     }
+
     let dx = tx - z.x, dy = ty - z.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1e-6) continue;
     dx /= dist; dy /= dist;
+
     if (now - z._lastTrackAt >= 450) {
       const moved = Math.hypot(z.x - z._lastTrackX, z.y - z._lastTrackY);
       const nearlyStill = moved < 6;
@@ -3557,12 +3616,14 @@ function moveZombies(game, deltaTime) {
       z._lastTrackAt = now;
       z._lastTrackX = z.x;
       z._lastTrackY = z.y;
+
       if (z._stuckAccum >= 2000 && now >= z._unstuckUntil) {
         z._unstuckUntil = now + 600;
         z._wallSide = -z._wallSide;
         z._stuckAccum = 900;
       }
     }
+
     if (now < z._unstuckUntil) {
       const side = z._wallSide || 1;
       const px = side * (-dy);
@@ -3572,16 +3633,22 @@ function moveZombies(game, deltaTime) {
       const n = Math.hypot(mixX, mixY);
       if (n > 0.0001) { dx = mixX / n; dy = mixY / n; }
     }
+
     let remaining = speed * deltaTime * (usingPath ? 0.8 : 1.0);
     const NUDGE = (now < z._unstuckUntil) ? (BASE_NUDGE + 0.5) : BASE_NUDGE;
     const radiusNow = (now < z._unstuckUntil) ? Math.max(1, ZOMBIE_RADIUS - 1) : ZOMBIE_RADIUS;
+
     z._localBlockStrikes = 0;
+
     while (remaining > 0.0001) {
       const step = Math.min(remaining, MAX_STEP);
       remaining -= step;
+
       let advanced = false;
+
       let nx = z.x + dx * step;
       let ny = z.y + dy * step;
+
       if (!blockedAt(nx, ny, radiusNow)) {
         z.x = nx; z.y = ny;
         advanced = true;
@@ -3637,10 +3704,12 @@ function moveZombies(game, deltaTime) {
           }
         }
       }
+
       if (advanced) {
         z._localBlockStrikes = 0;
         continue;
       }
+
       // Micro-repath : seulement si on a du budget ce tick
       z._localBlockStrikes++;
       if (z._localBlockStrikes >= 2) {
@@ -3653,15 +3722,19 @@ function moveZombies(game, deltaTime) {
             z.pathStep = 1;
             z.pathTarget = { x: tgtX, y: tgtY };
             z.nextRepathAt = now + 1500 + Math.floor(Math.random() * 600);
+
             const n = newPath[1];
             const nwx = n.x * TILE_SIZE + TILE_SIZE / 2;
             const nwy = n.y * TILE_SIZE + TILE_SIZE / 2;
+
             let rdx = nwx - z.x, rdy = nwy - z.y;
             const rd = Math.hypot(rdx, rdy);
             if (rd > 1e-6) { rdx /= rd; rdy /= rd; }
+
             const step2 = Math.min(MAX_STEP, remaining + step);
             let nx2 = z.x + rdx * step2;
             let ny2 = z.y + rdy * step2;
+
             if (!blockedAt(nx2, ny2, radiusNow)) {
               z.x = nx2; z.y = ny2;
               z._localBlockStrikes = 0;
@@ -3672,10 +3745,13 @@ function moveZombies(game, deltaTime) {
           // pas de budget : retente bientôt
           z.nextRepathAt = now + 120 + Math.floor(Math.random() * 120);
         }
+
         break; // stop pour ce tick
       }
+
       break;
     }
+
     if (z.path && z.path.length > z.pathStep) {
       const n = z.path[z.pathStep];
       const nodeX = n.x * TILE_SIZE + TILE_SIZE / 2;
@@ -3686,6 +3762,8 @@ function moveZombies(game, deltaTime) {
     }
   }
 }
+
+
 // Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const x0 = tx * TILE_SIZE, y0 = ty * TILE_SIZE;
@@ -3695,9 +3773,12 @@ function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const dx = cx - nx, dy = cy - ny;
   return (dx * dx + dy * dy) <= (cr * cr);
 }
+
+
 function handleZombieAttacks(game) {
   const now = Date.now();
   let structuresChanged = false;
+
   // Cibles tourelles vivantes (coords et cases)
   const turretTargets = [];
   if (game.structures) {
@@ -3714,20 +3795,25 @@ function handleZombieAttacks(game) {
       }
     }
   }
+
   for (const zid in game.zombies) {
     const z = game.zombies[zid];
     if (!z) continue;
     if (!z.lastAttackTimes) z.lastAttackTimes = {};
+
     let hasAttackedAny = false;
+
     // 1) Attaques sur joueurs au contact
     for (const pid in game.players) {
       const p = game.players[pid];
       if (!p || !p.alive) continue;
+
       const dist = Math.hypot(z.x - p.x, z.y - p.y);
       if (dist <= ATTACK_REACH_PLAYER) {
         if (!z.lastAttackTimes[pid]) z.lastAttackTimes[pid] = 0;
         if (now - z.lastAttackTimes[pid] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
           z.lastAttackTimes[pid] = now;
+
           fixHealth(p);
           const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
           p.health = Math.max(0, Math.round(p.health - DAMAGE));
@@ -3738,19 +3824,21 @@ function handleZombieAttacks(game) {
               
               if (!p.isBot && !p._ladderSubmitted) {
                 p._ladderSubmitted = true;
-                recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
+                recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
               }
 io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, gameId: game.id });
             }
           } else {
             io.to(pid).emit('healthUpdate', p.health);
           }
+
           // <-- gèle le zombie qui vient de frapper
           z.attackFreezeUntil = now + ZOMBIE_ATTACK_COOLDOWN_MS;
           hasAttackedAny = true;
         }
       }
     }
+
     // 1bis) Attaques sur tourelles au contact
     for (const t of turretTargets) {
       const dist = Math.hypot(z.x - t.x, z.y - t.y);
@@ -3777,9 +3865,11 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
         }
       }
     }
+
     // 2) Attaques sur structures en contact (3x3 autour)
     const { tx: ztx, ty: zty } = worldToTile(z.x, z.y);
     const DAMAGE = ZOMBIE_DAMAGE_BASE * (1 + 0.05 * (game.currentRound - 1));
+
     const candidates = [];
     for (let oy = -1; oy <= 1; oy++) {
       for (let ox = -1; ox <= 1; ox++) {
@@ -3791,10 +3881,12 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
         }
       }
     }
+
     if (candidates.length > 0) {
       const tgt = candidates[Math.floor(Math.random() * candidates.length)];
       const key = `struct_${tgt.tx}_${tgt.ty}`;
       if (!z.lastAttackTimes[key]) z.lastAttackTimes[key] = 0;
+
       if (now - z.lastAttackTimes[key] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
         z.lastAttackTimes[key] = now;
         tgt.s.hp = Math.max(0, tgt.s.hp - DAMAGE);
@@ -3825,6 +3917,7 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
         const d = Math.hypot(t.x - z.x, t.y - z.y);
         if (d < bestDist) { bestDist = d; best = { x: t.x, y: t.y }; }
       }
+
       if (best && losBlockedForZombie(game, z.x, z.y, best.x, best.y)) {
         const nearTiles = [];
         for (let oy = -1; oy <= 1; oy++) {
@@ -3837,10 +3930,12 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
             }
           }
         }
+
         if (nearTiles.length > 0) {
           const tgt = nearTiles[Math.floor(Math.random() * nearTiles.length)];
           const key2 = `struct_${tgt.tx}_${tgt.ty}`;
           if (!z.lastAttackTimes[key2]) z.lastAttackTimes[key2] = 0;
+
           if (now - z.lastAttackTimes[key2] >= ZOMBIE_ATTACK_COOLDOWN_MS) {
             z.lastAttackTimes[key2] = now;
             tgt.s.hp = Math.max(0, tgt.s.hp - DAMAGE);
@@ -3861,6 +3956,7 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
         }
       }
     }
+
     // nettoyage optionnel de vieux cooldowns d’attaque
     if (!hasAttackedAny) {
       for (const k in z.lastAttackTimes) {
@@ -3870,10 +3966,13 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
       }
     }
   }
+
   if (structuresChanged) {
     io.to('lobby' + game.id).emit('structuresUpdate', game.structures);
   }
 }
+
+
 function fixHealth(p) {
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
     p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
@@ -3883,13 +3982,17 @@ function fixHealth(p) {
   }
   p.health = Math.max(0, Math.min(p.health, p.maxHealth));
 }
+
+
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
     const bullet = game.bullets[id];
+
     // avance
     bullet.x += bullet.dx * BULLET_SPEED * deltaTime;
     bullet.y += bullet.dy * BULLET_SPEED * deltaTime;
     bullet.lifeFrames = (bullet.lifeFrames || 0) + 1;
+
     // hors map -> supprime
     if (
       bullet.x < 0 || bullet.x > MAP_COLS * TILE_SIZE ||
@@ -3899,12 +4002,14 @@ function moveBullets(game, deltaTime) {
       game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
+
     // collisions avec les murs de la MAP
     if (isCollision(game.map, bullet.x, bullet.y)) {
       delete game.bullets[id];
       game._bulletCount = Math.max(0, game._bulletCount - 1);
       continue;
     }
+
     // collision avec zombies
     for (const zid in game.zombies) {
       const z = game.zombies[zid];
@@ -3912,24 +4017,30 @@ function moveBullets(game, deltaTime) {
         const shooterIsPlayer = !!game.players[bullet.owner];
         const statsShooter = shooterIsPlayer ? getPlayerStats(game.players[bullet.owner]) : {};
         const bulletDamage = shooterIsPlayer ? (statsShooter.damage || BULLET_DAMAGE) : BULLET_DAMAGE;
+
         z.hp -= bulletDamage;
+
         const killed = z.hp <= 0;
         if (killed) {
           if (shooterIsPlayer) {
             game.players[bullet.owner].kills = (game.players[bullet.owner].kills || 0) + 1;
             io.to(bullet.owner).emit('killsUpdate', game.players[bullet.owner].kills);
+
             const baseMoney = Math.floor(Math.random() * 11) + 10; // 10..20
             const moneyEarned = Math.round(baseMoney * ((statsShooter.goldGain || 10) / 10));
             game.players[bullet.owner].money = (game.players[bullet.owner].money || 0) + moneyEarned;
             io.to(bullet.owner).emit('moneyEarned', { amount: moneyEarned, x: z.x, y: z.y });
           }
+
           // décrément O(1) + remaining
           delete game.zombies[zid];
           game._zombieCount = Math.max(0, game._zombieCount - 1);
+
           game.zombiesKilledThisWave = (game.zombiesKilledThisWave || 0) + 1;
           const remaining = Math.max(0, (game.totalZombiesToSpawn || 0) - game.zombiesKilledThisWave);
           io.to('lobby' + game.id).emit('zombiesRemaining', remaining);
         }
+
         // La balle s'arrête sur impact
         delete game.bullets[id];
         game._bulletCount = Math.max(0, game._bulletCount - 1);
@@ -3938,6 +4049,7 @@ function moveBullets(game, deltaTime) {
     }
   }
 }
+
 // PATCH: log de fin de partie
 function checkGameEnd(game) {
   const allDead = Object.values(game.players).filter(p => p.alive).length === 0;
@@ -3951,44 +4063,55 @@ function checkGameEnd(game) {
     }, 3000);
   }
 }
+
 function stepOnce(dt) {
   for (const game of activeGames) {
     if (!game.lobby.started) continue;
+
     // --- Si plus aucun joueur dans la room, on termine la partie immédiatement
     const room = io.sockets.adapter.rooms.get('lobby' + game.id);
     if (!room || room.size === 0) {
       endGame(game, 'no_players');
       continue;
     }
+
     // Budget PF adaptatif
     PF_BUDGET_THIS_TICK = computePathfindBudget(game);
+
     // Détection "calme"
     const hasZombies = (game._zombieCount || 0) > 0;
     const hasBullets = (game._bulletCount || 0) > 0;
     const hasTurrets = (game._turretCount || 0) > 0;
     const calm = !hasZombies && !hasBullets && !hasTurrets && !game.spawningActive;
+
     // Simulation
     movePlayers(game, dt);
     moveBots(game, dt);
+
     if (!calm) {
       moveZombies(game, dt);
       tickTurrets(game);
       moveBullets(game, dt);
       handleZombieAttacks(game);
     }
+
     // PUSH réseau (intervalle différent si calme)
     if (room) {
       const now = Date.now();
       const sendInterval = calm ? NET_INTERVAL_IDLE_MS : NET_INTERVAL_MS;
+
       for (const sid of room) {
         const p = game.players[sid];
         if (!p) continue;
+
         const cx = (p.spectator && p.viewX != null) ? p.viewX : (p.x || 0);
           const cy = (p.spectator && p.viewY != null) ? p.viewY : (p.y || 0);
+
         
         const zSnap  = getZombiesFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const bSnap  = getBulletsFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
         const phSnap = getPlayersHealthStateFiltered(game, cx, cy, SERVER_VIEW_RADIUS);
+
         const last = game._lastNetSend[sid] || 0;
         if (now - last >= sendInterval) {
           // --- Robust fix: remap bullet.owner to the SAME aliases used in playersHealth for this recipient ---
@@ -4021,6 +4144,7 @@ function stepOnce(dt) {
               bPub[bid] = { id: b.id, owner: alias, x: b.x, y: b.y, dx: b.dx, dy: b.dy, createdAt: b.createdAt, lifeFrames: b.lifeFrames };
             }
           }
+
           
           // Build a compact zombie snapshot to minimize bandwidth and avoid leaking server-only fields
           const zPub = {};
@@ -4043,6 +4167,7 @@ io.to(sid).volatile.emit('stateUpdate', {
         }
 }
     }
+
     // Régénération
     for (const pid in game.players) {
       const p = game.players[pid];
@@ -4054,20 +4179,26 @@ io.to(sid).volatile.emit('stateUpdate', {
         io.to(pid).emit('healthUpdate', p.health);
       }
     }
+
     checkWaveEnd(game);
     checkGameEnd(game);
   }
 }
+
+
 function gameLoop() {
   try {
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
     let frameTime = now - lastTime;
     lastTime = now;
+
     if (frameTime > 0.25) frameTime = 0.25;
     accumulator += frameTime;
+
     // Modes global
     let anyStarted = false;
     let anyBusy = false;
+
     for (const game of activeGames) {
       if (!game.lobby.started) continue;
       anyStarted = true;
@@ -4077,17 +4208,21 @@ function gameLoop() {
       const busy = hasZombies || hasBullets || hasTurrets || game.spawningActive;
       if (busy) { anyBusy = true; break; }
     }
+
     const targetHz =
       !anyStarted ? EMPTY_TICK_HZ :
       anyBusy     ? TICK_HZ       :
                     CALM_TICK_HZ;
+
     const targetIntervalMs = 1000 / targetHz;
     const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
     if (_lastTickAtMs && (nowMs - _lastTickAtMs) < targetIntervalMs) {
       setTimeout(gameLoop, Math.max(1, targetIntervalMs - (nowMs - _lastTickAtMs)));
       return;
     }
     _lastTickAtMs = nowMs;
+
     let steps = 0;
     while (accumulator >= FIXED_DT && steps < MAX_STEPS) {
       stepOnce(FIXED_DT);
@@ -4099,7 +4234,10 @@ function gameLoop() {
   }
   setTimeout(gameLoop, 1);
 }
+
+
 gameLoop();
+
 const PORT = process.env.PORT || 3000;
 console.log('Avant listen');
 /*__CONDITIONAL_LISTEN__*/
@@ -4115,5 +4253,599 @@ if ((parseInt(process.env.WORKERS||'1',10) || 1) > 1) {
     console.log(`Serveur démarré sur le port ${PORT}`);
   });
 }
+
 // (removed old conditional listen block)
-/* === AUTH: PBKDF2 hashes, cookie sessions (PostgreSQL only) === */
+
+
+/* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
+const USERS_DIR = path.join(__dirname, 'data');
+const USERS_FILE = path.join(USERS_DIR, 'users.json');
+
+function ensureUsersFile() {
+  try { if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true }); } catch(_){}
+  try { if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: {} }, null, 2)); } catch(_){}
+}
+ensureUsersFile();
+
+/* === PLAYER SKINS (players.json) === */
+const PLAYERS_FILE = path.join(__dirname, 'data', 'players.json');
+function ensurePlayersFile(){
+  try {
+    const dir = path.dirname(PLAYERS_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch(_) {}
+  // Note: do NOT create PLAYERS_FILE automatically anymore; legacy file is optional.
+}
+function loadPlayersMap(){
+  try {
+    ensurePlayersFile();
+    const raw = fs.readFileSync(PLAYERS_FILE, 'utf8');
+    let obj = {};
+    if (raw && raw.trim()) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.players && typeof parsed.players === 'object') obj = parsed.players;
+    }
+    return obj;
+  } catch(_){ return {}; }
+}
+function savePlayersMap(map){
+  try {
+    ensurePlayersFile();
+    const tmp = PLAYERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ players: map }, null, 2));
+    fs.renameSync(tmp, PLAYERS_FILE);
+    return true;
+  } catch(e){ console.error('[PLAYERS] save failed', e); return false; }
+}
+function getPlayerSkin(username){
+  try {
+    const name = sanitizeUsername(username);
+    if (!name) return null;
+    const key = normalizeKey(name);
+
+    // 1) Prefer skin stored directly in users.json (account-associated)
+    try {
+      const users = loadUsers();
+      const u = users[key];
+      if (u && u.skin && typeof u.skin === 'object') {
+        const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+        const hair = hexOk(u.skin.hair) ? u.skin.hair.toLowerCase() : null;
+        const skin = hexOk(u.skin.skin) ? u.skin.skin.toLowerCase() : null;
+        const clothes = hexOk(u.skin.clothes) ? u.skin.clothes.toLowerCase() : null;
+        if (hair && skin && clothes) return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
+    // 2) Backward-compat: fallback to legacy players.json if present
+    try {
+      const map = loadPlayersMap();
+      const rec = map[key];
+      if (rec && rec.skin && typeof rec.skin === 'object') {
+        const { hair, skin, clothes } = rec.skin;
+        return { hair, skin, clothes };
+      }
+    } catch(_) {}
+
+    return null;
+  } catch(_){ return null; }
+}
+
+
+
+
+// --- Skin helpers (normalize, resolve by socket) ---
+function _validateSkinObject(s) {
+  try {
+    if (!s || typeof s !== 'object') return null;
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    const hair = hexOk(s.hair) ? s.hair.toLowerCase() : null;
+    const skin = hexOk(s.skin) ? s.skin.toLowerCase() : null;
+    const clothes = hexOk(s.clothes) ? s.clothes.toLowerCase() : null;
+    if (hair && skin && clothes) return { hair, skin, clothes };
+    return null;
+  } catch(_) { return null; }
+}
+function resolvePlayerSkinForSocket(sid, fallbackPseudo) {
+  try {
+    // Prefer account-bound skin if logged in
+    const sessUser = getSessionUsernameBySocketId(sid);
+    let skin = sessUser ? getPlayerSkin(sessUser) : null;
+    if (!skin && fallbackPseudo) skin = getPlayerSkin(fallbackPseudo);
+    return _validateSkinObject(skin);
+  } catch(_) { return null; }
+}
+function loadUsers() {
+  try {
+    const raw = fs.readFileSync(USERS_FILE, 'utf8');
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object' && obj.users && typeof obj.users === 'object') return obj.users;
+  } catch(_){}
+  return {};
+}
+function saveUsers(users) {
+  try {
+    const tmp = USERS_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ users }, null, 2));
+    fs.renameSync(tmp, USERS_FILE);
+    return true;
+  } catch(e){ console.error('[AUTH] saveUsers failed', e); return false; }
+}
+function sanitizeUsername(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_) { return ''; }
+}
+function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
+
+
+function isRegisteredUsername(name){ try { const users = loadUsers(); return !!users[normalizeKey(String(name||''))]; } catch(_){ return false; } }
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const iterations = 120000;
+  const keylen = 32;
+  const digest = 'sha256';
+  const hash = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+  return `pbkdf2$${digest}$${iterations}$${salt}$${hash}`;
+}
+function verifyPassword(password, stored) {
+  try {
+    const parts = String(stored||'').split('$');
+    if (parts.length !== 5) return false;
+    const [scheme, digest, iterStr, salt, hashHex] = parts;
+    if (scheme !== 'pbkdf2') return false;
+    const iterations = parseInt(iterStr,10);
+    const keylen = 32;
+    const comp = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
+    const a = Buffer.from(comp,'hex'); const b = Buffer.from(hashHex,'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a,b);
+  } catch(_){ return false; }
+}
+
+function parseCookies(req) {
+  const out = {};
+  const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
+  if (!header) return out;
+  header.split(';').forEach(part => {
+    const i = part.indexOf('=');
+    if (i> -1) out[part.slice(0,i).trim()] = decodeURIComponent(part.slice(i+1).trim());
+  });
+  return out;
+}
+
+const sessions = new Map();
+const SESSION_MAX_AGE_MS = 7*24*60*60*1000;
+function createSession(username) {
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions.set(token, { username, createdAt: Date.now() });
+  return token;
+}
+
+
+function getSessionUsernameBySocketId(sid){
+  try {
+    // Fast path: explicit link
+    const sock = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets.get(sid) : null;
+    if (sock && typeof sock.__accountUser === 'string') return sock.__accountUser;
+    if (!sock) return null;
+    const header = (sock.request && sock.request.headers && sock.request.headers.cookie) ? sock.request.headers.cookie
+                  : (sock.handshake && sock.handshake.headers && sock.handshake.headers.cookie) ? sock.handshake.headers.cookie
+                  : '';
+    if (!header) return null;
+    const parts = header.split(';');
+    let token = '';
+    for (const part of parts){
+      const i = part.indexOf('=');
+      const k = (i>-1?part.slice(0,i):part).trim();
+      const v = (i>-1?part.slice(i+1):'').trim();
+      if (k === 'auth') { token = decodeURIComponent(v); break; }
+    }
+    if (!token) return null;
+    const sObj = sessions.get(token);
+    if (!sObj) return null;
+    if ((Date.now() - sObj.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return sObj.username || null;
+  } catch(_){ return null; }
+}
+
+
+
+
+function isAdminSocket(socket){
+  try {
+    const u = getSessionUsernameBySocketId(socket.id);
+    if (!u) return false;
+    return normalizeKey(u) === 'myg';
+  } catch(_){ return false; }
+}
+function getSessionUsernameByReq(req){
+  try {
+    const cookies = parseCookies(req);
+    const token = cookies['auth'] || '';
+    if (!token) return null;
+    const s = sessions.get(token);
+    if (!s) return null;
+    if ((Date.now() - s.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
+    return s.username || null;
+  } catch(_){ return null; }
+}
+function setAuthCookie(res, token){
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
+    const parts = [
+      `auth=${token}`,
+      'Path=/',
+      'HttpOnly',
+      `Max-Age=${maxAge}`,
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
+}
+function clearAuthCookie(res){
+  try {
+    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+    const parts = [
+      'auth=',
+      'Path=/',
+      'HttpOnly',
+      'Max-Age=0',
+      'SameSite=Lax'
+    ];
+    if (secure) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+  } catch(_){}
+}
+setInterval(()=>{
+  try {
+    const now = Date.now();
+    for (const [t,s] of sessions) if ((now - (s.createdAt||0)) > SESSION_MAX_AGE_MS) sessions.delete(t);
+  } catch(_){}
+}, 60*60*1000);
+
+
+
+/* === LADDER JSON (Top 100) === */
+const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
+
+function ensureLadderFile() {
+  try {
+    const dir = path.dirname(LADDER_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (_e) { /* ignore */ }
+  try {
+    if (!fs.existsSync(LADDER_FILE)) fs.writeFileSync(LADDER_FILE, '');
+  } catch (_e) { /* ignore */ }
+}
+
+function sanitizePlayerName(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
+}
+
+function loadLadder() {
+  try {
+    const raw = fs.readFileSync(LADDER_FILE, 'utf8');
+    if (!raw || !raw.trim()) return [];
+    const obj = JSON.parse(raw);
+    let arr = [];
+    if (Array.isArray(obj)) arr = obj;
+    else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
+    // sanitize
+    arr = arr.filter(e => e && typeof e.player === 'string' &&
+                          Number.isFinite(e.wave) &&
+                          Number.isFinite(e.kills) &&
+                          Number.isFinite(e.ts));
+    return arr;
+  } catch (_e) { return []; }
+}
+
+function saveLadder(arr) {
+  try {
+    const tmp = LADDER_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
+    fs.renameSync(tmp, LADDER_FILE);
+    return true;
+  } catch (e) { console.error('[LADDER] save failed', e); return false; }
+}
+
+// ---- Server-authoritative ladder insert (no client trust) ----
+function recordLadderScoreServer(playerName, wave, kills) {
+  try {
+    ensureLadderFile();
+    const name = sanitizePlayerName(playerName);
+    const w = Number(wave) || 0;
+    const k = Number(kills) || 0;
+    if (!name) return false;
+    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
+
+    let ladder = loadLadder();
+    const idx = ladder.findIndex(e => e && e.player === name);
+    const now = Date.now();
+    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
+
+    if (idx >= 0) {
+      const cur = ladder[idx];
+      const better = (incoming.wave|0) > (cur.wave|0) ||
+                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) > (cur.kills|0)) ||
+                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) === (cur.kills|0) && (incoming.ts|0) < (cur.ts|0));
+      if (better) ladder[idx] = incoming;
+    } else {
+      ladder.push(incoming);
+    }
+
+    // Deduplicate best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+
+    // Sort & keep top 100
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
+    ladder = ladder.slice(0, 100);
+
+    saveLadder(ladder);
+    return true;
+  } catch (e) {
+    console.error('[LADDER] server-authoritative insert failed', e);
+    return false;
+  }
+}
+
+app.get('/api/ladder', (req,res)=>{
+  try {
+    ensureLadderFile();
+    let ladder = loadLadder();
+    // Deduplicate: keep best per player
+    const best = new Map();
+    for (const e of ladder) {
+      const key = e.player;
+      if (!best.has(key)) best.set(key, e);
+      else {
+        const cur = best.get(key);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(key, e);
+      }
+    }
+    ladder = Array.from(best.values());
+    // Exclude bots from ladder (bots use pseudo like [BOTi] → sanitized as 'BOTi')
+    ladder = ladder.filter(e => !(e && typeof e.player === 'string' && /^BOT\d+$/i.test(e.player)));
+
+    // sort: wave desc, kills desc, ts asc
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
+    const top = ladder.slice(0, 100);
+    return res.json({ ok:true, ladder: top });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+// POST disabled explicitly (security hardening)
+app.post('/api/ladder', (req,res)=> res.status(410).json({ ok:false, code:'ladder_post_disabled' }));
+/* username taken checker (for unauthenticated pseudo) */
+app.get('/api/username-taken', (req,res)=>{
+  try {
+    const q = sanitizeUsername((req.query && req.query.u) || '');
+    if (!q) return res.json({ ok:true, taken:false });
+    const users = loadUsers();
+    const exists = !!users[normalizeKey(q)];
+    return res.json({ ok:true, taken: exists });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* current session */
+app.get('/api/me', (req,res)=>{
+  try {
+    const u = getSessionUsernameByReq(req);
+    if (u) {
+      const users = loadUsers(); const key = normalizeKey(u); const rec = users[key] || {}; const gold = rec.gold|0; const shopUpgrades = Object.assign({hp:0,dmg:0}, rec.shopUpgrades||{});
+      return res.json({ ok:true, username: u, gold, shopUpgrades, skin: getPlayerSkin(u) });
+    }
+    return res.json({ ok:false });
+  } catch(e){ return res.json({ ok:false }); }
+});
+
+/* signup */
+
+// === Simple in-memory rate limiter (per-IP, per-key) ===
+const __rateBuckets = new Map();
+/**
+ * rateLimitAllow(ip, key, max, windowMs) -> { ok: boolean, retryAfterMs: number }
+ */
+function rateLimitAllow(ip, key, max, windowMs) {
+  try {
+    const now = Date.now();
+    const mapKey = String(ip||'') + '|' + String(key||'');
+    let b = __rateBuckets.get(mapKey);
+    if (!b || now >= b.resetAt) {
+      b = { count: 1, resetAt: now + windowMs };
+      __rateBuckets.set(mapKey, b);
+      return { ok: true, retryAfterMs: 0 };
+    }
+    if (b.count < max) {
+      b.count++;
+      return { ok: true, retryAfterMs: 0 };
+    }
+    return { ok: false, retryAfterMs: Math.max(0, b.resetAt - now) };
+  } catch(_) { return { ok: true, retryAfterMs: 0 }; }
+}
+// Periodic cleanup to avoid unbounded growth
+setInterval(()=>{ 
+  try { 
+    const now = Date.now();
+    for (const [k,v] of __rateBuckets) { if (!v || now >= v.resetAt) __rateBuckets.delete(k); }
+  } catch(_){}
+}, 10*60*1000);
+
+app.post('/api/signup', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
+    ensureUsersFile();
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    if (!user || user.length < 3) return res.status(400).json({ ok:false, code:'invalid_username' });
+    if (pass.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(user);
+    if (users[key]) return res.status(409).json({ ok:false, code:'exists' });
+    users[key] = { username: user, usernameLower: key, passHash: hashPassword(pass), createdAt: Date.now(), gold: 0, shopUpgrades: { hp:0, dmg:0 } };
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    return res.json({ ok:true });
+  } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* login */
+
+// === Basic CSRF protection for authenticated POSTs ===
+function passesCsrf(req){
+  try {
+    const host = String((req.headers && req.headers.host) || '').toLowerCase();
+    const origin = String((req.headers && req.headers.origin) || '').toLowerCase();
+    const referer = String((req.headers && req.headers.referer) || '').toLowerCase();
+    const allowList = new Set(String(process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean));
+    if (host) { allowList.add('http://' + host); allowList.add('https://' + host); }
+    if (origin) return allowList.has(origin);
+    if (referer) { for (const a of allowList) { if (referer === a || referer.startsWith(a + '/')) return true; } }
+    return false;
+  } catch(_){ return false; }
+}
+
+app.post('/api/login', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}try {
+    const { username, password } = req.body || {};
+    const user = sanitizeUsername(username);
+    const pass = String(password || '');
+    const users = loadUsers();
+    const u = users[normalizeKey(user)];
+    if (!u || !verifyPassword(pass, u.passHash)) return res.status(401).json({ ok:false, code:'invalid' });
+    const token = createSession(u.username);
+    setAuthCookie(res, token);
+    return res.json({ ok:true, username: u.username });
+  } catch(e){ console.error('[login]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* logout */
+app.post('/api/logout', (req,res)=>{
+    if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const token = (parseCookies(req)['auth'] || '');
+    if (token) { try { sessions.delete(token); } catch(_){ } }
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ return res.status(500).json({ ok:false }); }
+});
+
+/* change password (requires login) */
+app.post('/api/change-password', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { currentPassword, newPassword } = req.body || {};
+    const curr = String(currentPassword || ''); const next = String(newPassword || '');
+    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const u = users[key];
+    if (!u || !verifyPassword(curr, u.passHash)) return res.status(401).json({ ok:false, code:'invalid_current' });
+    u.passHash = hashPassword(next);
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    for (const [t,s] of Array.from(sessions.entries())) if (s && s.username === u.username) sessions.delete(t);
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* shop buy (requires login) */
+app.post('/api/shop/buy', (req,res)=>{
+    { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}}
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { type } = req.body || {};
+    if (type !== 'hp' && type !== 'dmg') return res.status(400).json({ ok:false, code:'bad_request' });
+    const users = loadUsers();
+    const key = normalizeKey(uname);
+    const rec = users[key] || (users[key]={ username: uname, usernameLower:key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
+    const price = (type === 'hp') ? 50 :  200;
+    const maxLv = (type === 'hp') ? 20 :  20;
+    const lv = (rec.shopUpgrades && rec.shopUpgrades[type]|0) || 0;
+    if (lv >= maxLv) return res.json({ ok:false, code:'max_level' });
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+    rec.shopUpgrades = rec.shopUpgrades || { hp:0, dmg:0 };
+    rec.shopUpgrades[type] = lv + 1;
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    
+// LIVE-APPLY shop upgrades to any connected sockets for this user
+try {
+  const key = normalizeKey(uname);
+  for (const [sid, sock] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
+    try {
+      const u = getSessionUsernameBySocketId(sid);
+      if (!u || normalizeKey(u) !== key) continue;
+      // Update any active player state
+      const mappedId = (typeof socketToGame !== 'undefined' && socketToGame[sid]) ? socketToGame[sid] : null;
+      const g = activeGames.find(gg => gg && gg.id === mappedId) || null;
+      if (g && g.players && g.players[sid]) {
+        g.players[sid].accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
+        try {
+          const oldMax = g.players[sid].maxHealth || 100;
+          const stats = getPlayerStats(g.players[sid]);
+          const ratio = Math.max(0, Math.min(1, (g.players[sid].health || 0) / (oldMax || 100)));
+          g.players[sid].maxHealth = stats.maxHp;
+          g.players[sid].health = Math.round(stats.maxHp * ratio);
+        } catch(_) {}
+      }
+      // Notify client to refresh its cached view
+      try { io.to(sid).emit('accountShopUpdated', { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 }); } catch(_) {}
+    } catch(_) {}
+  }
+} catch(_) {}
+return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+
+  } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+/* buy & save custom skin (requires login) */
+app.post('/api/skin/buy', (req,res)=>{
+  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+  try {
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { hair, skin, clothes } = req.body || {};
+    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
+    if (!hexOk(hair) || !hexOk(skin) || !hexOk(clothes)) return res.status(400).json({ ok:false, code:'bad_colors' });
+
+    const users = loadUsers();
+    const ukey = normalizeKey(uname);
+    const now = Date.now();
+    const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
+
+    // Price & balance
+    const price = 20;
+    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
+    rec.gold = (rec.gold|0) - price;
+
+    // Persist skin directly in users.json (account-associated)
+    rec.skin = { hair: hair.toLowerCase(), skin: skin.toLowerCase(), clothes: clothes.toLowerCase(), updatedAt: now };
+
+    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+
+    return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
+  } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
+
+
