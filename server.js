@@ -392,7 +392,7 @@ const path = require('path');
 const socketIo = require('socket.io');
 const compression = require('compression');
 const fs = require('fs');
-const crypto = require('crypto');
+const nodeCrypto = require('crypto');
 
 // --- PostgreSQL (users & ladder) ---
 let __pgReady = false;
@@ -474,7 +474,7 @@ function ensureCsrfCookie(req, res, next) {
     if (cookieHeader && cookieHeader.indexOf('csrf=') !== -1) {
       return next();
     }
-    const token = (crypto.randomBytes(16).toString('hex'));
+    const token = (nodeCrypto.randomBytes(16).toString('hex'));
     const isSecure = (req && (req.secure === true || (req.headers && req.headers['x-forwarded-proto'] === 'https')));
     const parts = [ `csrf=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax' ];
     if (isSecure) parts.push('Secure');
@@ -518,12 +518,12 @@ function isHttpsReq(req){
   } catch(_) { return false; }
 }
 
-function randomIdHex(n=32){ return crypto.randomBytes(n).toString('hex'); }
+function randomIdHex(n=32){ return nodeCrypto.randomBytes(n).toString('hex'); }
 
 function pbkdf2Hash(password) {
   const salt = randomIdHex(16);
   const iter = 120000;
-  const hash = crypto.pbkdf2Sync(String(password||''), salt, iter, 32, 'sha256').toString('hex');
+  const hash = nodeCrypto.pbkdf2Sync(String(password||''), salt, iter, 32, 'sha256').toString('hex');
   return `pbkdf2$${iter}$${salt}$${hash}`;
 }
 function pbkdf2Verify(password, stored) {
@@ -533,8 +533,8 @@ function pbkdf2Verify(password, stored) {
     const iter = parseInt(parts[1], 10) || 120000;
     const salt = parts[2];
     const h = parts[3];
-    const test = crypto.pbkdf2Sync(String(password||''), salt, iter, h.length/2, 'sha256').toString('hex');
-    return crypto.timingSafeEqual(Buffer.from(test,'hex'), Buffer.from(h,'hex'));
+    const test = nodeCrypto.pbkdf2Sync(String(password||''), salt, iter, h.length/2, 'sha256').toString('hex');
+    return nodeCrypto.timingSafeEqual(Buffer.from(test,'hex'), Buffer.from(h,'hex'));
   } catch(_) { return false; }
 }
 
@@ -2500,7 +2500,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
     newGame.lobby.hostId = socket.id;
     newGame.lobby.hostIp = __hostIp;
     // Generate a host token for secure reclaim
-    newGame.lobby.hostToken = crypto.randomBytes(16).toString('hex');
+    newGame.lobby.hostToken = nodeCrypto.randomBytes(16).toString('hex');
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
     try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
     // Move socket room + mapping
