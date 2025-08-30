@@ -19,6 +19,12 @@
       "ts": 1700000003000
     },
     {
+      "player": "loadek",
+      "wave": 7,
+      "kills": 121,
+      "ts": 1756556265299
+    },
+    {
       "player": "Ivorky",
       "wave": 7,
       "kills": 112,
@@ -191,6 +197,12 @@
       "wave": 5,
       "kills": 45,
       "ts": 1700000032000
+    },
+    {
+      "player": "Myg",
+      "wave": 5,
+      "kills": 1,
+      "ts": 1756536376244
     },
     {
       "player": "Yvemav749",
@@ -587,18 +599,6 @@
       "wave": 2,
       "kills": 5,
       "ts": 1700000098000
-    },
-    {
-      "player": "UvesvyV2",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000099000
-    },
-    {
-      "player": "HyirpyNeo",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000100000
     }
   ]
 }
