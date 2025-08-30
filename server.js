@@ -667,6 +667,13 @@ app.post('/api/signup', async (req, res) => {
     await createSession(userId, u, ul, req, res);
     return res.status(200).json({ ok:true, username: u });
   } catch(e){
+    try {
+      // Map PostgreSQL unique violation to a clean username_taken error
+      if (e && (e.code === '23505' || /unique/i.test(String(e.constraint||'')) || /duplicate key value/i.test(String(e.message||'')))) {
+        return res.status(200).json({ ok:false, reason:'username_taken' });
+      }
+    } catch(_) {}
+    try { console.error('[API signup] error:', e && e.code, e && e.message); } catch(_){}
     return res.status(200).json({ ok:false, reason:'server_error' });
   }
 });
