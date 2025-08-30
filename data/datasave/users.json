@@ -3,18 +3,51 @@
     "myg": {
       "username": "Myg",
       "usernameLower": "myg",
-      "passHash": "pbkdf2$sha256$120000$c79ad822b6ec06de75786e45fece17ac$645e98efbaefbe5a6317acbefc83def8fbd17e3b410d1a5ca904ba59356b6955",
-      "createdAt": 1756109064754,
-      "gold": 1,
+      "passHash": "pbkdf2$sha256$120000$548fdf3759d11e9c7a8c715092482be2$3d9d3878f28ec890e3c933dcdec5081a32e1c6aeb9c62f9c06ebdeb92ff40e8e",
+      "createdAt": 1756513363859,
+      "gold": 9980,
       "shopUpgrades": {
-        "hp": 20,
-        "dmg": 20
+        "hp": 0,
+        "dmg": 0
       },
       "skin": {
-        "hair": "#6b4d2e",
+        "hair": "#ffffff",
         "skin": "#f4c2c2",
         "clothes": "#2aa84a",
-        "updatedAt": 1756112191738
+        "updatedAt": 1756513765938
+      }
+    },
+    "admin": {
+      "username": "Admin",
+      "usernameLower": "admin",
+      "passHash": "pbkdf2$sha256$120000$d525a8b3a07fbae54fbb20d8c441a95b$429d4e91748a5c3e53b37b592602f1b8e1d61bed227af5873ff6af23b0cbfd9b",
+      "createdAt": 1756513376953,
+      "gold": 0,
+      "shopUpgrades": {
+        "hp": 0,
+        "dmg": 0
+      }
+    },
+    "opiumdead": {
+      "username": "Opiumdead",
+      "usernameLower": "opiumdead",
+      "passHash": "pbkdf2$sha256$120000$8c8b293e409376acf87966b8500e218c$270b755c0a4f7726bbafca760f1e4c770d664c6d7ebcb190c56c06936a563fc3",
+      "createdAt": 1756513409918,
+      "gold": 10000,
+      "shopUpgrades": {
+        "hp": 0,
+        "dmg": 0
+      }
+    },
+    "mygb": {
+      "username": "mygb",
+      "usernameLower": "mygb",
+      "passHash": "pbkdf2$sha256$120000$922b3dfaa8bbdeaf42646d032130e67f$24972a66ac351187e59e50ea008c4da86617870806b12749c4fa2f53d0bc8632",
+      "createdAt": 1756516320518,
+      "gold": 0,
+      "shopUpgrades": {
+        "hp": 0,
+        "dmg": 0
       }
     }
   }

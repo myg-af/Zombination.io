@@ -1376,11 +1376,23 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     // Attach account shop upgrades (hp/dmg) to player if logged-in
     try {
       const authUser = getSessionUsernameBySocketId(sid);
-      if (authUser) {
-        const urec = loadUsers()[normalizeKey(authUser)] || null;
-        if (urec) {
-          game.players[sid].accountShop = { hp: (urec.shopUpgrades&&urec.shopUpgrades.hp|0)||0, dmg: (urec.shopUpgrades&&urec.shopUpgrades.dmg|0)||0 };
-        }
+      if (authUser && db && __pgReady) {
+        db.q('SELECT shop_hp, shop_dmg FROM users WHERE username_lower=$1 LIMIT 1', [ normalizeKey(authUser) ])
+          .then(r=>{
+            const row = r.rows && r.rows[0];
+            if (!row) return;
+            if (game && game.players && game.players[sid]) {
+              game.players[sid].accountShop = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
+              try { io.to(sid).emit('accountShopUpdated', game.players[sid].accountShop); } catch(_){}
+              try {
+                const oldMax = game.players[sid].maxHealth || 100;
+                const stats = getPlayerStats(game.players[sid]);
+                const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
+                game.players[sid].maxHealth = stats.maxHp;
+                game.players[sid].health = Math.round(stats.maxHp * ratio);
+              } catch(_){}
+            }
+          }).catch(()=>{});
       }
     } catch(_){}
     const stats = getPlayerStats(game.players[sid]);
@@ -1506,7 +1518,7 @@ const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
 // Timestamp du dernier tick pour cadence adaptative
 let _lastTickAtMs = 0;
 const TICK_HZ = 60;
-const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
+const FIXED_DT = 1 / TICK_HZ;  // seconds per fixed step
 const MAX_STEPS = 5;              // anti-spirale si gros retard
 // Budget courant de pathfinding pour CE tick (réinitialisé dans stepOnce)
 let PF_BUDGET_THIS_TICK = 0;
@@ -1612,7 +1624,7 @@ function checkWaveEnd(game) {
     try {
       if (prevRound >= 5 && game._lastAwardedRound !== prevRound) {
         const bonus = prevRound - 4;
-        // Group sockets by account username to award once per account
+        // Build map of connected sockets per account
         const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
         const perUserSids = {};
         for (const sid in game.players) {
@@ -1632,7 +1644,6 @@ function checkWaveEnd(game) {
               const g0 = r.rows[0].gold|0;
               const g1 = g0 + bonus;
               await c.query('UPDATE users SET gold=$2 WHERE username_lower=$1', [key, g1]);
-              // emit to all sockets of this account if connected
               if (socketsMap) {
                 for (const sid of perUserSids[key].sids) {
                   if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: g1 }); } catch(_){ } }
@@ -1640,26 +1651,11 @@ function checkWaveEnd(game) {
               }
             }
           }).catch(()=>{});
-        } else {
-          // Legacy JSON fallback
-          const users = loadUsers();
-          for (const key in perUserSids) {
-            try {
-              const rec = users[key] || (users[key] = { username: perUserSids[key].username, usernameLower: key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
-              rec.gold = (rec.gold|0) + bonus;
-              if (socketsMap) {
-                for (const sid of perUserSids[key].sids) {
-                  if (socketsMap.get(sid)) { try { io.to(sid).emit('goldUpdate', { total: rec.gold|0 }); } catch(_){ } }
-                }
-              }
-            } catch(_){}
-          }
-          saveUsers(users);
         }
         game._lastAwardedRound = prevRound;
       }
     } catch(_){ } 
-    const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
+const _nextTotal = Math.ceil(Math.min(game.totalZombiesToSpawn, MAX_ZOMBIES_PER_WAVE) * 1.2);
     game.totalZombiesToSpawn = Math.min(_nextTotal, MAX_ZOMBIES_PER_WAVE);
     io.to('lobby' + game.id).emit('waveMessage', `Vague ${game.currentRound}`);
     io.to('lobby' + game.id).emit('currentRound', game.currentRound);
@@ -1765,95 +1761,46 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
   spawnPlayersNearCenter(game, pseudosArr, socketsArr);
   // Ensure each spawned player gets the LATEST account-level shop upgrades (hp/dmg)
   try {
-    const usersNow = loadUsers();
-    for (const sid of socketsArr) {
-      try {
-        const p = game.players[sid];
-        if (!p) continue;
-        const u = getSessionUsernameBySocketId(sid);
-        if (!u) continue;
-        const rec = usersNow[normalizeKey(u)] || null;
-        if (!rec) continue;
-        p.accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
+    if (db && __pgReady) {
+      const lowers = [];
+      const sidToLower = {};
+      for (const sid of socketsArr) {
         try {
-          const stats = getPlayerStats(p);
-          p.maxHealth = stats.maxHp;
-          p.health = stats.maxHp;
-          p.damage = stats.damage;
-        } catch(_) {}
-      } catch(_) {}
-    }
-  } catch(_) {}
-  // === SANITY: ensure all sockets in socketsArr have a player object ===
-  try {
-    for (const sid of socketsArr) {
-      if (!game.players[sid]) {
-        const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
-        const x = cC * TILE_SIZE + TILE_SIZE/2;
-        const y = cR * TILE_SIZE + TILE_SIZE/2;
-        const pseudo = (game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player';
-        game.players[sid] = {
-          x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-          damage:10, speed:40, goldGain:10, regen:0,
-          lastShot:0, pseudo, kills:0, money:0, spectator:false
-        };
-    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
+          const u = getSessionUsernameBySocketId(sid);
+          if (!u) continue;
+          const lower = normalizeKey(u);
+          sidToLower[sid] = lower;
+          lowers.push(lower);
+        } catch(_){}
+      }
+      if (lowers.length) {
+        db.q('SELECT username_lower, shop_hp, shop_dmg FROM users WHERE username_lower = ANY($1)', [lowers])
+          .then(r=>{
+            const map = new Map();
+            for (const row of (r.rows||[])) map.set(row.username_lower, row);
+            for (const sid of socketsArr) {
+              const lower = sidToLower[sid];
+              if (!lower) continue;
+              const row = map.get(lower);
+              if (!row) continue;
+              if (game && game.players && game.players[sid]) {
+                game.players[sid].accountShop = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
+                try {
+                  const oldMax = game.players[sid].maxHealth || 100;
+                  const stats = getPlayerStats(game.players[sid]);
+                  const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
+                  game.players[sid].maxHealth = stats.maxHp;
+                  game.players[sid].health = Math.round(stats.maxHp * ratio);
+                } catch(_){}
+                try { io.to(sid).emit('accountShopUpdated', game.players[sid].accountShop); } catch(_){}
+              }
+            }
+          })
+          .catch(()=>{});
       }
     }
-  } catch(e) { console.error('[launchGame] post-spawn sanity failed', e); }
-// 🔒 ROBUST: Sanity—ensure every ready socket has a player object
-try {
-  for (const sid of socketsArr) {
-    if (!game.players[sid]) {
-      // Fallback spawn near center (safe)
-      const cR = Math.floor(MAP_ROWS/2), cC = Math.floor(MAP_COLS/2);
-      const x = cC * TILE_SIZE + TILE_SIZE/2;
-      const y = cR * TILE_SIZE + TILE_SIZE/2;
-      game.players[sid] = {
-        x, y, vx:0, vy:0, alive:true, health:100, maxHealth:100,
-        damage:10, speed:40, goldGain:10, regen:0,
-        lastShot:0, pseudo: (game.lobby.players[sid] && game.lobby.players[sid].pseudo) || 'Player',
-        kills:0, money:0, spectator:false
-      };
-    try { game.players[sid].skin = resolvePlayerSkinForSocket(sid, (game.lobby && game.lobby.players && game.lobby.players[sid] && game.lobby.players[sid].pseudo) || null); } catch(_){ game.players[sid].skin = game.players[sid].skin || null; }
-    }
-  }
-} catch(e) {
-  console.error('[launchGame] post-spawn sanity failed', e);
-}
-  
-// === FINAL SYNC: ensure account-level shop upgrades are applied and stats are correct ===
-try {
-  for (const sid of socketsArr) {
-    try {
-      if (!game.players || !game.players[sid]) continue;
-      // Refresh accountShop from persistent store if available
-      try {
-        const authUser = getSessionUsernameBySocketId(sid);
-        if (authUser) {
-          const urec = loadUsers()[normalizeKey(authUser)] || null;
-          if (urec && urec.shopUpgrades) {
-            game.players[sid].accountShop = {
-              hp: (urec.shopUpgrades.hp|0)||0,
-              dmg: (urec.shopUpgrades.dmg|0)||0
-            };
-          }
-        }
-      } catch(_) {}
-      // Recompute stats and rescale health proportionally
-      try {
-        const oldMax = game.players[sid].maxHealth || 100;
-        const stats = getPlayerStats(game.players[sid]);
-        const ratio = Math.max(0, Math.min(1, (game.players[sid].health || 0) / (oldMax || 100)));
-        game.players[sid].maxHealth = stats.maxHp;
-        game.players[sid].health = Math.round(stats.maxHp * ratio);
-      } catch(_) {}
-    } catch(_) {}
-  }
-} catch(_) {}
-// === END FINAL SYNC ===
-try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
-  for (const sid in (game.players||{})) {
+  } catch(_){}
+for (const sid in (game.players||{})) {
     try {
       const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
       io.to(sid).emit('gameStarted', { gameId: game.id,
@@ -3876,15 +3823,14 @@ function getPlayerSkin(username){
     if (c && c.hair && c.skin && c.clothes) {
       return { hair: c.hair, skin: c.skin, clothes: c.clothes };
     }
-    // 2) Legacy fallback: players.json (synchronous; backward-compat)
-    try {
-      const map = loadPlayersMap();
-      const rec = map[key];
-      if (rec && rec.skin && typeof rec.skin === 'object') {
-        const { hair, skin, clothes } = rec.skin;
-        return { hair, skin, clothes };
-      }
-    } catch(_) {}
+    // 2) DB lookup (sync-like via cached copy if previously loaded; otherwise return null quickly)
+    if (db && __pgReady) {
+      try {
+        // NOTE: this is synchronous-like call would block; avoid awaiting here.
+        // Callers that need fresh values should use the explicit APIs that update __skinCache.
+        // We won't block here; just return null so caller can proceed.
+      } catch(_) {}
+    }
     return null;
   } catch(_){ 
     return null; 
@@ -4096,115 +4042,65 @@ function saveLadder(arr) {
 // ---- Server-authoritative ladder insert (no client trust) ----
 function recordLadderScoreServer(playerName, wave, kills) {
   try {
-    ensureLadderFile();
+    if (!db || !__pgReady) return false;
     const name = sanitizePlayerName(playerName);
     const w = Number(wave) || 0;
     const k = Number(kills) || 0;
     if (!name) return false;
     if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
-    let ladder = loadLadder();
-    const idx = ladder.findIndex(e => e && e.player === name);
     const now = Date.now();
-    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
-    if (idx >= 0) {
-      const cur = ladder[idx];
-      const better = (incoming.wave|0) > (cur.wave|0) ||
-                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) > (cur.kills|0)) ||
-                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) === (cur.kills|0) && (incoming.ts|0) < (cur.ts|0));
-      if (better) ladder[idx] = incoming;
-    } else {
-      ladder.push(incoming);
-    }
-    // Deduplicate best per player
-    const best = new Map();
-    for (const e of ladder) {
-      const key = e.player;
-      if (!best.has(key)) best.set(key, e);
-      else {
-        const cur = best.get(key);
-        const better = (e.wave|0) > (cur.wave|0) ||
-                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
-                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
-        if (better) best.set(key, e);
-      }
-    }
-    ladder = Array.from(best.values());
-    // Sort & keep top 100
-    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
-    ladder = ladder.slice(0, 100);
-    saveLadder(ladder);
+    db.q(
+      `INSERT INTO ladder (player, wave, kills, ts)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (player) DO UPDATE
+         SET wave = EXCLUDED.wave,
+             kills = EXCLUDED.kills,
+             ts = EXCLUDED.ts
+         WHERE (EXCLUDED.wave > ladder.wave)
+            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills > ladder.kills)
+            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills = ladder.kills AND EXCLUDED.ts < ladder.ts)`,
+      [name, w|0, k|0, now]
+    ).catch(()=>{});
     return true;
-  } catch (e) {
-    console.error('[LADDER] server-authoritative insert failed', e);
-    return false;
-  }
+  } catch(_){ return false; }
 }
 app.get('/api/ladder', async (req,res)=>{
   try {
-    if (db && __pgReady) {
-      const r = await db.q("SELECT player, wave, kills, ts FROM ladder WHERE player !~* '^BOT[0-9]+$' ORDER BY wave DESC, kills DESC, ts ASC LIMIT 100", []);
-      return res.json({ ok:true, ladder: r.rows || [] });
-    }
-    // Legacy fallback JSON
-    ensureLadderFile();
-    let ladder = loadLadder();
-    const best = new Map();
-    for (const e of ladder) {
-      const key = e.player;
-      if (!best.has(key)) best.set(key, e);
-      else {
-        const cur = best.get(key);
-        const better = (e.wave|0) > (cur.wave|0) ||
-                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
-                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
-        if (better) best.set(key, e);
-      }
-    }
-    ladder = Array.from(best.values());
-    ladder = ladder.filter(e => !(e && typeof e.player === 'string' && /^BOT\d+$/i.test(e.player)));
-    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0) );
-    const top = ladder.slice(0, 100);
-    return res.json({ ok:true, ladder: top });
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
+    const r = await db.q("SELECT player, wave, kills, ts FROM ladder WHERE player !~* '^BOT[0-9]+$' ORDER BY wave DESC, kills DESC, ts ASC LIMIT 100", []);
+    return res.json({ ok:true, ladder: r.rows || [] });
   } catch(e){ return res.status(500).json({ ok:false }); }
 });
-// POST disabled explicitly (security hardening)
-app.post('/api/ladder', (req,res)=> res.status(410).json({ ok:false, code:'ladder_post_disabled' }));
+/* username taken checker (for unauthenticated pseudo) */
 /* username taken checker (for unauthenticated pseudo) */
 app.get('/api/username-taken', async (req,res)=>{
   try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const q = sanitizeUsername((req.query && req.query.u) || '');
     if (!q) return res.json({ ok:true, taken:false });
     const lower = normalizeKey(q);
-    if (db && __pgReady) {
-      try {
-        const r = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-        return res.json({ ok:true, taken: !!(r.rows && r.rows.length) });
-      } catch(e) { /* ignore and fallback to cache */ }
-    }
-    return res.json({ ok:true, taken: __registeredUsernames.has(lower) });
+    const r = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
+    return res.json({ ok:true, taken: !!(r.rows && r.rows.length) });
   } catch(e){ return res.status(500).json({ ok:false }); }
 });
 /* current session */
 app.get('/api/me', async (req,res)=>{
   try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const u = getSessionUsernameByReq(req);
     if (!u) return res.json({ ok:false });
     const lower = normalizeKey(u);
-    if (db && __pgReady) {
-      const r = await db.q('SELECT username, username_lower, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-      if (!r.rows.length) return res.json({ ok:false });
-      const row = r.rows[0];
-      const shopUpgrades = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
-      let skin = null;
-      try { if (row.skin && typeof row.skin === 'object') skin = { hair: row.skin.hair, skin: row.skin.skin, clothes: row.skin.clothes }; } catch(_){}
-      if (skin && skin.hair && skin.skin && skin.clothes) { __skinCache.set(lower, skin); }
-      return res.json({ ok:true, username: row.username, gold: (row.gold|0)||0, shopUpgrades, skin });
-    }
-    // Fallback to legacy
-    const users = loadUsers(); const key = normalizeKey(u); const rec = users[key] || {}; const gold = rec.gold|0; const shopUpgrades = Object.assign({hp:0,dmg:0}, rec.shopUpgrades||{});
-    return res.json({ ok:true, username: u, gold, shopUpgrades, skin: getPlayerSkin(u) });
+    const r = await db.q('SELECT username, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
+    if (!r.rows.length) return res.json({ ok:false });
+    const row = r.rows[0];
+    const shopUpgrades = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
+    let skin = null;
+    try { if (row.skin && typeof row.skin === 'object') skin = { hair: row.skin.hair, skin: row.skin.skin, clothes: row.skin.clothes }; } catch(_){}
+    if (skin && skin.hair && skin.skin && skin.clothes) { __skinCache.set(lower, skin); }
+    return res.json({ ok:true, username: row.username, gold: (row.gold|0)||0, shopUpgrades, skin });
   } catch(e){ return res.json({ ok:false }); }
 });
+/* signup */
 /* signup */
 // === Simple in-memory rate limiter (per-IP, per-key) ===
 const __rateBuckets = new Map();
@@ -4236,165 +4132,106 @@ setInterval(()=>{
   } catch(_){}
 }, 10*60*1000);
 app.post('/api/signup', async (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+  { try {
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
+        return res.status(429).json({ ok:false, code:'rate_limited' });
+      }
+    } catch(_){}
+  }
   try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const { username, password } = req.body || {};
     const user = sanitizeUsername(username);
     const pass = String(password || '');
     if (!user || user.length < 3) return res.status(400).json({ ok:false, code:'invalid_username' });
     if (pass.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
     const lower = normalizeKey(user);
-
-    if (db && __pgReady) {
-      const ex = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-      if (ex.rows.length) return res.status(409).json({ ok:false, code:'exists' });
-      const passHash = hashPassword(pass);
-      await db.q('INSERT INTO users (username, username_lower, pass_hash) VALUES ($1,$2,$3)', [user, lower, passHash]);
-      __registeredUsernames.add(lower);
-      __skinCache.delete(lower);
-      const token = createSession(user);
-      setAuthCookie(res, token);
-      return res.json({ ok:true, username: user });
-    }
-
-    ensureUsersFile();
-    const users = loadUsers();
-    if (users[lower]) return res.status(409).json({ ok:false, code:'exists' });
-    users[lower] = { username: user, usernameLower: lower, passHash: hashPassword(pass), createdAt: Date.now(), gold: 0, shopUpgrades: { hp:0, dmg:0 } };
-    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    const ex = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
+    if (ex.rows.length) return res.status(409).json({ ok:false, code:'exists' });
+    const passHash = hashPassword(pass);
+    await db.q('INSERT INTO users (username, username_lower, pass_hash) VALUES ($1,$2,$3)', [user, lower, passHash]);
+    __registeredUsernames.add(lower);
+    __skinCache.delete(lower);
     const token = createSession(user);
     setAuthCookie(res, token);
     return res.json({ ok:true, username: user });
   } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});app.post('/api/login', async (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+});
+
+app.post('/api/login', async (req,res)=>{
+  { try {
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
+        return res.status(429).json({ ok:false, code:'rate_limited' });
+      }
+    } catch(_){}
+  }
   try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const { username, password } = req.body || {};
     const user = sanitizeUsername(username);
     const pass = String(password || '');
     const lower = normalizeKey(user);
-
-    if (db && __pgReady) {
-      const r = await db.q('SELECT username, username_lower, pass_hash, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-      const u = r.rows[0];
-      if (!u || !verifyPassword(pass, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid' });
-      try { if (u.skin && typeof u.skin === 'object') { __skinCache.set(lower, { hair: u.skin.hair, skin: u.skin.skin, clothes: u.skin.clothes }); } } catch(_){}
-      __registeredUsernames.add(lower);
-      const token = createSession(u.username);
-      setAuthCookie(res, token);
-      return res.json({ ok:true, username: u.username });
-    }
-
-    const users = loadUsers();
-    const u = users[normalizeKey(user)];
-    if (!u || !verifyPassword(pass, u.passHash)) return res.status(401).json({ ok:false, code:'invalid' });
+    const r = await db.q('SELECT username, username_lower, pass_hash, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
+    const u = r.rows[0];
+    if (!u || !verifyPassword(pass, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid' });
+    try { if (u.skin && typeof u.skin === 'object') { __skinCache.set(lower, { hair: u.skin.hair, skin: u.skin.skin, clothes: u.skin.clothes }); } } catch(_){}
+    __registeredUsernames.add(lower);
     const token = createSession(u.username);
     setAuthCookie(res, token);
     return res.json({ ok:true, username: u.username });
   } catch(e){ console.error('[login]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});app.post('/api/change-password', async (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+});
+
+
+
+app.post('/api/shop/buy', async (req,res)=>{
+  { try {
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
+        return res.status(429).json({ ok:false, code:'rate_limited' });
+      }
+    } catch(_){}
+  }
   if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
   try {
-    const uname = getSessionUsernameByReq(req);
-    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
-    const { currentPassword, newPassword } = req.body || {};
-    const curr = String(currentPassword || ''); const next = String(newPassword || '');
-    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
-    const lower = normalizeKey(uname);
-
-    if (db && __pgReady) {
-      const r = await db.q('SELECT pass_hash FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-      const u = r.rows[0];
-      if (!u || !verifyPassword(curr, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid_current' });
-      const newHash = hashPassword(next);
-      await db.q('UPDATE users SET pass_hash=$2 WHERE username_lower=$1', [lower, newHash]);
-      for (const [t,ses] of Array.from(sessions.entries())) if (ses && ses.username && normalizeKey(ses.username) === lower) sessions.delete(t);
-      clearAuthCookie(res);
-      return res.json({ ok:true });
-    }
-
-    const users = loadUsers();
-    const key = normalizeKey(uname);
-    const u = users[key];
-    if (!u || !verifyPassword(curr, u.passHash)) return res.status(401).json({ ok:false, code:'invalid_current' });
-    u.passHash = hashPassword(next);
-    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
-    for (const [t,s] of Array.from(sessions.entries())) if (s && s.username === u.username) sessions.delete(t);
-    clearAuthCookie(res);
-    return res.json({ ok:true });
-  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});app.post('/api/shop/buy', async (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
-  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
-  try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const uname = getSessionUsernameByReq(req);
     if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
     const { type } = req.body || {};
     if (type !== 'hp' && type !== 'dmg') return res.status(400).json({ ok:false, code:'bad_request' });
     const lower = normalizeKey(uname);
-
-    if (db && __pgReady) {
-      const out = await db.tx(async (c)=>{
-        const r = await c.query('SELECT gold, shop_hp, shop_dmg FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
-        if (!r.rows.length) throw new Error('user_not_found');
-        const row = r.rows[0];
-        const curLv = (type==='hp' ? (row.shop_hp|0) : (row.shop_dmg|0)) || 0;
-        const price = (type==='hp') ? 50 : 200;
-        const maxLv = 20;
-        if (curLv >= maxLv) return { ok:false, code:'max_level' };
-        if ((row.gold|0) < price) return { ok:false, code:'not_enough_gold' };
-        const newGold = (row.gold|0) - price;
-        const newLv = curLv + 1;
-        if (type==='hp') await c.query('UPDATE users SET gold=$2, shop_hp=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
-        else await c.query('UPDATE users SET gold=$2, shop_dmg=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
-        return { ok:true, gold:newGold, level:newLv, hp: (type==='hp'?newLv: (row.shop_hp|0)||0), dmg: (type==='dmg'?newLv: (row.shop_dmg|0)||0) };
-      });
-      if (!out.ok) return res.json(out);
-
-      try {
-        for (const [sid] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
-          const u = getSessionUsernameBySocketId(sid);
-          if (!u || normalizeKey(u) !== lower) continue;
-          const mappedId = (typeof socketToGame !== 'undefined' && socketToGame[sid]) ? socketToGame[sid] : null;
-          const g = activeGames.find(gg => gg && gg.id === mappedId) || null;
-          if (g && g.players && g.players[sid]) {
-            g.players[sid].accountShop = { hp: out.hp|0, dmg: out.dmg|0 };
-            try {
-              const oldMax = g.players[sid].maxHealth || 100;
-              const stats = getPlayerStats(g.players[sid]);
-              const ratio = Math.max(0, Math.min(1, (g.players[sid].health || 0) / (oldMax || 100)));
-              g.players[sid].maxHealth = stats.maxHp;
-              g.players[sid].health = Math.round(stats.maxHp * ratio);
-            } catch(_) {}
-            try { io.to(sid).emit('accountShopUpdated', { hp: out.hp|0, dmg: out.dmg|0 }); } catch(_){}
-          }
-        }
-      } catch(_){}
-      return res.json({ ok:true, gold: out.gold|0, level: out.level|0 });
-    }
-
-    const users = loadUsers();
-    const key = normalizeKey(uname);
-    const rec = users[key] || (users[key]={ username: uname, usernameLower:key, passHash:'', createdAt: Date.now(), gold:0, shopUpgrades:{hp:0,dmg:0} });
-    const price = (type === 'hp') ? 50 :  200;
-    const maxLv = 20;
-    const lv = (rec.shopUpgrades && rec.shopUpgrades[type]|0) || 0;
-    if (lv >= maxLv) return res.json({ ok:false, code:'max_level' });
-    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
-    rec.gold = (rec.gold|0) - price;
-    rec.shopUpgrades = rec.shopUpgrades || { hp:0, dmg:0 };
-    rec.shopUpgrades[type] = lv + 1;
-    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
+    const out = await db.tx(async (c)=>{
+      const r = await c.query('SELECT gold, shop_hp, shop_dmg FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
+      if (!r.rows.length) throw new Error('user_not_found');
+      const row = r.rows[0];
+      const curLv = (type==='hp' ? (row.shop_hp|0) : (row.shop_dmg|0)) || 0;
+      const price = (type==='hp') ? 50 : 200;
+      const maxLv = 20;
+      if (curLv >= maxLv) return { ok:false, code:'max_level' };
+      if ((row.gold|0) < price) return { ok:false, code:'not_enough_gold' };
+      const newGold = (row.gold|0) - price;
+      const newLv = curLv + 1;
+      if (type==='hp') await c.query('UPDATE users SET gold=$2, shop_hp=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
+      else await c.query('UPDATE users SET gold=$2, shop_dmg=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
+      return { ok:true, gold:newGold, level:newLv, hp: (type==='hp'?newLv: (row.shop_hp|0)||0), dmg: (type==='dmg'?newLv: (row.shop_dmg|0)||0) };
+    }).catch(()=>({ ok:false, code:'server_error' }));
+    if (!out.ok) return res.json(out);
     try {
-      const key = normalizeKey(uname);
       for (const [sid] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
         const u = getSessionUsernameBySocketId(sid);
-        if (!u || normalizeKey(u) !== key) continue;
+        if (!u || normalizeKey(u) !== lower) continue;
         const mappedId = (typeof socketToGame !== 'undefined' && socketToGame[sid]) ? socketToGame[sid] : null;
         const g = activeGames.find(gg => gg && gg.id === mappedId) || null;
         if (g && g.players && g.players[sid]) {
-          g.players[sid].accountShop = { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 };
+          g.players[sid].accountShop = { hp: out.hp|0, dmg: out.dmg|0 };
           try {
             const oldMax = g.players[sid].maxHealth || 100;
             const stats = getPlayerStats(g.players[sid]);
@@ -4402,49 +4239,86 @@ app.post('/api/signup', async (req,res)=>{
             g.players[sid].maxHealth = stats.maxHp;
             g.players[sid].health = Math.round(stats.maxHp * ratio);
           } catch(_) {}
-          try { io.to(sid).emit('accountShopUpdated', { hp: (rec.shopUpgrades&&rec.shopUpgrades.hp|0)||0, dmg: (rec.shopUpgrades&&rec.shopUpgrades.dmg|0)||0 }); } catch(_){}
+          try { io.to(sid).emit('accountShopUpdated', { hp: out.hp|0, dmg: out.dmg|0 }); } catch(_){}
         }
       }
     } catch(_){}
-    return res.json({ ok:true, gold: rec.gold|0, level: rec.shopUpgrades[type]|0 });
+    return res.json({ ok:true, gold: out.gold|0, level: out.level|0 });
   } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
-});app.post('/api/skin/buy', async (req,res)=>{
-  { try { const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim(); const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000); if (!rl.ok) { res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000)); return res.status(429).json({ ok:false, code:'rate_limited' }); } } catch(_){}} 
+});
+
+app.post('/api/skin/buy', async (req,res)=>{
+  { try {
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
+        return res.status(429).json({ ok:false, code:'rate_limited' });
+      }
+    } catch(_){}
+  }
   if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
   try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
     const uname = getSessionUsernameByReq(req);
     if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
     const { hair, skin, clothes } = req.body || {};
     const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
     if (!hexOk(hair) || !hexOk(skin) || !hexOk(clothes)) return res.status(400).json({ ok:false, code:'bad_colors' });
     const lower = normalizeKey(uname);
-
-    if (db && __pgReady) {
-      const PRICE = 20;
-      const out = await db.tx(async (c)=>{
-        const r = await c.query('SELECT gold FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
-        if (!r.rows.length) throw new Error('user_not_found');
-        const row = r.rows[0];
-        if ((row.gold|0) < PRICE) return { ok:false, code:'not_enough_gold' };
-        const newGold = (row.gold|0) - PRICE;
-        const skinObj = { hair: String(hair).toLowerCase(), skin: String(skin).toLowerCase(), clothes: String(clothes).toLowerCase() };
-        await c.query('UPDATE users SET gold=$2, skin=$3, skin_updated_at = EXTRACT(EPOCH FROM now())*1000 WHERE username_lower=$1', [lower, newGold, skinObj]);
-        return { ok:true, gold:newGold, skin: skinObj };
-      });
-      if (!out.ok) return res.json(out);
-      __skinCache.set(lower, out.skin);
-      return res.json({ ok:true, gold: out.gold|0, skin: out.skin });
-    }
-
-    const users = loadUsers();
-    const ukey = normalizeKey(uname);
-    const now = Date.now();
-    const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
-    const price = 20;
-    if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
-    rec.gold = (rec.gold|0) - price;
-    rec.skin = { hair: String(hair).toLowerCase(), skin: String(skin).toLowerCase(), clothes: String(clothes).toLowerCase(), updatedAt: now };
-    if (!saveUsers(users)) return res.status(500).json({ ok:false, code:'save_failed' });
-    return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
+    const PRICE = 20;
+    const out = await db.tx(async (c)=>{
+      const r = await c.query('SELECT gold FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
+      if (!r.rows.length) throw new Error('user_not_found');
+      const row = r.rows[0];
+      if ((row.gold|0) < PRICE) return { ok:false, code:'not_enough_gold' };
+      const newGold = (row.gold|0) - PRICE;
+      const skinObj = { hair: String(hair).toLowerCase(), skin: String(skin).toLowerCase(), clothes: String(clothes).toLowerCase() };
+      await c.query('UPDATE users SET gold=$2, skin=$3, skin_updated_at = EXTRACT(EPOCH FROM now())*1000 WHERE username_lower=$1', [lower, newGold, skinObj]);
+      return { ok:true, gold:newGold, skin: skinObj };
+    }).catch(()=>({ ok:false, code:'server_error' }));
+    if (!out.ok) return res.json(out);
+    __skinCache.set(lower, out.skin);
+    return res.json({ ok:true, gold: out.gold|0, skin: out.skin });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
+
+app.post('/api/logout', (req,res)=>{
+  try {
+    const token = getAuthCookie(req);
+    if (token && sessions.has(token)) { sessions.delete(token); }
+  } catch(_){}
+  try { clearAuthCookie(res); } catch(_){}
+  return res.json({ ok:true });
+});
+
+app.post('/api/change-password', async (req,res)=>{
+  { try {
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+      const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000);
+      if (!rl.ok) {
+        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
+        return res.status(429).json({ ok:false, code:'rate_limited' });
+      }
+    } catch(_){}
+  }
+  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
+  try {
+    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+    const { currentPassword, newPassword } = req.body || {};
+    const curr = String(currentPassword || ''); const next = String(newPassword || '');
+    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
+    const lower = normalizeKey(uname);
+    const r = await db.q('SELECT pass_hash FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
+    const u = r.rows[0];
+    if (!u || !verifyPassword(curr, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid_current' });
+    const newHash = hashPassword(next);
+    await db.q('UPDATE users SET pass_hash=$2 WHERE username_lower=$1', [lower, newHash]);
+    for (const [t,ses] of Array.from(sessions.entries())) if (ses && ses.username && normalizeKey(ses.username) === lower) sessions.delete(t);
+    clearAuthCookie(res);
+    return res.json({ ok:true });
+  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
+});
+
