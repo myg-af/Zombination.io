@@ -48,6 +48,28 @@
   } catch(_){}
 })();
 /*__/LOG_TIMESTAMP_FILTER__*/
+
+// --- Minimal identity helpers (PostgreSQL-only; no JSON fallback) ---
+function normalizeKey(s) {
+  try { return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); } catch(_){ return ''; }
+}
+function sanitizeUsername(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
+}
+function isRegisteredUsername(name) {
+  try {
+    if (!__pgReady || !__registeredUsernames) return false;
+    const k = normalizeKey(name);
+    return __registeredUsernames.has(k);
+  } catch(_){ return false; }
+}
+// Returns the logged-in username for a given socket.id, or null for guests.
+// (Sessions not yet implemented => always null; when auth is added, wire it here.)
+function getSessionUsernameBySocketId(sid) {
+  try { return null; } catch(_){ return null; }
+}
+
+
 // Variant: for WORLD chat only — allow reclaiming a guest pseudo when the only conflict
 // is another *connected* socket from the same IP and not a logged-in account.
 // This avoids the "Nickname already in use" trap after a quick page refresh.
@@ -451,6 +473,63 @@ function ensureCsrfCookie(req, res, next) {
 
 // ensure CSRF cookie exists for all requests
 app.use(ensureCsrfCookie);
+
+// --- Minimal auth APIs (PostgreSQL-backed; no JSON fallback) ---
+app.get('/api/me', async (req, res) => {
+  try {
+    // If you later add real sessions, resolve username from cookie here.
+    // For now, return anonymous state and (optionally) cached skin if known.
+    if (!db || !__pgReady) {
+      return res.status(200).json({ ok: true, username: null, skin: null });
+    }
+    // Placeholder: anonymous by default.
+    return res.status(200).json({ ok: true, username: null, skin: null });
+  } catch(e){
+    return res.status(200).json({ ok: true, username: null, skin: null });
+  }
+});
+
+app.get('/api/username-taken', async (req, res) => {
+  try {
+    const u = (req.query && req.query.u) ? String(req.query.u).trim() : '';
+    const unameLower = u.toLowerCase();
+    if (!u) return res.status(200).json({ ok: true, taken: false });
+// Leaderboard API (PostgreSQL only)
+
+    if (!db || !__pgReady) {
+      // Without DB, we can't verify; do not block UI.
+      return res.status(200).json({ ok: true, taken: false });
+    }
+    const r = await db.q('SELECT 1 FROM users WHERE username_lower = $1 LIMIT 1', [unameLower]);
+    const taken = !!(r && r.rows && r.rows.length > 0);
+    return res.status(200).json({ ok: true, taken });
+  } catch(e){
+    return res.status(200).json({ ok: true, taken: false });
+  }
+});
+
+
+app.get('/api/ladder', async (req, res) => {
+  try {
+    if (!db || !__pgReady) return res.status(200).json({ ok: true, ladder: [] });
+    const r = await db.q(
+      `SELECT player, wave, kills, ts
+         FROM ladder
+         ORDER BY wave DESC, kills DESC, ts ASC
+         LIMIT 100`
+    );
+    const ladder = (r && r.rows) ? r.rows.map(row => ({
+      player: row.player,
+      wave: Number(row.wave)||0,
+      kills: Number(row.kills)||0,
+      ts: Number(row.ts)||0
+    })) : [];
+    return res.status(200).json({ ok: true, ladder });
+  } catch(e){
+    return res.status(200).json({ ok: true, ladder: [] });
+  }
+});
+
 
 /* --- Ladder (PostgreSQL only) --- */
 function sanitizePlayerName(u) {
