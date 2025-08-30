@@ -54,7 +54,7 @@ function normalizeKey(s) {
   try { return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); } catch(_){ return ''; }
 }
 function sanitizeUsername(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
+  try { return String(u||'').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
 }
 function isRegisteredUsername(name) {
   try {
@@ -65,11 +65,6 @@ function isRegisteredUsername(name) {
 }
 // Returns the logged-in username for a given socket.id, or null for guests.
 // (Sessions not yet implemented => always null; when auth is added, wire it here.)
-function getSessionUsernameBySocketId(sid) {
-  try { return null; } catch(_){ return null; }
-}
-
-
 // Variant: for WORLD chat only — allow reclaiming a guest pseudo when the only conflict
 // is another *connected* socket from the same IP and not a logged-in account.
 // This avoids the "Nickname already in use" trap after a quick page refresh.
@@ -398,7 +393,7 @@ const socketIo = require('socket.io');
 const compression = require('compression');
 const fs = require('fs');
 const crypto = require('crypto');
-const crypto = require('crypto');
+
 // --- PostgreSQL (users & ladder) ---
 let __pgReady = false;
 let __pgError = null;
@@ -577,7 +572,7 @@ async function destroySession(req, res){
 }
 async function resolveSession(req){
   try {
-    const cookies = parseCookies(req.headers && req.headers.cookie);
+    const cookies = parseCookies(req && req.headers && req.headers.cookie);
     const sid = cookies[SESSION_COOKIE];
     if (!sid) return null;
     const inMem = __sessionCache.get(sid);
@@ -590,11 +585,15 @@ async function resolveSession(req){
        LIMIT 1`,
       [sid, Date.now()]
     );
-    const row = r.rows[0];
+    const row = (r && r.rows && r.rows[0]) ? r.rows[0] : null;
     if (!row) return null;
-    __sessionCache.set(sid, { user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp: Number(row.expires_at)||0 });
-    return { sid, user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp: Number(row.expires_at)||0 };
-  } catch(_){ return null; }
+    const exp = Number(row.expires_at) || 0;
+    const cacheVal = { user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp };
+    __sessionCache.set(sid, cacheVal);
+    return { sid, ...cacheVal };
+  } catch(_){ 
+    return null; 
+  }
 }
 
 // Replace stub: fetch username from socket's cookie via cache (non-blocking)
@@ -618,15 +617,7 @@ app.get('/api/me', async (req, res) => {
     }
     const sess = await resolveSession(req);
     if (!sess) return res.status(200).json({ ok: true, username: null, skin: null });
-    // Optionally, you can fetch skin from cache later; return null for now.
     return res.status(200).json({ ok: true, username: sess.username, skin: null });
-  } catch(e){
-    return res.status(200).json({ ok: true, username: null, skin: null });
-  }
-});
-}
-    // Placeholder: anonymous by default.
-    return res.status(200).json({ ok: true, username: null, skin: null });
   } catch(e){
     return res.status(200).json({ ok: true, username: null, skin: null });
   }
@@ -732,7 +723,7 @@ app.get('/api/ladder', async (req, res) => {
 
 /* --- Ladder (PostgreSQL only) --- */
 function sanitizePlayerName(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
+  try { return String(u||'').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
 }
 function recordLadderScoreServer(playerName, wave, kills) {
   try {
@@ -1168,7 +1159,7 @@ function createNewGame() {
   let game = {
     structures: null,
     id: nextGameId++,
-    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, timer: null, manual: false, hostId: null, kickedUntilByIp: {} },
+    lobby: { players: {}, timeLeft: LOBBY_TIME / 1000, started: false, joinCode: null, timer: null, manual: false, hostId: null, kickedUntilByIp: {} },
     // map: ip -> timestamp until which the ip is blocked from rejoining this lobby
     // only relevant for manual lobbies
     kickedUntilByIp: {},
@@ -2256,7 +2247,7 @@ try {
     try {
       payload = payload || {};
       const targetId = Number(payload.gameId) || 0;
-      let pseudo = String(payload.pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+      let pseudo = String(payload.pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
       if (!targetId || !pseudo) { try { if (cb) cb({ ok:false, reason:'invalid' }); } catch(_){} return; }
       const currentGid = socketToGame[socket.id];
       const target = activeGames.find(g => g && g.id === targetId);
@@ -2476,7 +2467,7 @@ socket.on('clientPing', () => {});
   } catch(e){}
 });socket.on('createLobby', (pseudo, cb) => {
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
-    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
     
       // Reserved username enforcement: if pseudo is a registered account, only the authenticated owner can use it
@@ -2565,7 +2556,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
   socket.on('joinLobbyById', (data, cb) => {
     const targetId = data && data.gameId;
     let pseudo = (data && data.pseudo) || '';
-    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
     
       // Reserved username enforcement
@@ -2738,7 +2729,7 @@ socket.on('skipRound', () => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
-  pseudo = (pseudo || '').trim().substring(0, 10);
+  pseudo = (pseudo || '').trim().substringring(0, 10);
   pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
   if (!pseudo) pseudo = 'Joueur';
   
@@ -2771,7 +2762,7 @@ socket.on('renamePseudo', (data, cb) => {
   try {
     // Accept either a string or an object: { pseudo: '...' }
     let p = (typeof data === 'string') ? data : (data && data.pseudo) || '';
-    p = String(p || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    p = String(p || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!p) { 
       try { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); } catch(_){}
       try { io.to(socket.id).emit('renameResult', { ok:false, reason:'invalid_pseudo' }); } catch(_){}
