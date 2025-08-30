@@ -398,6 +398,7 @@ const socketIo = require('socket.io');
 const compression = require('compression');
 const fs = require('fs');
 const crypto = require('crypto');
+const crypto = require('crypto');
 // --- PostgreSQL (users & ladder) ---
 let __pgReady = false;
 let __pgError = null;
@@ -424,9 +425,32 @@ try {
   };
   (async () => {
     try {
+      // Ensure tables exist
+      await db.q(`CREATE TABLE IF NOT EXISTS users (
+        id BIGSERIAL PRIMARY KEY,
+        username TEXT NOT NULL,
+        username_lower TEXT NOT NULL UNIQUE,
+        pass_hash TEXT NOT NULL,
+        created_at BIGINT NOT NULL
+      )`);
+      await db.q(`CREATE TABLE IF NOT EXISTS sessions (
+        sid TEXT PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        ip TEXT,
+        ua TEXT
+      )`);
+      await db.q(`CREATE TABLE IF NOT EXISTS ladder (
+        player TEXT PRIMARY KEY,
+        wave INTEGER NOT NULL DEFAULT 0,
+        kills INTEGER NOT NULL DEFAULT 0,
+        ts BIGINT NOT NULL
+      )`);
+    
       // Preload registered usernames cache (sync lookup for guest pseudo reservation)
       const res = await db.q('SELECT username_lower FROM users');
-      res.rows.forEach(r => { try{ if (r && r.username_lower) __registeredUsernames.add(String(r.username_lower)); }catch(_){ } });
+      (res.rows||[]).forEach(r => { try{ if (r && r.username_lower) __registeredUsernames.add(String(r.username_lower)); }catch(_){ } });
       __pgReady = true;
       __pgError = null;
       console.log('[DB] PostgreSQL connected — users cached:', __registeredUsernames.size);
@@ -474,14 +498,133 @@ function ensureCsrfCookie(req, res, next) {
 // ensure CSRF cookie exists for all requests
 app.use(ensureCsrfCookie);
 
+// --- Sessions & Auth (PostgreSQL only) ---
+const SESSION_COOKIE = 'sid';
+const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
+let __sessionCache = new Map(); // sid -> { username, username_lower, user_id, exp }
+
+function parseCookies(header) {
+  const out = {};
+  try {
+    String(header || '').split(';').forEach(p => {
+      const idx = p.indexOf('=');
+      if (idx === -1) return;
+      const k = p.slice(0, idx).trim();
+      const v = p.slice(idx + 1).trim();
+      if (k) out[k] = decodeURIComponent(v);
+    });
+  } catch(_){}
+  return out;
+}
+
+function isHttpsReq(req){
+  try {
+    return !!(req.secure || (req.headers && req.headers['x-forwarded-proto'] === 'https') || process.env.COOKIE_SECURE === '1');
+  } catch(_) { return false; }
+}
+
+function randomIdHex(n=32){ return crypto.randomBytes(n).toString('hex'); }
+
+function pbkdf2Hash(password) {
+  const salt = randomIdHex(16);
+  const iter = 120000;
+  const hash = crypto.pbkdf2Sync(String(password||''), salt, iter, 32, 'sha256').toString('hex');
+  return `pbkdf2$${iter}$${salt}$${hash}`;
+}
+function pbkdf2Verify(password, stored) {
+  try {
+    const parts = String(stored||'').split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
+    const iter = parseInt(parts[1], 10) || 120000;
+    const salt = parts[2];
+    const h = parts[3];
+    const test = crypto.pbkdf2Sync(String(password||''), salt, iter, h.length/2, 'sha256').toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(test,'hex'), Buffer.from(h,'hex'));
+  } catch(_) { return false; }
+}
+
+async function createSession(userId, username, username_lower, req, res){
+  const sid = randomIdHex(32);
+  const now = Date.now();
+  const exp = now + SESSION_TTL_MS;
+  await db.q(
+    `INSERT INTO sessions (sid, user_id, created_at, expires_at, ip, ua)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [sid, userId, now, exp, (req.ip || ''), (req.headers['user-agent'] || '')]
+  );
+  __sessionCache.set(sid, { user_id: userId, username, username_lower, exp });
+  res.cookie(SESSION_COOKIE, sid, {
+    httpOnly: true, sameSite: 'lax', secure: isHttpsReq(req), maxAge: SESSION_TTL_MS, path:'/'
+  });
+  return sid;
+}
+
+async function destroySessionBySid(sid){
+  try {
+    await db.q(`DELETE FROM sessions WHERE sid=$1`, [sid]);
+  } catch(_){}
+  __sessionCache.delete(sid);
+}
+async function destroySession(req, res){
+  try {
+    const cookies = parseCookies(req.headers && req.headers.cookie);
+    const sid = cookies[SESSION_COOKIE];
+    if (sid) await destroySessionBySid(sid);
+  } catch(_){}
+  try {
+    res.cookie(SESSION_COOKIE, '', { httpOnly:true, sameSite:'lax', secure:isHttpsReq(req), maxAge:0, path:'/' });
+  } catch(_){}
+}
+async function resolveSession(req){
+  try {
+    const cookies = parseCookies(req.headers && req.headers.cookie);
+    const sid = cookies[SESSION_COOKIE];
+    if (!sid) return null;
+    const inMem = __sessionCache.get(sid);
+    if (inMem && inMem.exp > Date.now()) return { sid, ...inMem };
+    if (!db || !__pgReady) return null;
+    const r = await db.q(
+      `SELECT s.sid, s.user_id, s.expires_at, u.username, u.username_lower
+       FROM sessions s JOIN users u ON u.id=s.user_id
+       WHERE s.sid=$1 AND s.expires_at > $2
+       LIMIT 1`,
+      [sid, Date.now()]
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    __sessionCache.set(sid, { user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp: Number(row.expires_at)||0 });
+    return { sid, user_id: row.user_id, username: row.username, username_lower: row.username_lower, exp: Number(row.expires_at)||0 };
+  } catch(_){ return null; }
+}
+
+// Replace stub: fetch username from socket's cookie via cache (non-blocking)
+function getSessionUsernameBySocketId(sid) {
+  try {
+    const sock = io && io.sockets && io.sockets.sockets ? io.sockets.sockets.get(sid) : null;
+    if (!sock || !sock.handshake || !sock.handshake.headers) return null;
+    const cookies = parseCookies(sock.handshake.headers.cookie);
+    const s = cookies[SESSION_COOKIE];
+    if (!s) return null;
+    const c = __sessionCache.get(s);
+    return c ? c.username : null;
+  } catch(_){ return null; }
+}
+
 // --- Minimal auth APIs (PostgreSQL-backed; no JSON fallback) ---
 app.get('/api/me', async (req, res) => {
   try {
-    // If you later add real sessions, resolve username from cookie here.
-    // For now, return anonymous state and (optionally) cached skin if known.
     if (!db || !__pgReady) {
       return res.status(200).json({ ok: true, username: null, skin: null });
     }
+    const sess = await resolveSession(req);
+    if (!sess) return res.status(200).json({ ok: true, username: null, skin: null });
+    // Optionally, you can fetch skin from cache later; return null for now.
+    return res.status(200).json({ ok: true, username: sess.username, skin: null });
+  } catch(e){
+    return res.status(200).json({ ok: true, username: null, skin: null });
+  }
+});
+}
     // Placeholder: anonymous by default.
     return res.status(200).json({ ok: true, username: null, skin: null });
   } catch(e){
@@ -507,6 +650,62 @@ app.get('/api/username-taken', async (req, res) => {
     return res.status(200).json({ ok: true, taken: false });
   }
 });
+
+
+// --- Auth endpoints ---
+app.post('/api/signup', async (req, res) => {
+  try {
+    if (!db || !__pgReady) return res.status(200).json({ ok:false, reason:'db_unavailable' });
+    const { username, password } = (req.body || {});
+    const u = sanitizeUsername(username);
+    if (!u || u.length < 3) return res.status(200).json({ ok:false, reason:'bad_username' });
+    if (String(password||'').length < 6) return res.status(200).json({ ok:false, reason:'weak_password' });
+    const ul = normalizeKey(u);
+    // enforce availability in DB
+    const check = await db.q('SELECT id FROM users WHERE username_lower=$1 LIMIT 1', [ul]);
+    if (check.rowCount > 0) return res.status(200).json({ ok:false, reason:'username_taken' });
+    const now = Date.now();
+    const pass_hash = pbkdf2Hash(password);
+    // create user
+    const ins = await db.q(
+      'INSERT INTO users (username, username_lower, pass_hash, created_at) VALUES ($1,$2,$3,$4) RETURNING id',
+      [u, ul, pass_hash, now]
+    );
+    const userId = ins.rows[0].id;
+    __registeredUsernames.add(ul);
+    await createSession(userId, u, ul, req, res);
+    return res.status(200).json({ ok:true, username: u });
+  } catch(e){
+    return res.status(200).json({ ok:false, reason:'server_error' });
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  try {
+    if (!db || !__pgReady) return res.status(200).json({ ok:false, reason:'db_unavailable' });
+    const { username, password } = (req.body || {});
+    const ul = normalizeKey(username);
+    if (!ul) return res.status(200).json({ ok:false, reason:'bad_username' });
+    const r = await db.q('SELECT id, username, username_lower, pass_hash FROM users WHERE username_lower=$1 LIMIT 1', [ul]);
+    if (r.rowCount === 0) return res.status(200).json({ ok:false, reason:'invalid_credentials' });
+    const row = r.rows[0];
+    if (!pbkdf2Verify(password, row.pass_hash)) return res.status(200).json({ ok:false, reason:'invalid_credentials' });
+    await createSession(row.id, row.username, row.username_lower, req, res);
+    return res.status(200).json({ ok:true, username: row.username });
+  } catch(e){
+    return res.status(200).json({ ok:false, reason:'server_error' });
+  }
+});
+
+app.post('/api/logout', async (req, res) => {
+  try {
+    await destroySession(req, res);
+    return res.status(200).json({ ok:true });
+  } catch(_){
+    return res.status(200).json({ ok:true });
+  }
+});
+
 
 
 app.get('/api/ladder', async (req, res) => {
