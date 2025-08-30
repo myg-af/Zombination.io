@@ -7476,7 +7476,22 @@ btnSubmit.textContent = trAuth('submit','Submit');
 function hideModal(){ overlay.style.display='none'; modal.style.display='none'; modalBody.innerHTML=''; }
 
   async function fetchJSON(url, opts){
-    const res = await fetch(url, Object.assign({ headers:{'Content-Type':'application/json'} }, opts||{}));
+    try { opts = opts || {}; } catch(_){ opts = {}; }
+    const method = String((opts.method || 'GET')).toUpperCase();
+    const baseHeaders = (opts.headers && typeof opts.headers === 'object') ? opts.headers : {};
+    const headers = Object.assign({'Content-Type':'application/json'}, baseHeaders);
+    if (method !== 'GET' && method !== 'HEAD') {
+      try {
+        var m = document.cookie.match(/(?:^|; )csrf=([^;]*)/);
+        var tok = m ? decodeURIComponent(m[1]) : '';
+        if (tok) headers['X-CSRF-Token'] = tok;
+      } catch(_){}
+      if (!opts.credentials) opts.credentials = 'include';
+    }
+    const res = await fetch(url, Object.assign({}, opts, { headers }));
+    let data = null; try { data = await res.json(); } catch(_){}
+    return { ok: res.ok && data && (data.ok===true || data.ok===undefined), status: res.status, data };
+  } }, opts||{}));
     let data = null; try { data = await res.json(); } catch(_){}
     return { ok: res.ok && data && (data.ok===true || data.ok===undefined), status: res.status, data };
   }
@@ -11040,7 +11055,7 @@ function drawPreview(){
       msg.textContent = '';
       fetch('/api/skin/buy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: (function(){ var h={'Content-Type':'application/json'}; try{var m=document.cookie.match(/(?:^|; )csrf=([^;]*)/); var t=m?decodeURIComponent(m[1]):''; if(t) h['X-CSRF-Token']=t;}catch(_){} return h; })(),
         credentials: 'include',
         body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
       }).then(function(r){ return r.json(); })

@@ -763,6 +763,10 @@ app.use((req,res,next)=>{
   }catch(_){}
   next();
 });
+
+// Ensure a CSRF cookie exists on every request (double-submit cookie pattern)
+app.use((req,res,next)=>{ try{ ensureCsrfCookie(req,res); }catch(_){ } next(); });
+
 app.use(express.static(path.join(__dirname, 'public')));
 const MAX_PLAYERS = 6;
 const LOBBY_TIME = 5 * 1000;
@@ -3907,7 +3911,59 @@ function verifyPassword(password, stored) {
   } catch(_){ return false; }
 }
 function parseCookies(req) {
-  const out = {};
+  const out = {}
+
+function __appendSetCookie(res, cookieStr){
+  try {
+    const prev = res.getHeader('Set-Cookie');
+    if (!prev) { res.setHeader('Set-Cookie', cookieStr); return; }
+    if (Array.isArray(prev)) { res.setHeader('Set-Cookie', prev.concat(cookieStr)); return; }
+    res.setHeader('Set-Cookie', [String(prev), cookieStr]);
+  } catch(_){}
+}
+function getCsrfCookie(req){
+  try {
+    const cookies = parseCookies(req);
+    return cookies && cookies['csrf'] ? String(cookies['csrf']) : '';
+  } catch(_){ return ''; }
+}
+function ensureCsrfCookie(req, res){
+  try {
+    let token = getCsrfCookie(req);
+    if (!token || token.length < 16) {
+      token = crypto.randomBytes(16).toString('hex');
+      const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+      const parts = [
+        `csrf=${token}`,
+        'Path=/',
+        // 1 day is enough; token rotates on new session too
+        'Max-Age=86400',
+        'SameSite=Lax'
+      ];
+      if (secure) parts.push('Secure');
+      __appendSetCookie(res, parts.join('; '));
+    }
+  } catch(_){}
+}
+function passesCsrf(req){
+  try {
+    const cookieTok = getCsrfCookie(req);
+    const headerTok = String(req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || '');
+    if (!cookieTok || !headerTok || cookieTok !== headerTok) return false;
+    // Optional Origin check: if provided, must match Host
+    const origin = String(req.headers['origin'] || '');
+    const host = String(req.headers['host'] || '');
+    if (origin) {
+      try {
+        const u = new URL(origin);
+        if (String(u.host||'') !== host) return false;
+      } catch(_){}
+    }
+    return true;
+  } catch(_){ return false; }
+}
+
+;
   const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
   if (!header) return out;
   header.split(';').forEach(part => {
@@ -3971,7 +4027,15 @@ function setAuthCookie(res, token){
     const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
     const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
     const parts = [
-      `auth=${token}`,
+      `auth=${token}
+
+function getAuthCookie(req){
+  try {
+    const cookies = parseCookies(req);
+    return cookies && cookies['auth'] ? String(cookies['auth']) : '';
+  } catch(_){ return ''; }
+}
+`,
       'Path=/',
       'HttpOnly',
       `Max-Age=${maxAge}`,
