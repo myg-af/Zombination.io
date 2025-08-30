@@ -1,5 +1,7 @@
 const TRANSLATIONS = {
   en: {
+    dbUnavailable: "Server database unavailable. Please try again in a moment.",
+    serverError: "Unexpected server error. Please try again.",
     login: 'Log in',
     signup: 'Sign up',
     signout: 'Sign out',
@@ -523,6 +525,8 @@ const TRANSLATIONS = {
     chooseServer: 'サーバーを選択',
 },
   fr: {
+    dbUnavailable: "Base de donn\u00e9es indisponible. R\u00e9essayez dans un instant.",
+    serverError: "Erreur serveur inattendue. R\u00e9essayez.",
     login: 'Se connecter',
     signup: 'Créer un compte',
     signout: 'Se déconnecter',

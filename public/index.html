@@ -7501,6 +7501,8 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
         if (r === 'username_taken' || r === 'exists') showTopMessage(trAuth('userExists'));
         else if (r === 'weak_password' || status === 400) showTopMessage(trAuth('weakPassword'));
         else if (r === 'bad_username') showTopMessage(trAuth('fillAll'));
+        else if (r === 'db_unavailable') showTopMessage(trAuth('dbUnavailable'));
+        else if (r === 'server_error') showTopMessage(trAuth('serverError'));
         else showTopMessage('Error.');
       }
     } catch(e){ showTopMessage('Error'); }

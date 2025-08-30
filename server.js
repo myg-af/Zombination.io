@@ -657,11 +657,14 @@ app.post('/api/signup', async (req, res) => {
     if (check.rowCount > 0) return res.status(200).json({ ok:false, reason:'username_taken' });
     const now = Date.now();
     const pass_hash = pbkdf2Hash(password);
-    // create user
+    // create user (atomic) with conflict protection
     const ins = await db.q(
-      'INSERT INTO users (username, username_lower, pass_hash, created_at) VALUES ($1,$2,$3,$4) RETURNING id',
+      'INSERT INTO users (username, username_lower, pass_hash, created_at) VALUES ($1,$2,$3,$4) ON CONFLICT (username_lower) DO NOTHING RETURNING id',
       [u, ul, pass_hash, now]
     );
+    if (!ins || ins.rowCount === 0) {
+      return res.status(200).json({ ok:false, reason:'username_taken' });
+    }
     const userId = ins.rows[0].id;
     __registeredUsernames.add(ul);
     await createSession(userId, u, ul, req, res);
@@ -671,6 +674,10 @@ app.post('/api/signup', async (req, res) => {
       // Map PostgreSQL unique violation to a clean username_taken error
       if (e && (e.code === '23505' || /unique/i.test(String(e.constraint||'')) || /duplicate key value/i.test(String(e.message||'')))) {
         return res.status(200).json({ ok:false, reason:'username_taken' });
+      }
+      // Database connectivity issues -> surface as db_unavailable
+      if (e && (e.code === 'ECONNREFUSED' || e.code === 'ETIMEDOUT' || /connection|terminat|reset/i.test(String(e.message||'')))) {
+        return res.status(200).json({ ok:false, reason:'db_unavailable' });
       }
     } catch(_) {}
     try { console.error('[API signup] error:', e && e.code, e && e.message); } catch(_){}
