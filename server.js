@@ -54,7 +54,7 @@ function normalizeKey(s) {
   try { return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]/g,''); } catch(_){ return ''; }
 }
 function sanitizeUsername(u) {
-  try { return String(u||'').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_){ return 'Player'; }
 }
 function isRegisteredUsername(name) {
   try {
@@ -723,7 +723,7 @@ app.get('/api/ladder', async (req, res) => {
 
 /* --- Ladder (PostgreSQL only) --- */
 function sanitizePlayerName(u) {
-  try { return String(u||'').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
 }
 function recordLadderScoreServer(playerName, wave, kills) {
   try {
@@ -2247,7 +2247,7 @@ try {
     try {
       payload = payload || {};
       const targetId = Number(payload.gameId) || 0;
-      let pseudo = String(payload.pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+      let pseudo = String(payload.pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
       if (!targetId || !pseudo) { try { if (cb) cb({ ok:false, reason:'invalid' }); } catch(_){} return; }
       const currentGid = socketToGame[socket.id];
       const target = activeGames.find(g => g && g.id === targetId);
@@ -2467,7 +2467,7 @@ socket.on('clientPing', () => {});
   } catch(e){}
 });socket.on('createLobby', (pseudo, cb) => {
     // Sanitize pseudo and create a fresh manual lobby with this socket as host
-    pseudo = (pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
     
       // Reserved username enforcement: if pseudo is a registered account, only the authenticated owner can use it
@@ -2556,7 +2556,7 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
   socket.on('joinLobbyById', (data, cb) => {
     const targetId = data && data.gameId;
     let pseudo = (data && data.pseudo) || '';
-    pseudo = (pseudo || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    pseudo = (pseudo || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!pseudo) { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); return; }
     
       // Reserved username enforcement
@@ -2729,7 +2729,7 @@ socket.on('skipRound', () => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
   if (!game) return;
-  pseudo = (pseudo || '').trim().substringring(0, 10);
+  pseudo = (pseudo || '').trim().substring(0, 10);
   pseudo = pseudo.replace(/[^a-zA-Z0-9]/g, '');
   if (!pseudo) pseudo = 'Joueur';
   
@@ -2762,7 +2762,7 @@ socket.on('renamePseudo', (data, cb) => {
   try {
     // Accept either a string or an object: { pseudo: '...' }
     let p = (typeof data === 'string') ? data : (data && data.pseudo) || '';
-    p = String(p || '').trim().substringring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
+    p = String(p || '').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, '');
     if (!p) { 
       try { if (cb) cb({ ok:false, reason:'invalid_pseudo' }); } catch(_){}
       try { io.to(socket.id).emit('renameResult', { ok:false, reason:'invalid_pseudo' }); } catch(_){}
