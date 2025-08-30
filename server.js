@@ -422,6 +422,9 @@ const gameMapModule = require('./game/gameMap');
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
+
+// ensure CSRF cookie exists for all requests
+app.use(ensureCsrfCookie);
 const server = http.createServer(app);
 // Persist chosen worker when a specific server is requested via the URL (?w=K).
 // Do NOT set any worker by default — but if ?w=K is present, consider it an explicit join.
@@ -763,10 +766,6 @@ app.use((req,res,next)=>{
   }catch(_){}
   next();
 });
-
-// Ensure a CSRF cookie exists on every request (double-submit cookie pattern)
-app.use((req,res,next)=>{ try{ ensureCsrfCookie(req,res); }catch(_){ } next(); });
-
 app.use(express.static(path.join(__dirname, 'public')));
 const MAX_PLAYERS = 6;
 const LOBBY_TIME = 5 * 1000;
@@ -3911,59 +3910,7 @@ function verifyPassword(password, stored) {
   } catch(_){ return false; }
 }
 function parseCookies(req) {
-  const out = {}
-
-function __appendSetCookie(res, cookieStr){
-  try {
-    const prev = res.getHeader('Set-Cookie');
-    if (!prev) { res.setHeader('Set-Cookie', cookieStr); return; }
-    if (Array.isArray(prev)) { res.setHeader('Set-Cookie', prev.concat(cookieStr)); return; }
-    res.setHeader('Set-Cookie', [String(prev), cookieStr]);
-  } catch(_){}
-}
-function getCsrfCookie(req){
-  try {
-    const cookies = parseCookies(req);
-    return cookies && cookies['csrf'] ? String(cookies['csrf']) : '';
-  } catch(_){ return ''; }
-}
-function ensureCsrfCookie(req, res){
-  try {
-    let token = getCsrfCookie(req);
-    if (!token || token.length < 16) {
-      token = crypto.randomBytes(16).toString('hex');
-      const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
-      const parts = [
-        `csrf=${token}`,
-        'Path=/',
-        // 1 day is enough; token rotates on new session too
-        'Max-Age=86400',
-        'SameSite=Lax'
-      ];
-      if (secure) parts.push('Secure');
-      __appendSetCookie(res, parts.join('; '));
-    }
-  } catch(_){}
-}
-function passesCsrf(req){
-  try {
-    const cookieTok = getCsrfCookie(req);
-    const headerTok = String(req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || '');
-    if (!cookieTok || !headerTok || cookieTok !== headerTok) return false;
-    // Optional Origin check: if provided, must match Host
-    const origin = String(req.headers['origin'] || '');
-    const host = String(req.headers['host'] || '');
-    if (origin) {
-      try {
-        const u = new URL(origin);
-        if (String(u.host||'') !== host) return false;
-      } catch(_){}
-    }
-    return true;
-  } catch(_){ return false; }
-}
-
-;
+  const out = {};
   const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
   if (!header) return out;
   header.split(';').forEach(part => {
@@ -4022,20 +3969,75 @@ function getSessionUsernameByReq(req){
     return s.username || null;
   } catch(_){ return null; }
 }
+
+function getCookieFromHeader(req, name){
+  try{
+    const cookie = req.headers && req.headers.cookie || '';
+    if (!cookie) return '';
+    const parts = cookie.split(';');
+    for (const p of parts){
+      const [k,...rest] = p.trim().split('=');
+      if (k === name) return decodeURIComponent((rest.join('=')||'').trim());
+    }
+  }catch(_){}
+  return '';
+}
+function getAuthCookie(req){
+  return getCookieFromHeader(req, 'auth');
+}
+// CSRF helpers (double-submit cookie)
+function ensureCsrfCookie(req,res,next){
+  try{
+    let token = getCookieFromHeader(req,'csrf');
+    if (!token){
+      // generate lightweight token
+      token = (Math.random().toString(16).slice(2)+Date.now().toString(16));
+      const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
+      const maxAge = 60*60*24*365; // 1 year
+      const parts = [
+        `csrf=${encodeURIComponent(token)}`,
+        'Path=/',
+        `Max-Age=${maxAge}`,
+        'SameSite=Lax'
+      ];
+      if (secure) parts.push('Secure');
+      // NOT HttpOnly so client can read & send header
+      res.setHeader('Set-Cookie', parts.join('; '));
+      // also attach for downstream handlers
+      req.csrfToken = token;
+    }else{
+      req.csrfToken = token;
+    }
+  }catch(_){}
+  return next();
+}
+function passesCsrf(req){
+  try{
+    // only enforce for state-changing methods
+    const method = (req.method||'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
+    const cookieTok = getCookieFromHeader(req,'csrf');
+    const headerTok = (req.headers['x-csrf-token']||req.headers['X-CSRF-Token']||'')+''; // node lowercases headers
+    if (!cookieTok || !headerTok) return false;
+    if (headerTok !== cookieTok) return false;
+    // Optional: origin check if present
+    const origin = (req.headers['origin']||'')+'';
+    if (origin){
+      try{
+        const u = new URL(origin);
+        const host = (req.headers['host']||'')+'';
+        if (host && u.host !== host) return false;
+      }catch(_){}
+    }
+    return true;
+  }catch(_){ return false; }
+}
 function setAuthCookie(res, token){
   try {
     const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
     const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
     const parts = [
-      `auth=${token}
-
-function getAuthCookie(req){
-  try {
-    const cookies = parseCookies(req);
-    return cookies && cookies['auth'] ? String(cookies['auth']) : '';
-  } catch(_){ return ''; }
-}
-`,
+      `auth=${token}`,
       'Path=/',
       'HttpOnly',
       `Max-Age=${maxAge}`,
