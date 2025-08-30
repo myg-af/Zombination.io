@@ -11044,9 +11044,10 @@ function drawPreview(){
 
     function buyNow(){
       msg.textContent = '';
+      try{var m=document.cookie.match(new RegExp('(?:^|; )csrf=([^;]*)'));}catch(_){var m=null;}var csrf=m?decodeURIComponent(m[1]):'';
       fetch('/api/skin/buy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: (function(h){ if (csrf) h['X-CSRF-Token']=csrf; return h; })({'Content-Type':'application/json'}),
         credentials: 'include',
         body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
       }).then(function(r){ return r.json(); })
