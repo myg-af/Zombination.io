@@ -7497,8 +7497,10 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && (!data || data.ok)) { hideModal(); showTopMessage(trAuth('signupOk')); }
       else {
-        if (data && data.code === 'exists') showTopMessage(trAuth('userExists'));
-        else if (data && (data.code === 'weak_password' || status === 400)) showTopMessage(trAuth('weakPassword'));
+        var r = data && (data.reason || data.code);
+        if (r === 'username_taken' || r === 'exists') showTopMessage(trAuth('userExists'));
+        else if (r === 'weak_password' || status === 400) showTopMessage(trAuth('weakPassword'));
+        else if (r === 'bad_username') showTopMessage(trAuth('fillAll'));
         else showTopMessage('Error.');
       }
     } catch(e){ showTopMessage('Error'); }
