@@ -420,6 +420,9 @@ try {
 }
 const gameMapModule = require('./game/gameMap');
 const app = express();
+
+// Serve a blank favicon to avoid 404 noise
+app.get('/favicon.ico', (req,res)=>{ res.status(204).end(); });
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
