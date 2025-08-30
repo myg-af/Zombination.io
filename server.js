@@ -416,7 +416,7 @@ try {
   })();
 } catch(e){
   __pgError = e;
-  console.error('[DB] pg module not available — falling back to legacy JSON for some features');
+  console.error('[DB] pg module not available — users/ladder features require PostgreSQL (disabled)');
 }
 const gameMapModule = require('./game/gameMap');
 const app = express();
@@ -426,8 +426,60 @@ app.get('/favicon.ico', (req,res)=>{ res.status(204).end(); });
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 
+// CSRF cookie middleware (minimal; no parser dependency)
+function ensureCsrfCookie(req, res, next) {
+  try {
+    const cookieHeader = (req && req.headers && req.headers.cookie) ? String(req.headers.cookie) : '';
+    if (cookieHeader && cookieHeader.indexOf('csrf=') !== -1) {
+      return next();
+    }
+    const token = (crypto.randomBytes(16).toString('hex'));
+    const isSecure = (req && (req.secure === true || (req.headers && req.headers['x-forwarded-proto'] === 'https')));
+    const parts = [ `csrf=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax' ];
+    if (isSecure) parts.push('Secure');
+    const cookieStr = parts.join('; ');
+    const prev = res.getHeader('Set-Cookie');
+    if (prev) {
+      res.setHeader('Set-Cookie', Array.isArray(prev) ? prev.concat(cookieStr) : [prev, cookieStr]);
+    } else {
+      res.setHeader('Set-Cookie', cookieStr);
+    }
+  } catch(_e) {}
+  return next();
+}
+
+
 // ensure CSRF cookie exists for all requests
 app.use(ensureCsrfCookie);
+
+/* --- Ladder (PostgreSQL only) --- */
+function sanitizePlayerName(u) {
+  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
+}
+function recordLadderScoreServer(playerName, wave, kills) {
+  try {
+    if (!db || !__pgReady) return false;
+    const name = sanitizePlayerName(playerName);
+    const w = Number(wave) || 0;
+    const k = Number(kills) || 0;
+    if (!name) return false;
+    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
+    const now = Date.now();
+    db.q(
+      `INSERT INTO ladder (player, wave, kills, ts)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (player) DO UPDATE
+         SET wave = EXCLUDED.wave,
+             kills = EXCLUDED.kills,
+             ts = EXCLUDED.ts
+         WHERE (EXCLUDED.wave > ladder.wave)
+            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills > ladder.kills)
+            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills = ladder.kills AND EXCLUDED.ts < ladder.ts)`,
+      [name, w|0, k|0, now]
+    ).catch(()=>{});
+    return true;
+  } catch(_){ return false; }
+}
 const server = http.createServer(app);
 // Persist chosen worker when a specific server is requested via the URL (?w=K).
 // Do NOT set any worker by default — but if ?w=K is present, consider it an explicit join.
@@ -2766,7 +2818,7 @@ socket.on('playerDied', () => {
       const _p = game.players[socket.id];
       if (_p && !_p.isBot && !_p._ladderSubmitted) {
         _p._ladderSubmitted = true;
-        recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
+        recordLadderScoreServer((_p.pseudo && String(_p.pseudo)) || 'anonymous', Number(game.currentRound) || 0, Number(_p.kills) || 0);
       }
     } catch(_e) { console.error('[LADDER] record error', _e); } })();
 for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl) continue; const _cx = (_pl.spectator && _pl.viewX != null) ? _pl.viewX : (_pl.x || 0); const _cy = (_pl.spectator && _pl.viewY != null) ? _pl.viewY : (_pl.y || 0); io.to(sid).emit('playersHealthUpdate', getPlayersHealthStateFiltered(game, _cx, _cy, SERVER_VIEW_RADIUS)); }
@@ -3403,7 +3455,7 @@ function handleZombieAttacks(game) {
               
               if (!p.isBot && !p._ladderSubmitted) {
                 p._ladderSubmitted = true;
-                recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'Anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
+                recordLadderScoreServer((p.pseudo && String(p.pseudo)) || 'anonymous', Number(game.currentRound) || 0, Number(p.kills) || 0);
               }
 io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, gameId: game.id });
             }
@@ -3781,613 +3833,4 @@ if ((parseInt(process.env.WORKERS||'1',10) || 1) > 1) {
   });
 }
 // (removed old conditional listen block)
-/* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
-const USERS_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(USERS_DIR, 'users.json');
-function ensureUsersFile() {
-  try { if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true }); } catch(_){}
-  try { if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: {} }, null, 2)); } catch(_){}
-}
-ensureUsersFile();
-/* === PLAYER SKINS (players.json) === */
-const PLAYERS_FILE = path.join(__dirname, 'data', 'players.json');
-function ensurePlayersFile(){
-  try {
-    const dir = path.dirname(PLAYERS_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  } catch(_) {}
-  // Note: do NOT create PLAYERS_FILE automatically anymore; legacy file is optional.
-}
-function loadPlayersMap(){
-  try {
-    ensurePlayersFile();
-    const raw = fs.readFileSync(PLAYERS_FILE, 'utf8');
-    let obj = {};
-    if (raw && raw.trim()) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.players && typeof parsed.players === 'object') obj = parsed.players;
-    }
-    return obj;
-  } catch(_){ return {}; }
-}
-function savePlayersMap(map){
-  try {
-    ensurePlayersFile();
-    const tmp = PLAYERS_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ players: map }, null, 2));
-    fs.renameSync(tmp, PLAYERS_FILE);
-    return true;
-  } catch(e){ console.error('[PLAYERS] save failed', e); return false; }
-}
-function getPlayerSkin(username){
-  try {
-    const name = sanitizeUsername(username);
-    if (!name) return null;
-    const key = normalizeKey(name);
-    // 1) Cache (populated on login/me/skin update)
-    const c = __skinCache.get(key);
-    if (c && c.hair && c.skin && c.clothes) {
-      return { hair: c.hair, skin: c.skin, clothes: c.clothes };
-    }
-    // 2) DB lookup (sync-like via cached copy if previously loaded; otherwise return null quickly)
-    if (db && __pgReady) {
-      try {
-        // NOTE: this is synchronous-like call would block; avoid awaiting here.
-        // Callers that need fresh values should use the explicit APIs that update __skinCache.
-        // We won't block here; just return null so caller can proceed.
-      } catch(_) {}
-    }
-    return null;
-  } catch(_){ 
-    return null; 
-  }
-}
-// --- Skin helpers (normalize, resolve by socket) ---
-function _validateSkinObject(s) {
-  try {
-    if (!s || typeof s !== 'object') return null;
-    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
-    const hair = hexOk(s.hair) ? s.hair.toLowerCase() : null;
-    const skin = hexOk(s.skin) ? s.skin.toLowerCase() : null;
-    const clothes = hexOk(s.clothes) ? s.clothes.toLowerCase() : null;
-    if (hair && skin && clothes) return { hair, skin, clothes };
-    return null;
-  } catch(_) { return null; }
-}
-function resolvePlayerSkinForSocket(sid, fallbackPseudo) {
-  try {
-    // Prefer account-bound skin if logged in
-    const sessUser = getSessionUsernameBySocketId(sid);
-    let skin = sessUser ? getPlayerSkin(sessUser) : null;
-    if (!skin && fallbackPseudo) skin = getPlayerSkin(fallbackPseudo);
-    return _validateSkinObject(skin);
-  } catch(_) { return null; }
-}
-function loadUsers() {
-  try {
-    const raw = fs.readFileSync(USERS_FILE, 'utf8');
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === 'object' && obj.users && typeof obj.users === 'object') return obj.users;
-  } catch(_){}
-  return {};
-}
-function saveUsers(users) {
-  try {
-    const tmp = USERS_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ users }, null, 2));
-    fs.renameSync(tmp, USERS_FILE);
-    return true;
-  } catch(e){ console.error('[AUTH] saveUsers failed', e); return false; }
-}
-function sanitizeUsername(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_) { return ''; }
-}
-function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
-function isRegisteredUsername(name){
-  try {
-    return __registeredUsernames.has(normalizeKey(String(name || '')));
-  } catch(_){
-    return false;
-  }
-}
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const iterations = 120000;
-  const keylen = 32;
-  const digest = 'sha256';
-  const hash = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
-  return `pbkdf2$${digest}$${iterations}$${salt}$${hash}`;
-}
-function verifyPassword(password, stored) {
-  try {
-    const parts = String(stored||'').split('$');
-    if (parts.length !== 5) return false;
-    const [scheme, digest, iterStr, salt, hashHex] = parts;
-    if (scheme !== 'pbkdf2') return false;
-    const iterations = parseInt(iterStr,10);
-    const keylen = 32;
-    const comp = crypto.pbkdf2Sync(String(password || ''), salt, iterations, keylen, digest).toString('hex');
-    const a = Buffer.from(comp,'hex'); const b = Buffer.from(hashHex,'hex');
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a,b);
-  } catch(_){ return false; }
-}
-function parseCookies(req) {
-  const out = {};
-  const header = (req && req.headers && req.headers.cookie) ? req.headers.cookie : '';
-  if (!header) return out;
-  header.split(';').forEach(part => {
-    const i = part.indexOf('=');
-    if (i> -1) out[part.slice(0,i).trim()] = decodeURIComponent(part.slice(i+1).trim());
-  });
-  return out;
-}
-const sessions = new Map();
-const SESSION_MAX_AGE_MS = 7*24*60*60*1000;
-function createSession(username) {
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { username, createdAt: Date.now() });
-  return token;
-}
-function getSessionUsernameBySocketId(sid){
-  try {
-    // Fast path: explicit link
-    const sock = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets.get(sid) : null;
-    if (sock && typeof sock.__accountUser === 'string') return sock.__accountUser;
-    if (!sock) return null;
-    const header = (sock.request && sock.request.headers && sock.request.headers.cookie) ? sock.request.headers.cookie
-                  : (sock.handshake && sock.handshake.headers && sock.handshake.headers.cookie) ? sock.handshake.headers.cookie
-                  : '';
-    if (!header) return null;
-    const parts = header.split(';');
-    let token = '';
-    for (const part of parts){
-      const i = part.indexOf('=');
-      const k = (i>-1?part.slice(0,i):part).trim();
-      const v = (i>-1?part.slice(i+1):'').trim();
-      if (k === 'auth') { token = decodeURIComponent(v); break; }
-    }
-    if (!token) return null;
-    const sObj = sessions.get(token);
-    if (!sObj) return null;
-    if ((Date.now() - sObj.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
-    return sObj.username || null;
-  } catch(_){ return null; }
-}
-function isAdminSocket(socket){
-  try {
-    const u = getSessionUsernameBySocketId(socket.id);
-    if (!u) return false;
-    return normalizeKey(u) === 'myg';
-  } catch(_){ return false; }
-}
-function getSessionUsernameByReq(req){
-  try {
-    const cookies = parseCookies(req);
-    const token = cookies['auth'] || '';
-    if (!token) return null;
-    const s = sessions.get(token);
-    if (!s) return null;
-    if ((Date.now() - s.createdAt) > SESSION_MAX_AGE_MS){ sessions.delete(token); return null; }
-    return s.username || null;
-  } catch(_){ return null; }
-}
-
-function getCookieFromHeader(req, name){
-  try{
-    const cookie = req.headers && req.headers.cookie || '';
-    if (!cookie) return '';
-    const parts = cookie.split(';');
-    for (const p of parts){
-      const [k,...rest] = p.trim().split('=');
-      if (k === name) return decodeURIComponent((rest.join('=')||'').trim());
-    }
-  }catch(_){}
-  return '';
-}
-function getAuthCookie(req){
-  return getCookieFromHeader(req, 'auth');
-}
-// CSRF helpers (double-submit cookie)
-function ensureCsrfCookie(req,res,next){
-  try{
-    let token = getCookieFromHeader(req,'csrf');
-    if (!token){
-      // generate lightweight token
-      token = (Math.random().toString(16).slice(2)+Date.now().toString(16));
-      const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
-      const maxAge = 60*60*24*365; // 1 year
-      const parts = [
-        `csrf=${encodeURIComponent(token)}`,
-        'Path=/',
-        `Max-Age=${maxAge}`,
-        'SameSite=Lax'
-      ];
-      if (secure) parts.push('Secure');
-      // NOT HttpOnly so client can read & send header
-      res.setHeader('Set-Cookie', parts.join('; '));
-      // also attach for downstream handlers
-      req.csrfToken = token;
-    }else{
-      req.csrfToken = token;
-    }
-  }catch(_){}
-  return next();
-}
-function passesCsrf(req){
-  try{
-    // only enforce for state-changing methods
-    const method = (req.method||'GET').toUpperCase();
-    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return true;
-    const cookieTok = getCookieFromHeader(req,'csrf');
-    const headerTok = (req.headers['x-csrf-token']||req.headers['X-CSRF-Token']||'')+''; // node lowercases headers
-    if (!cookieTok || !headerTok) return false;
-    if (headerTok !== cookieTok) return false;
-    // Optional: origin check if present
-    const origin = (req.headers['origin']||'')+'';
-    if (origin){
-      try{
-        const u = new URL(origin);
-        const host = (req.headers['host']||'')+'';
-        if (host && u.host !== host) return false;
-      }catch(_){}
-    }
-    return true;
-  }catch(_){ return false; }
-}
-function setAuthCookie(res, token){
-  try {
-    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
-    const maxAge = Math.floor(SESSION_MAX_AGE_MS/1000);
-    const parts = [
-      `auth=${token}`,
-      'Path=/',
-      'HttpOnly',
-      `Max-Age=${maxAge}`,
-      'SameSite=Lax'
-    ];
-    if (secure) parts.push('Secure');
-    res.setHeader('Set-Cookie', parts.join('; '));
-  } catch(_){}
-}
-function clearAuthCookie(res){
-  try {
-    const secure = String(process.env.NODE_ENV||'').toLowerCase() === 'production';
-    const parts = [
-      'auth=',
-      'Path=/',
-      'HttpOnly',
-      'Max-Age=0',
-      'SameSite=Lax'
-    ];
-    if (secure) parts.push('Secure');
-    res.setHeader('Set-Cookie', parts.join('; '));
-  } catch(_){}
-}
-setInterval(()=>{
-  try {
-    const now = Date.now();
-    for (const [t,s] of sessions) if ((now - (s.createdAt||0)) > SESSION_MAX_AGE_MS) sessions.delete(t);
-  } catch(_){}
-}, 60*60*1000);
-/* === LADDER JSON (Top 100) === */
-const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
-function ensureLadderFile() {
-  try {
-    const dir = path.dirname(LADDER_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  } catch (_e) { /* ignore */ }
-  try {
-    if (!fs.existsSync(LADDER_FILE)) fs.writeFileSync(LADDER_FILE, '');
-  } catch (_e) { /* ignore */ }
-}
-function sanitizePlayerName(u) {
-  try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
-}
-function loadLadder() {
-  try {
-    const raw = fs.readFileSync(LADDER_FILE, 'utf8');
-    if (!raw || !raw.trim()) return [];
-    const obj = JSON.parse(raw);
-    let arr = [];
-    if (Array.isArray(obj)) arr = obj;
-    else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
-    // sanitize
-    arr = arr.filter(e => e && typeof e.player === 'string' &&
-                          Number.isFinite(e.wave) &&
-                          Number.isFinite(e.kills) &&
-                          Number.isFinite(e.ts));
-    return arr;
-  } catch (_e) { return []; }
-}
-function saveLadder(arr) {
-  try {
-    const tmp = LADDER_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
-    fs.renameSync(tmp, LADDER_FILE);
-    return true;
-  } catch (e) { console.error('[LADDER] save failed', e); return false; }
-}
-// ---- Server-authoritative ladder insert (no client trust) ----
-function recordLadderScoreServer(playerName, wave, kills) {
-  try {
-    if (!db || !__pgReady) return false;
-    const name = sanitizePlayerName(playerName);
-    const w = Number(wave) || 0;
-    const k = Number(kills) || 0;
-    if (!name) return false;
-    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
-    const now = Date.now();
-    db.q(
-      `INSERT INTO ladder (player, wave, kills, ts)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (player) DO UPDATE
-         SET wave = EXCLUDED.wave,
-             kills = EXCLUDED.kills,
-             ts = EXCLUDED.ts
-         WHERE (EXCLUDED.wave > ladder.wave)
-            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills > ladder.kills)
-            OR (EXCLUDED.wave = ladder.wave AND EXCLUDED.kills = ladder.kills AND EXCLUDED.ts < ladder.ts)`,
-      [name, w|0, k|0, now]
-    ).catch(()=>{});
-    return true;
-  } catch(_){ return false; }
-}
-app.get('/api/ladder', async (req,res)=>{
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const r = await db.q("SELECT player, wave, kills, ts FROM ladder WHERE player !~* '^BOT[0-9]+$' ORDER BY wave DESC, kills DESC, ts ASC LIMIT 100", []);
-    return res.json({ ok:true, ladder: r.rows || [] });
-  } catch(e){ return res.status(500).json({ ok:false }); }
-});
-/* username taken checker (for unauthenticated pseudo) */
-/* username taken checker (for unauthenticated pseudo) */
-app.get('/api/username-taken', async (req,res)=>{
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const q = sanitizeUsername((req.query && req.query.u) || '');
-    if (!q) return res.json({ ok:true, taken:false });
-    const lower = normalizeKey(q);
-    const r = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-    return res.json({ ok:true, taken: !!(r.rows && r.rows.length) });
-  } catch(e){ return res.status(500).json({ ok:false }); }
-});
-/* current session */
-app.get('/api/me', async (req,res)=>{
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const u = getSessionUsernameByReq(req);
-    if (!u) return res.json({ ok:false });
-    const lower = normalizeKey(u);
-    const r = await db.q('SELECT username, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-    if (!r.rows.length) return res.json({ ok:false });
-    const row = r.rows[0];
-    const shopUpgrades = { hp: (row.shop_hp|0)||0, dmg: (row.shop_dmg|0)||0 };
-    let skin = null;
-    try { if (row.skin && typeof row.skin === 'object') skin = { hair: row.skin.hair, skin: row.skin.skin, clothes: row.skin.clothes }; } catch(_){}
-    if (skin && skin.hair && skin.skin && skin.clothes) { __skinCache.set(lower, skin); }
-    return res.json({ ok:true, username: row.username, gold: (row.gold|0)||0, shopUpgrades, skin });
-  } catch(e){ return res.json({ ok:false }); }
-});
-/* signup */
-/* signup */
-// === Simple in-memory rate limiter (per-IP, per-key) ===
-const __rateBuckets = new Map();
-/**
- * rateLimitAllow(ip, key, max, windowMs) -> { ok: boolean, retryAfterMs: number }
- */
-function rateLimitAllow(ip, key, max, windowMs) {
-  try {
-    const now = Date.now();
-    const mapKey = String(ip||'') + '|' + String(key||'');
-    let b = __rateBuckets.get(mapKey);
-    if (!b || now >= b.resetAt) {
-      b = { count: 1, resetAt: now + windowMs };
-      __rateBuckets.set(mapKey, b);
-      return { ok: true, retryAfterMs: 0 };
-    }
-    if (b.count < max) {
-      b.count++;
-      return { ok: true, retryAfterMs: 0 };
-    }
-    return { ok: false, retryAfterMs: Math.max(0, b.resetAt - now) };
-  } catch(_) { return { ok: true, retryAfterMs: 0 }; }
-}
-// Periodic cleanup to avoid unbounded growth
-setInterval(()=>{ 
-  try { 
-    const now = Date.now();
-    for (const [k,v] of __rateBuckets) { if (!v || now >= v.resetAt) __rateBuckets.delete(k); }
-  } catch(_){}
-}, 10*60*1000);
-app.post('/api/signup', async (req,res)=>{
-  { try {
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-      const rl = rateLimitAllow(ip, 'signup', 5, 60*60*1000);
-      if (!rl.ok) {
-        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
-        return res.status(429).json({ ok:false, code:'rate_limited' });
-      }
-    } catch(_){}
-  }
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const { username, password } = req.body || {};
-    const user = sanitizeUsername(username);
-    const pass = String(password || '');
-    if (!user || user.length < 3) return res.status(400).json({ ok:false, code:'invalid_username' });
-    if (pass.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
-    const lower = normalizeKey(user);
-    const ex = await db.q('SELECT 1 FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-    if (ex.rows.length) return res.status(409).json({ ok:false, code:'exists' });
-    const passHash = hashPassword(pass);
-    await db.q('INSERT INTO users (username, username_lower, pass_hash) VALUES ($1,$2,$3)', [user, lower, passHash]);
-    __registeredUsernames.add(lower);
-    __skinCache.delete(lower);
-    const token = createSession(user);
-    setAuthCookie(res, token);
-    return res.json({ ok:true, username: user });
-  } catch(e){ console.error('[signup]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});
-
-app.post('/api/login', async (req,res)=>{
-  { try {
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-      const rl = rateLimitAllow(ip, 'login', 10, 5*60*1000);
-      if (!rl.ok) {
-        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
-        return res.status(429).json({ ok:false, code:'rate_limited' });
-      }
-    } catch(_){}
-  }
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const { username, password } = req.body || {};
-    const user = sanitizeUsername(username);
-    const pass = String(password || '');
-    const lower = normalizeKey(user);
-    const r = await db.q('SELECT username, username_lower, pass_hash, gold, shop_hp, shop_dmg, skin FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-    const u = r.rows[0];
-    if (!u || !verifyPassword(pass, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid' });
-    try { if (u.skin && typeof u.skin === 'object') { __skinCache.set(lower, { hair: u.skin.hair, skin: u.skin.skin, clothes: u.skin.clothes }); } } catch(_){}
-    __registeredUsernames.add(lower);
-    const token = createSession(u.username);
-    setAuthCookie(res, token);
-    return res.json({ ok:true, username: u.username });
-  } catch(e){ console.error('[login]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});
-
-
-
-app.post('/api/shop/buy', async (req,res)=>{
-  { try {
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-      const rl = rateLimitAllow(ip, 'shop_buy', 60, 60*1000);
-      if (!rl.ok) {
-        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
-        return res.status(429).json({ ok:false, code:'rate_limited' });
-      }
-    } catch(_){}
-  }
-  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const uname = getSessionUsernameByReq(req);
-    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
-    const { type } = req.body || {};
-    if (type !== 'hp' && type !== 'dmg') return res.status(400).json({ ok:false, code:'bad_request' });
-    const lower = normalizeKey(uname);
-    const out = await db.tx(async (c)=>{
-      const r = await c.query('SELECT gold, shop_hp, shop_dmg FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
-      if (!r.rows.length) throw new Error('user_not_found');
-      const row = r.rows[0];
-      const curLv = (type==='hp' ? (row.shop_hp|0) : (row.shop_dmg|0)) || 0;
-      const price = (type==='hp') ? 50 : 200;
-      const maxLv = 20;
-      if (curLv >= maxLv) return { ok:false, code:'max_level' };
-      if ((row.gold|0) < price) return { ok:false, code:'not_enough_gold' };
-      const newGold = (row.gold|0) - price;
-      const newLv = curLv + 1;
-      if (type==='hp') await c.query('UPDATE users SET gold=$2, shop_hp=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
-      else await c.query('UPDATE users SET gold=$2, shop_dmg=$3 WHERE username_lower=$1', [lower, newGold, newLv]);
-      return { ok:true, gold:newGold, level:newLv, hp: (type==='hp'?newLv: (row.shop_hp|0)||0), dmg: (type==='dmg'?newLv: (row.shop_dmg|0)||0) };
-    }).catch(()=>({ ok:false, code:'server_error' }));
-    if (!out.ok) return res.json(out);
-    try {
-      for (const [sid] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
-        const u = getSessionUsernameBySocketId(sid);
-        if (!u || normalizeKey(u) !== lower) continue;
-        const mappedId = (typeof socketToGame !== 'undefined' && socketToGame[sid]) ? socketToGame[sid] : null;
-        const g = activeGames.find(gg => gg && gg.id === mappedId) || null;
-        if (g && g.players && g.players[sid]) {
-          g.players[sid].accountShop = { hp: out.hp|0, dmg: out.dmg|0 };
-          try {
-            const oldMax = g.players[sid].maxHealth || 100;
-            const stats = getPlayerStats(g.players[sid]);
-            const ratio = Math.max(0, Math.min(1, (g.players[sid].health || 0) / (oldMax || 100)));
-            g.players[sid].maxHealth = stats.maxHp;
-            g.players[sid].health = Math.round(stats.maxHp * ratio);
-          } catch(_) {}
-          try { io.to(sid).emit('accountShopUpdated', { hp: out.hp|0, dmg: out.dmg|0 }); } catch(_){}
-        }
-      }
-    } catch(_){}
-    return res.json({ ok:true, gold: out.gold|0, level: out.level|0 });
-  } catch(e){ return res.status(500).json({ ok:false, code:'server_error' }); }
-});
-
-app.post('/api/skin/buy', async (req,res)=>{
-  { try {
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-      const rl = rateLimitAllow(ip, 'skin_buy', 60, 60*1000);
-      if (!rl.ok) {
-        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
-        return res.status(429).json({ ok:false, code:'rate_limited' });
-      }
-    } catch(_){}
-  }
-  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const uname = getSessionUsernameByReq(req);
-    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
-    const { hair, skin, clothes } = req.body || {};
-    const hexOk = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
-    if (!hexOk(hair) || !hexOk(skin) || !hexOk(clothes)) return res.status(400).json({ ok:false, code:'bad_colors' });
-    const lower = normalizeKey(uname);
-    const PRICE = 20;
-    const out = await db.tx(async (c)=>{
-      const r = await c.query('SELECT gold FROM users WHERE username_lower=$1 FOR UPDATE', [lower]);
-      if (!r.rows.length) throw new Error('user_not_found');
-      const row = r.rows[0];
-      if ((row.gold|0) < PRICE) return { ok:false, code:'not_enough_gold' };
-      const newGold = (row.gold|0) - PRICE;
-      const skinObj = { hair: String(hair).toLowerCase(), skin: String(skin).toLowerCase(), clothes: String(clothes).toLowerCase() };
-      await c.query('UPDATE users SET gold=$2, skin=$3, skin_updated_at = EXTRACT(EPOCH FROM now())*1000 WHERE username_lower=$1', [lower, newGold, skinObj]);
-      return { ok:true, gold:newGold, skin: skinObj };
-    }).catch(()=>({ ok:false, code:'server_error' }));
-    if (!out.ok) return res.json(out);
-    __skinCache.set(lower, out.skin);
-    return res.json({ ok:true, gold: out.gold|0, skin: out.skin });
-  } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});
-
-app.post('/api/logout', (req,res)=>{
-  try {
-    const token = getAuthCookie(req);
-    if (token && sessions.has(token)) { sessions.delete(token); }
-  } catch(_){}
-  try { clearAuthCookie(res); } catch(_){}
-  return res.json({ ok:true });
-});
-
-app.post('/api/change-password', async (req,res)=>{
-  { try {
-      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-      const rl = rateLimitAllow(ip, 'change_password', 10, 60*60*1000);
-      if (!rl.ok) {
-        res.setHeader('Retry-After', Math.ceil(rl.retryAfterMs/1000));
-        return res.status(429).json({ ok:false, code:'rate_limited' });
-      }
-    } catch(_){}
-  }
-  if (!passesCsrf(req)) { return res.status(403).json({ ok:false, code:'csrf' }); }
-  try {
-    if (!db || !__pgReady) return res.status(503).json({ ok:false, code:'db_unavailable' });
-    const uname = getSessionUsernameByReq(req);
-    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
-    const { currentPassword, newPassword } = req.body || {};
-    const curr = String(currentPassword || ''); const next = String(newPassword || '');
-    if (next.length < 6) return res.status(400).json({ ok:false, code:'weak_password' });
-    const lower = normalizeKey(uname);
-    const r = await db.q('SELECT pass_hash FROM users WHERE username_lower=$1 LIMIT 1', [lower]);
-    const u = r.rows[0];
-    if (!u || !verifyPassword(curr, u.pass_hash)) return res.status(401).json({ ok:false, code:'invalid_current' });
-    const newHash = hashPassword(next);
-    await db.q('UPDATE users SET pass_hash=$2 WHERE username_lower=$1', [lower, newHash]);
-    for (const [t,ses] of Array.from(sessions.entries())) if (ses && ses.username && normalizeKey(ses.username) === lower) sessions.delete(t);
-    clearAuthCookie(res);
-    return res.json({ ok:true });
-  } catch(e){ console.error('[change-password]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
-});
-
+/* === AUTH: PBKDF2 hashes, cookie sessions (PostgreSQL only) === */
