@@ -263,7 +263,7 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
     const fakeCounts = new Map(); // index -> fake display count
 
     function _fakeRangeForIndex(i){
-      if (i === 1) return { min: 3, max: 7 };
+      if (i === 1) return { min: 2, max: 7 };
       if (i >= 2 && i <= 6) return { min: 0, max: 1 };
       return { min: 0, max: 0 };
     }
@@ -283,7 +283,9 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
         const r = _fakeRangeForIndex(i);
         if (r.min === 0 && r.max === 0) { fakeCounts.set(i, 0); continue; }
         const cur = fakeCounts.get(i) || 0;
-        const roll = Math.floor(Math.random() * 3) - 1; // -1,0,1
+        const rnum = Math.random();
+        // 30% +1, 40% -1, 30% 0
+        const roll = (rnum < 0.30) ? 1 : (rnum < 0.70 ? -1 : 0);
         let next = cur + roll;
         next = _clamp(next, r.min, r.max);
         fakeCounts.set(i, next);
@@ -414,7 +416,20 @@ try {
         if (!target) { try { socket.destroy(); } catch(_){ } return; }
 
         try {
-          target.send({ type: 'sticky-connection', initialData: firstChunk }, socket);
+          
+        // Enforce combined capacity (real + fake). If display >= capacity, deny connection.
+        try {
+          const realC = (joinedCounts.get(idx) || 0) | 0;
+          const fakeC = (fakeCounts.get(idx) || 0) | 0;
+          const displayC = Math.min(WORKER_CAPACITY, realC + fakeC);
+          if (displayC >= WORKER_CAPACITY) {
+            try { socket.destroy(); } catch(_){
+            } 
+            return;
+          }
+        } catch(_){
+        }
+        target.send({ type: 'sticky-connection', initialData: firstChunk }, socket);
         } catch (e) {
           try { socket.destroy(); } catch(_){}
         }
@@ -843,7 +858,7 @@ app.get('/api/servers', (req, res) => {
       capacity: WORKER_CAPACITY,
       total: __clusterJoinedCounts.length,
       me: WORKER_INDEX,
-      workers: __clusterJoinedCounts.map((c, i) => ({ id: i+1, count: c|0, display: ((c|0) + ((__clusterFakeCounts[i]|0) || 0)) })),
+      workers: __clusterJoinedCounts.map((c, i) => ({ id: i+1, count: c|0, display: Math.min(WORKER_CAPACITY, ((c|0) + ((__clusterFakeCounts[i]|0) || 0))) })),
       ts: Date.now()
     });
   } catch(e){

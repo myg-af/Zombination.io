@@ -871,62 +871,31 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 <!-- /AUTO-FIRE TOGGLE -->
 <!-- Conteneur horizontal des 4 tuiles -->
 <div id="buildTiles" style="display:flex; gap:10px; flex-wrap:wrap;">
-<!-- Grande tourelle -->
-<button class="build-tile" data-tip="Tourelle (HP: 500, Dégâts: 10, Cadence: 1/s)" data-type="T" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<div style="width:42px;height:42px;background:#d33;border:2px solid #3a0b0b;box-shadow:0 2px 8px #0007; position:relative;">
-<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-</div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$1000 • 1/s • 10 dmg</div>
-</button>
-<!-- Big-tourelle -->
-<button class="build-tile" data-tip="Big-tourelle (HP: 2500, Dégâts: 25, Cadence: 2/s)" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<catch(_){}
-
-        // i18n labels
-        var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
-        var label1000 = String(T.buyGold1000 || '1,000 Gold – 5€');
-        // Accept legacy 'buyGold2000' typo if present in translations; fallback to 5,000
-        var label5000 = String(T.buyGold5000 || T.buyGold2000 || '5,000 Gold – 20€');
-        var earnNote  = String(T.earnGoldFrom5 || T.earnGoldFrom6 || 'You can earn gold for free starting from round 5.');
-
-        var wrap = document.createElement('div');
-        wrap.id = 'goldBuyButtons';
-        wrap.style.display='flex';
-        wrap.style.gap='8px';
-        wrap.style.flexWrap='wrap';
-        wrap.style.justifyContent='center';
-
-        function pill(label, priceId){
-          var b = document.createElement('button');
-          b.type='button';
-          b.textContent=label;
-          b.style.cssText='background:#6865ff;color:#fff;border:none;border-radius:12px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);';
-          b.onclick=function(){ window.startCheckout(priceId); };
-          return b;
-        }
-
-        // Stripe price ids are fixed server-side; do not expose dynamic values
-        wrap.appendChild(pill(label1000,'price_1S2AGI1FI4pQv5J1q08Zqe49'));
-        wrap.appendChild(pill(label5000,'price_1S2AGX1FI4pQv5J1MffQusAI'));
-
-        // Note under buttons
-        var note = document.createElement('div');
-        note.id = 'goldEarnNote';
-        note.textContent = earnNote;
-        note.style.cssText = 'font-size:12px;color:#9ab;text-align:center;';
-
-        parent.appendChild(wrap);
-        parent.appendChild(note);
-
-        return true;
-      }catch(_){ return false; }
-    }232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
-</button>
-<!-- Porte -->
-<button class="build-tile" data-tip="Porte (HP: 500)" data-type="D" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$200</div>
-</button>
+  <!-- Big turret -->
+  <button class="build-tile" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:2px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$—</div>
+  </button>
+  <!-- Turret -->
+  <button class="build-tile" data-type="T" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#c33;border:2px solid #330;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:2px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$—</div>
+  </button>
+  <!-- Mini turret -->
+  <button class="build-tile" data-type="t" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:2px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$—</div>
+  </button>
+  <!-- Wall -->
+  <button class="build-tile" data-type="B" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:2px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$—</div>
+  </button>
+  <!-- Door -->
+  <button class="build-tile" data-type="D" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
+    <div style="width:42px;height:42px;background:#a57b4a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
+    <div style="font-size:13px;color:#fff;background:#232;padding:2px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$—</div>
+  </button>
 </div>
 <!-- Tooltip hover -->
 <div id="buildTooltip" style="display:none; position:absolute; right:0; bottom:70px; max-width:260px; background:#111c; color:#fff; font-size:13px; padding:8px 10px; border-radius:8px; box-shadow:0 4px 18px #000a; pointer-events:none; white-space:nowrap;"></div>
@@ -1011,7 +980,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
         var real = (j.workers && j.workers[i] ? (j.workers[i].count|0) : 0);
         var shown = (j.workers && j.workers[i] && typeof j.workers[i].display === 'number') ? (j.workers[i].display|0) : real;
         var count = shown;
-        var full = real >= (j.capacity|0);
+        var full = shown >= (j.capacity|0);
         var row = document.createElement('div'); row.className='srv';
         var left = document.createElement('div'); left.innerHTML = '<div class="name">Server '+(i+1)+'</div><div class="count">'+count+'/'+j.capacity+' players</div>';
         var btn = document.createElement('button'); btn.className='btn'; btn.textContent = full ? 'Full' : 'Join'; if (full) { btn.setAttribute('disabled',''); btn.classList.add('full'); }
@@ -4733,11 +4702,15 @@ if (structHPGrid) {
 });
 
 	function closeShopIfOutside(evt) {
-	  if (shopModal.style.display !== 'block') return;
+	  // Re-fetch elements to avoid nulls if DOM wasn't ready at script eval
+	  const sm = document.getElementById('shopModal');
+	  if (!sm) return;
+	  if (sm.style.display !== 'block') return;
 	  const target = evt.target;
+	  const sb = document.getElementById('shopBtn');
 	  // Ne ferme pas si on clique sur le bouton ou dans le panneau
-	  if (shopModal.contains(target) || shopBtn.contains(target)) return;
-	  shopModal.style.display = 'none';
+	  if (sm.contains(target) || (sb && sb.contains(target))) return;
+	  sm.style.display = 'none';
 	}
 	document.addEventListener('pointerdown', closeShopIfOutside, { passive: true });
 
@@ -4992,21 +4965,43 @@ el.innerHTML += `
   });
 }
 
-	shopBtn.onclick = async () => {
-	  renderShopUpgrades();
-	  shopModal.style.display = 'block';
-	  // Recalage à l’ouverture (tailles DOM connues)
-	  positionShopUI();
-	};
+	// Bind Shop UI handlers safely even if DOM not ready yet
+	(function _bindShopUI(){
+	  function bind(){
+	    const sb = document.getElementById('shopBtn');
+	    const sm = document.getElementById('shopModal');
+	    const sc = document.getElementById('shopClose');
+	    if (!sb || !sm || !sc) return false;
+	    if (!sb._shopBound){
+	      sb._shopBound = true;
+	      sb.addEventListener('click', function(){
+	        try { renderShopUpgrades(); } catch(_){ }
+	        sm.style.display = 'block';
+	        try { positionShopUI(); } catch(_){ }
+	      }, { passive:true });
+	    }
+	    if (!sc._shopBound){
+	      sc._shopBound = true;
+	      sc.addEventListener('click', function(){ sm.style.display = 'none'; }, { passive:true });
+	    }
+	    sm.addEventListener('mousedown', function(e){ if (e.target === sm) sm.style.display = 'none'; }, { passive:true });
+	    return true;
+	  }
+	  if (!bind()){
+	    if (document.readyState === 'loading'){
+	      document.addEventListener('DOMContentLoaded', bind, { once:true, passive:true });
+	    } else {
+	      try {
+	        const mo = new MutationObserver((m,obs)=>{ if (bind()) { try{obs.disconnect();}catch(_){ } } });
+	        mo.observe(document.documentElement || document.body, { childList:true, subtree:true });
+	        setTimeout(()=>{ try{ mo.disconnect(); }catch(_){ } }, 3000);
+	      } catch(_){
+	        setTimeout(bind, 0);
+	      }
+	    }
+	  }
+	})();
 
-	shopClose.onclick = async () => {
-	  shopModal.style.display = 'none';
-	};
-
-	// (optionnel, fermer si on clique dehors la fenêtre)
-	shopModal.addEventListener('mousedown', function(e) {
-	  if (e.target === shopModal) shopModal.style.display = 'none';
-	});
 
     updateUITexts();
     drawHUD();
@@ -12354,5 +12349,3 @@ if (!hudStats) return;
     }
   })();
 </script>
-
-
