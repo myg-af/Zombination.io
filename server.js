@@ -256,6 +256,50 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
         }
       } catch(_){}
     }
+    // === Fake players (display only) ===
+    // - Server 1: between 3 and 7
+    // - Servers 2..6: between 0 and 1
+    // - Others: 0
+    const fakeCounts = new Map(); // index -> fake display count
+
+    function _fakeRangeForIndex(i){
+      if (i === 1) return { min: 3, max: 7 };
+      if (i >= 2 && i <= 6) return { min: 0, max: 1 };
+      return { min: 0, max: 0 };
+    }
+
+    function initFakeCounts(){
+      for (let i = 1; i <= WORKERS; i++){
+        const r = _fakeRangeForIndex(i);
+        const initial = (r.min === r.max) ? r.min : (r.min + Math.floor(Math.random() * (r.max - r.min + 1)));
+        fakeCounts.set(i, initial|0);
+      }
+    }
+
+    function _clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v|0)); }
+
+    function tickFakeCounts(){
+      for (let i = 1; i <= WORKERS; i++){
+        const r = _fakeRangeForIndex(i);
+        if (r.min === 0 && r.max === 0) { fakeCounts.set(i, 0); continue; }
+        const cur = fakeCounts.get(i) || 0;
+        const roll = Math.floor(Math.random() * 3) - 1; // -1,0,1
+        let next = cur + roll;
+        next = _clamp(next, r.min, r.max);
+        fakeCounts.set(i, next);
+      }
+      broadcastFakeCounts();
+    }
+
+    function broadcastFakeCounts(){
+      try {
+        const arr = Array.from({ length: WORKERS }, (_, i) => (fakeCounts.get(i+1) || 0));
+        for (const [i, w] of workerByIndex.entries()){
+          try { w.send({ type: 'cluster:fake-counts', counts: arr }); } catch(_){}
+        }
+      } catch(_){}
+    }
+
 
     function bindWorkerMessages(idx, w){
       try {
@@ -284,6 +328,11 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
 
     for (let i=1;i<=WORKERS;i++) spawnAtIndex(i);
 
+    // Initialize & broadcast fake players
+    initFakeCounts();
+    broadcastFakeCounts();
+
+
     // Broadcast initial counts (all 0)
     broadcastJoinedCounts();
 // Periodic aggregated connected count (every 5 minutes)
@@ -299,6 +348,14 @@ try {
     }, 5 * 60 * 1000);
   }
 } catch(_){}
+
+    // Periodic fake players random walk (every minute)
+    try {
+      if (!global.__fakeTickTimerInstalled) {
+        global.__fakeTickTimerInstalled = true;
+        setInterval(() => { try { tickFakeCounts(); } catch(_){} }, 60 * 1000);
+      }
+    } catch(_){}
 
 
     // Choose an available worker index, preferring the desired one; falls back to nearest available
@@ -763,12 +820,16 @@ global.__joinedCountLocal = global.__joinedCountLocal || 0;
 let __joinedCountLocal = global.__joinedCountLocal;
 // Cluster-wide joined counts snapshot (broadcast by master)
 let __clusterJoinedCounts = Array.from({ length: Math.max(1, parseInt(process.env.WORKERS||'1',10) || 1) }, () => 0);
+// Fake players counts snapshot (display-only)
+let __clusterFakeCounts   = Array.from({ length: Math.max(1, parseInt(process.env.WORKERS||'1',10) || 1) }, () => 0);
 
 // Receive cluster-wide counts from master
 try {
   process.on('message', (m) => {
     if (m && m.type === 'cluster:joined-counts' && Array.isArray(m.counts)) {
       __clusterJoinedCounts = m.counts.slice(0);
+    } else if (m && m.type === 'cluster:fake-counts' && Array.isArray(m.counts)) {
+      __clusterFakeCounts = m.counts.slice(0);
     }
   });
 } catch(_) {}
@@ -782,7 +843,7 @@ app.get('/api/servers', (req, res) => {
       capacity: WORKER_CAPACITY,
       total: __clusterJoinedCounts.length,
       me: WORKER_INDEX,
-      workers: __clusterJoinedCounts.map((c, i) => ({ id: i+1, count: c|0 })),
+      workers: __clusterJoinedCounts.map((c, i) => ({ id: i+1, count: c|0, display: ((c|0) + ((__clusterFakeCounts[i]|0) || 0)) })),
       ts: Date.now()
     });
   } catch(e){

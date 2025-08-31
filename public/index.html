@@ -1008,8 +1008,10 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
       if (!list) return;
       list.innerHTML = '';
       for (var i=0;i<j.total;i++){
-        var count = (j.workers && j.workers[i] ? (j.workers[i].count|0) : 0);
-        var full = count >= (j.capacity|0);
+        var real = (j.workers && j.workers[i] ? (j.workers[i].count|0) : 0);
+        var shown = (j.workers && j.workers[i] && typeof j.workers[i].display === 'number') ? (j.workers[i].display|0) : real;
+        var count = shown;
+        var full = real >= (j.capacity|0);
         var row = document.createElement('div'); row.className='srv';
         var left = document.createElement('div'); left.innerHTML = '<div class="name">Server '+(i+1)+'</div><div class="count">'+count+'/'+j.capacity+' players</div>';
         var btn = document.createElement('button'); btn.className='btn'; btn.textContent = full ? 'Full' : 'Join'; if (full) { btn.setAttribute('disabled',''); btn.classList.add('full'); }
