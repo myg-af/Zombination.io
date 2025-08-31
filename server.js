@@ -415,7 +415,212 @@ const gameMapModule = require('./game/gameMap');
 
 const app = express();
 app.use(compression());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '1mb', verify:(req,res,buf)=>{ try{ req.rawBody = buf; }catch(_){ } } }));
+
+
+/* === Stripe Checkout (TEST) minimal integration — safe & isolated === */
+let stripe = null;
+try {
+  const STRIPE_SECRET_KEY = String(process.env.STRIPE_SECRET_KEY||'').trim();
+  if (STRIPE_SECRET_KEY) {
+    const Stripe = require('stripe');
+    stripe = new Stripe(STRIPE_SECRET_KEY);
+    // Track processed Stripe sessions to avoid duplicate credits in case of retries
+    var __processedCheckoutSessions = new Set();
+
+  }
+} catch(_){ stripe = null; }
+
+/* Build absolute return URL based on current host */
+function absoluteBaseURL(req){
+  try {
+    const proto = (req.headers['x-forwarded-proto'] || (req.connection && req.connection.encrypted ? 'https' : 'http') || 'http').toString();
+    const host = String(req.headers.host || '').trim();
+    return proto + '://' + host;
+  } catch(_){ return 'http://localhost:3000'; }
+}
+function checkoutReturnURL(req, result){
+  const base = absoluteBaseURL(req);
+  return base + '/?pay=' + encodeURIComponent(result||'success');
+}
+
+/* In-memory rate-limit for checkout (very light) */
+const __checkoutHits = new Map();
+function rateLimitCheckout(ip){
+  try{
+    const now = Date.now();
+    const rec = __checkoutHits.get(ip) || {ts:now, n:0};
+    if (now - rec.ts > 60_000) { rec.ts = now; rec.n = 0; }
+    rec.n++;
+    __checkoutHits.set(ip, rec);
+    return rec.n <= 5; // 5 req / min / IP
+  }catch(_){ return true; }
+}
+
+/* POST /api/checkout — expects {priceId} */
+app.post('/api/checkout', async (req,res)=>{
+  // basic IP rate limit
+  try { 
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+    if (!rateLimitCheckout(ip)) return res.status(429).json({ ok:false, code:'rate_limited' });
+  } catch(_){}
+
+  // CSRF / allowed origin (reuses your existing helper)
+  try { if (!passesCsrf(req)) return res.status(403).json({ ok:false, code:'csrf' }); } catch(_){}
+
+  try {
+    if (!stripe) return res.status(503).json({ ok:false, code:'stripe_unavailable' });
+
+    const uname = getSessionUsernameByReq(req);
+    if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
+
+    const priceId = String((req.body && req.body.priceId) || '').trim();
+    if (!/^price_[a-zA-Z0-9]+$/.test(priceId)) return res.status(400).json({ ok:false, code:'bad_price_id' });
+
+    // Allowlist test prices and expected amounts (EUR cents)
+    const PRICE_MAP = {
+      'price_1S2AGI1FI4pQv5J1q08Zqe49': { gold: 1000, amount: 500  },
+      'price_1S2AGX1FI4pQv5J1MffQusAI': { gold: 5000, amount: 2000 },
+    };
+    const entry = PRICE_MAP[priceId];
+    if (!entry) return res.status(400).json({ ok:false, code:'price_not_allowed' });
+
+    // Retrieve price from Stripe and validate amount/devise
+    const price = await stripe.prices.retrieve(priceId);
+    if (!price || price.active !== true) return res.status(400).json({ ok:false, code:'price_inactive' });
+
+    // unit_amount can be under currency_options for multi-currency
+    let amount = price.unit_amount != null ? price.unit_amount : null;
+    let currency = price.currency || null;
+    if (amount == null && price.currency_options && price.currency_options.eur){
+      amount = price.currency_options.eur.unit_amount;
+      currency = 'eur';
+    }
+    if (currency !== 'eur') return res.status(400).json({ ok:false, code:'bad_currency' });
+    if (amount !== entry.amount) return res.status(400).json({ ok:false, code:'amount_mismatch', amount });
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      allow_promotion_codes: false,
+      client_reference_id: String(uname),
+      metadata: {
+        username: String(uname),
+        gold: String(entry.gold),
+        price_id: priceId
+      },
+      success_url: checkoutReturnURL(req, 'success'),
+      cancel_url: checkoutReturnURL(req, 'cancel')
+    });
+
+    return res.json({ ok:true, url: session.url });
+  } catch(e){
+    try { console.error('[api_checkout]', e); } catch(_){}
+    return res.status(500).json({ ok:false, code:'server_error' });
+  }
+});
+// --- Stripe Webhook to grant Gold after successful payment (TEST) ---
+// We verify the signature when STRIPE_WEBHOOK_SECRET is provided. Otherwise (e.g., local dev
+// with Stripe CLI forwarding) we trust the JSON body.
+app.post('/stripe/webhook', async (req, res) => {
+  try { console.log('[stripe_webhook] received'); } catch(_){ }
+  try {
+    if (!stripe) return res.status(503).end();
+    const sig = req.headers['stripe-signature'];
+    const secret = String(process.env.STRIPE_WEBHOOK_SECRET||'').trim();
+
+    let event;
+    try {
+      if (sig && secret && req.rawBody) {
+        event = stripe.webhooks.constructEvent(req.rawBody, sig, secret);
+      } else {
+        // Fallback (dev): body already parsed by express.json
+        event = req.body;
+      }
+    } catch (err) {
+      try { console.error('[stripe_webhook] invalid signature', err && err.message); } catch(_) {}
+      return res.status(400).send(`Webhook Error: ${err && err.message || 'invalid'}`);
+    }
+
+    // Only handle completed checkout sessions
+    if (event && event.type === 'checkout.session.completed') {
+      const session = event.data && event.data.object || {};
+      if (String(session.payment_status||'') === 'paid') {
+        // Allowlist of prices and their rewards/expected amounts
+        const PRICE_MAP = {
+          'price_1S2AGI1FI4pQv5J1q08Zqe49': { gold: 1000, amount: 500  }, // 5€
+          'price_1S2AGX1FI4pQv5J1MffQusAI': { gold: 5000, amount: 2000 }, // 20€
+        };
+
+        // Prefer metadata first
+        const meta = session.metadata || {}; const clientRef = String(session.client_reference_id||'').trim();
+        const priceId = String(meta.price_id || '').trim();
+        const uname = String(meta.username || clientRef || '').trim();
+        let entry = PRICE_MAP[priceId] || null;
+
+        // Validate against the actual amount charged
+        const amountTotal = parseInt(session.amount_total||0, 10) || 0;
+        const currency = String(session.currency||'').toLowerCase() || 'eur';
+        // If we did not find a map by metadata, try retrieving the session with line items
+        if (!entry) {
+          try {
+            const full = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items.data.price'] });
+            const li = full && full.line_items && full.line_items.data && full.line_items.data[0];
+            const pr = li && li.price && li.price.id;
+            if (pr && PRICE_MAP[pr]) entry = PRICE_MAP[pr];
+          } catch(_){}
+        }
+
+        if (!entry) {
+          try { console.warn('[stripe_webhook] unknown price id', priceId || '(none)'); } catch(_){}
+        } else if (currency !== 'eur' || amountTotal !== entry.amount) {
+          try { console.warn('[stripe_webhook] amount/currency mismatch', { amountTotal, currency }); } catch(_){}
+        } else if (uname) {
+          if (__processedCheckoutSessions && __processedCheckoutSessions.has(session.id)) {
+            return res.status(200).end();
+          }
+          try { __processedCheckoutSessions.add(session.id); } catch(_) {}
+
+          // Harden: never accept arbitrary metadata.gold; only allowlist
+          const goldToAdd = entry.gold|0;
+
+          // Load & credit account
+          const users = loadUsers();
+          const ukey = normalizeKey(uname);
+          const now = Date.now();
+          const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
+          rec.gold = (rec.gold|0) + goldToAdd;
+
+          if (!saveUsers(users)) {
+            try { console.error('[stripe_webhook] saveUsers failed for', uname); } catch(_) {}
+            return res.status(500).end();
+          }
+
+          // Optionally, notify connected sockets for this user
+          try {
+            for (const [sid, sock] of (io && io.sockets && io.sockets.sockets ? io.sockets.sockets : new Map())) {
+              try {
+                if ((sock && sock.__account && String(sock.__account.usernameLower||'') === ukey) ||
+                    (sock && String(sock.usernameLower||'') === ukey)) {
+                  io.to(sid).emit('goldGranted', { gold: rec.gold|0 });
+                }
+              } catch(_) {}
+            }
+          } catch(_){}
+
+          return res.status(200).end();
+        }
+      }
+    }
+    // For events we do not process, acknowledge
+    return res.status(200).end();
+  } catch (e) {
+    try { console.error('[stripe_webhook] unexpected', e); } catch(_){}
+    return res.status(500).end();
+  }
+});
+
 const server = http.createServer(app);
 
 
@@ -1764,9 +1969,7 @@ function checkWaveEnd(game) {
     game.zombiesKilledThisWave = 0;
     // GOLD AWARD: starting from wave 5, award (prevRound-4) gold
     try {
-      if (prevRound >= 5 && game._lastAwardedRound !== prevRound) {
-        const bonus = prevRound - 4;
-        const users = loadUsers();
+      if (prevRound >= 5 && game._lastAwardedRound !== prevRound) { const bonus = Math.floor((prevRound - 3) / 2); const users = loadUsers();
         const socketsMap = (io && io.sockets && io.sockets.sockets) ? io.sockets.sockets : null;
         // Group sockets by account username to award once per account
         const perUserSids = {};
@@ -4834,7 +5037,7 @@ app.post('/api/skin/buy', (req,res)=>{
     const rec = users[ukey] || (users[ukey] = { username: uname, usernameLower: ukey, passHash:'', createdAt: now, gold:0, shopUpgrades:{hp:0,dmg:0} });
 
     // Price & balance
-    const price = 20;
+    const price = 5;
     if ((rec.gold|0) < price) return res.json({ ok:false, code:'not_enough_gold' });
     rec.gold = (rec.gold|0) - price;
 

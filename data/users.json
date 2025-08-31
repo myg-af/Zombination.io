@@ -5,9 +5,9 @@
       "usernameLower": "myg",
       "passHash": "pbkdf2$sha256$120000$548fdf3759d11e9c7a8c715092482be2$3d9d3878f28ec890e3c933dcdec5081a32e1c6aeb9c62f9c06ebdeb92ff40e8e",
       "createdAt": 1756513363859,
-      "gold": 9981,
+      "gold": 9881,
       "shopUpgrades": {
-        "hp": 0,
+        "hp": 2,
         "dmg": 0
       },
       "skin": {
@@ -33,10 +33,16 @@
       "usernameLower": "opiumdead",
       "passHash": "pbkdf2$sha256$120000$8c8b293e409376acf87966b8500e218c$270b755c0a4f7726bbafca760f1e4c770d664c6d7ebcb190c56c06936a563fc3",
       "createdAt": 1756513409918,
-      "gold": 10000,
+      "gold": 4986,
       "shopUpgrades": {
-        "hp": 0,
-        "dmg": 0
+        "hp": 20,
+        "dmg": 20
+      },
+      "skin": {
+        "hair": "#0d0c0c",
+        "skin": "#f9eded",
+        "clothes": "#0722ff",
+        "updatedAt": 1756561571195
       }
     },
     "creator": {

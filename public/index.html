@@ -880,22 +880,47 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 </button>
 <!-- Big-tourelle -->
 <button class="build-tile" data-tip="Big-tourelle (HP: 2500, Dégâts: 25, Cadence: 2/s)" data-type="G" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<div style="width:42px;height:42px;background:#b48cff;border:2px solid #2b1b3a;box-shadow:0 2px 8px #0007; position:relative;">
-<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-</div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$5000</div>
-</button>
-<!-- Mini-tourelle -->
-<button class="build-tile" data-tip="Mini-tourelle (HP: 200, Dégâts: 5, Cadence: 1 tir / 2s)" data-type="t" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<div style="width:42px;height:42px;background:#3aa6ff;border:2px solid #0b1b2a;box-shadow:0 2px 8px #0007; position:relative;">
-<div style="position:absolute; left:50%; top:50%; width:16px; height:16px; background:#000; transform:translate(-50%,-50%); border-radius:2px;"></div>
-</div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$250</div>
-</button>
-<!-- Mur (barricade) -->
-<button class="build-tile" data-tip="Mur (HP: 500)" data-type="B" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
-<div style="width:42px;height:42px;background:#7b4b2a;border:2px solid #000;box-shadow:0 2px 8px #0007;"></div>
-<div style="font-size:13px;color:#fff;background:#232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
+<catch(_){}
+
+        // i18n labels
+        var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
+        var label1000 = String(T.buyGold1000 || '1,000 Gold – 5€');
+        // Accept legacy 'buyGold2000' typo if present in translations; fallback to 5,000
+        var label5000 = String(T.buyGold5000 || T.buyGold2000 || '5,000 Gold – 20€');
+        var earnNote  = String(T.earnGoldFrom5 || T.earnGoldFrom6 || 'You can earn gold for free starting from round 5.');
+
+        var wrap = document.createElement('div');
+        wrap.id = 'goldBuyButtons';
+        wrap.style.display='flex';
+        wrap.style.gap='8px';
+        wrap.style.flexWrap='wrap';
+        wrap.style.justifyContent='center';
+
+        function pill(label, priceId){
+          var b = document.createElement('button');
+          b.type='button';
+          b.textContent=label;
+          b.style.cssText='background:#6865ff;color:#fff;border:none;border-radius:12px;padding:6px 10px;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);';
+          b.onclick=function(){ window.startCheckout(priceId); };
+          return b;
+        }
+
+        // Stripe price ids are fixed server-side; do not expose dynamic values
+        wrap.appendChild(pill(label1000,'price_1S2AGI1FI4pQv5J1q08Zqe49'));
+        wrap.appendChild(pill(label5000,'price_1S2AGX1FI4pQv5J1MffQusAI'));
+
+        // Note under buttons
+        var note = document.createElement('div');
+        note.id = 'goldEarnNote';
+        note.textContent = earnNote;
+        note.style.cssText = 'font-size:12px;color:#9ab;text-align:center;';
+
+        parent.appendChild(wrap);
+        parent.appendChild(note);
+
+        return true;
+      }catch(_){ return false; }
+    }232;padding:3px 6px;border-radius:8px;box-shadow:0 1px 6px #0006;">$100</div>
 </button>
 <!-- Porte -->
 <button class="build-tile" data-tip="Porte (HP: 500)" data-type="D" style="display:flex; flex-direction:column; align-items:center; gap:6px; background:#0000; border:none; cursor:pointer;">
@@ -7382,7 +7407,7 @@ return true;
           const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
           if (!j || !j.ok) { try{ showTopMessage((T.needLoginShop || 'You must be logged in to access the shop.')); }catch(_){} try{ overlay.style.display='none'; modal.style.display='none'; }catch(_){} return; }
           const gold = j.gold|0;
-          try { window.myMoney = gold; } catch(_){ }
+          try{ window.accountGold = gold; window.__meOk = true; }catch(_){ } try { window.myMoney = gold; } catch(_){ }
       const up = Object.assign({hp:0,dmg:0}, j.shopUpgrades||{});
           
             try { window.accountShop = up; } catch(_){}
@@ -7416,7 +7441,7 @@ return true;
             + '<div style="margin-bottom:8px;"><b>'+(T.gold||'Gold')+'</b>: <span id="shopGoldVal">'+gold+'</span></div>'
             + item('hp', hpTitle, hpDesc, hpLv, hpMax, HP_PRICE)
             + item('dmg', dmgTitle, dmgDesc, dmgLv, dmgMax, DMG_PRICE)
-            + '<div style="margin-top:10px; font-size:12px; color:#9ab;">'+(T.goldHowTo||'Earn gold by clearing waves 5+ (wave 5=+1, 6=+2, etc.).')+'</div>';
+            + '<div style="margin-top:10px; font-size:12px; color:#9ab;">'+(T.goldHowTo||'Earn gold by clearing waves 5+ (wave 5=+1, 6=+1, 7=+2, 8=+2, 9=+3).')+'</div>';
           
           var __wrapM = document.getElementById('shopUpgradesLobby');
           if (__wrapM) { __wrapM.innerHTML = __shopHtml; } else { modalBody.innerHTML = '<div id="shopUpgradesLobby">' + __shopHtml + '</div>'; }
@@ -7963,7 +7988,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       }
       const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
       const gold = j.gold|0;
-      const up = Object.assign({hp:0,dmg:0}, j.shopUpgrades||{});
+      try{ window.accountGold = gold; window.__meOk = true; }catch(_){ } const up = Object.assign({hp:0,dmg:0}, j.shopUpgrades||{});
       try { window.accountShop = up; } catch(_){}
       try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
 
@@ -7994,6 +8019,27 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
 // Assemble list
       let html = '';
       html += '<div style="margin-bottom:8px;"><b>'+(T.gold||'Gold')+'</b>: <span id="shopGoldVal">'+gold+'</span></div>';
+      // Inline gold purchase note and buttons (translated)
+      (function(){
+        var T = (TRANSLATIONS[currentLang] || TRANSLATIONS['en']);
+        var label1000 = String(T.buyGold1000 || '1,000 Gold – 5€');
+        var label5000 = String(T.buyGold5000 || T.buyGold2000 || '5,000 Gold – 20€');
+        var earnNote  = String(T.earnGoldFrom5 || T.earnGoldFrom6 || 'You can earn gold for free starting from round 5.');
+        html += '<div id="goldBuyBlock" style="display:flex;flex-direction:column;align-items:center;gap:6px;margin:6px 0 12px 0;text-align:center;">'
+             +    '<div id="goldEarnNote" style="font-size:12px;color:#9ab;text-align:center;">'+earnNote+'</div>'
+             +    '<div id="goldBuyButtons" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">'
+             +      '<button type="button" onclick="try{window.startCheckout(\'price_1S2AGI1FI4pQv5J1q08Zqe49\');}catch(e){}"'
+             +        ' style="background:#6865ff;color:#fff;border:none;border-radius:999px;padding:6px 10px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);">'
+             +          label1000
+             +      '</button>'
+             +      '<button type="button" onclick="try{window.startCheckout(\'price_1S2AGX1FI4pQv5J1MffQusAI\');}catch(e){}"'
+             +        ' style="background:#6865ff;color:#fff;border:none;border-radius:999px;padding:6px 10px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);">'
+             +          label5000
+             +      '</button>'
+             +    '</div>'
+             +  '</div>';
+      })();
+
       const hpTitle = T.hpUpgTitle || 'HP +10';
       const hpDesc  = T.hpUpgDesc  || 'Start each game with +10 HP per level (up to +200).';
       const dmgTitle= T.dmgUpgTitle|| 'Damage +1';
@@ -8011,7 +8057,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
       + '  </div>'
       + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:160px;width:160px;">'
-      + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
       + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
       + '    <div style="min-height:16px;"></div>'
       + '  </div>'
@@ -9244,10 +9290,25 @@ e.preventDefault(); e.stopPropagation();
 (function(){
   if (window.__hudGoldInstalled) return; window.__hudGoldInstalled = true;
   try { window.accountGold = window.accountGold|0; } catch(_){}
+  // Ultra-robust: single source of truth to refresh the Gold line immediately
+  function __refreshHudGoldLine(){
+    try {
+      var hudGold = document.getElementById('hudGold');
+      if (!hudGold) return;
+      var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
+      if (window.__meOk === true) {
+        hudGold.style.display = '';
+        hudGold.textContent = (T.gold || 'Gold') + ' : ' + String((window.accountGold|0));
+      } else {
+        hudGold.style.display = 'none';
+      }
+    } catch(_){}
+  }
+
   try {
     fetch('/api/me', { credentials:'include' })
       .then(function(r){ return r.json(); })
-      .then(function(j){ if (j && j.ok){ window.__meOk = true; window.accountGold = j.gold|0; window.accountShop = Object.assign({hp:0,dmg:0}, (j.shopUpgrades||{}));
+      .then(function(j){ if (j && j.ok){ try{ window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ }  window.__meOk = true; window.accountGold = j.gold|0; window.accountShop = Object.assign({hp:0,dmg:0}, (j.shopUpgrades||{}));
             try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
             try { if (typeof window.updateAccountShopBadges === 'function') window.updateAccountShopBadges(); } catch(_){}
              try{ window.linkSocketToSession && window.linkSocketToSession(); }catch(_){ } } })
@@ -9258,6 +9319,16 @@ e.preventDefault(); e.stopPropagation();
       socket.on('goldUpdate', function(p){
         try { if (p && Number.isFinite(p.total)) { window.__meOk = true; window.accountGold = p.total|0; } } catch(_){}
       });
+      try {
+        if (window.socket) {
+          socket.on('goldGranted', function(p){
+            try { if (p && Number.isFinite(p.gold)) { window.__meOk = true; window.accountGold = p.gold|0; } } catch(_){}
+            try{ __refreshHudGoldLine(); }catch(_){ }
+            try{ if (typeof drawHUD==='function') drawHUD(); }catch(_){ }
+          });
+        }
+      } catch(_){}
+ try{ __refreshHudGoldLine(); }catch(_){ } try{ if (typeof drawHUD==='function') drawHUD(); }catch(_){ }
     }
   } catch(_){}
 
@@ -9294,6 +9365,16 @@ e.preventDefault(); e.stopPropagation();
     }, true);
   } catch(_){}
 
+
+  try { document.addEventListener('DOMContentLoaded', __refreshHudGoldLine, {passive:true}); } catch(_){}
+  try { window.addEventListener('load', __refreshHudGoldLine, {passive:true}); } catch(_){}
+  // If UI texts change language, also refresh the line
+  try {
+    var _u = window.updateUITexts;
+    if (typeof _u === 'function') {
+      window.updateUITexts = function(){ try { _u.apply(this, arguments); } catch(_){ } try { __refreshHudGoldLine(); } catch(_){ } };
+    }
+  } catch(_){}
 })();
 </script>
 
@@ -9975,6 +10056,43 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
+
+<script>
+(function(){
+  try{
+    // Lightweight toast helper (uses your existing showTopMessage if available)
+    function toast(msg){
+      try { if (typeof showTopMessage==='function') return showTopMessage(msg); } catch(_){}
+      try {
+        var el=document.createElement('div');
+        el.textContent=msg||'';
+        el.style.cssText='position:fixed;top:8px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 12px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.4);z-index:99999;font-size:14px;';
+        document.body.appendChild(el); setTimeout(function(){ el.remove(); }, 2000);
+      } catch(_){}
+    }
+
+    // Public function for inline usage
+    window.startCheckout = async function(priceId){
+      try{
+        if(!priceId || !/^price_[a-zA-Z0-9]+$/.test(String(priceId))){
+          toast('Payment unavailable.');
+          return;
+        }
+        const r = await fetch('/api/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ priceId: String(priceId) })
+        });
+        const j = await r.json().catch(function(){ return null; });
+        if (!r.ok || !j || !j.ok || !j.url){ toast('Payment unavailable.'); return; }
+        window.location.href = j.url;
+      } catch(e){ console.error('[checkout]', e); toast('Payment unavailable.'); }
+    };
+}catch(_){}
+})();
+</script>
+
 </body>
 <!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
 <style id="mobile-build-robust-visibility">
@@ -10478,11 +10596,11 @@ try {
     return fetch('/api/me', { credentials:'include' })
       .then(function(r){ return r.json(); })
       .then(function(j){
-        if (j && j.ok){
+        if (j && j.ok){ try{ if (Number.isFinite(j.gold)) window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ } 
           __myUser = j.username || null;
           __mySkin = j.skin || __mySkin;
         }
-      }).catch(function(_){});
+      }).catch(function(_){ try{ if (j && j.ok && Number.isFinite(j.gold)) { window.accountGold = (j.gold|0); window.__meOk = true; } }catch(_){ } try{ if (typeof __refreshHudGoldLine==='function') __refreshHudGoldLine(); }catch(_){ } });
   }
 
   function hexToRgb(h){ var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(h||'')); return m?{r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}:null; }
@@ -10671,7 +10789,7 @@ ctx.putImageData(id,0,0);
       + '        <label>' + ((T.hair||'Hair')) + ' <input id="hairColor" type="color" value="#6b4d2e" style="margin-left:8px;"></label>'
       + '        <label>' + ((T.skin||'Skin')) + ' <input id="skinColor" type="color" value="#f4c2c2" style="margin-left:8px;"></label>'
       + '        <label>' + ((T.clothes||'Clothes')) + ' <input id="clothesColor" type="color" value="#2aa84a" style="margin-left:8px;"></label>'
-      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
+      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
       + '        <div id="skinMsg" style="min-height:18px;font-size:12px;color:#9ab;"></div>'
       + '        <div style="display:flex;gap:8px;flex-wrap:wrap;">'
       + '          <button id="skinBuy" style="flex:1;background:#ff8800;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.buy||'Buy')) + '</button>'
@@ -11045,7 +11163,7 @@ function drawPreview(){
         body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
       }).then(function(r){ return r.json(); })
         .then(function(j){
-          if (j && j.ok){
+          if (j && j.ok){ try{ if (Number.isFinite(j.gold)) window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ } 
             __mySkin = j.skin || { hair: hairInp.value, skin: skinInp.value, clothes: clothesInp.value };
             // Bust my cached sprite
             try { if (__myUser) __spriteCache[String(__myUser).toLowerCase()] = null; } catch(_){}
@@ -11071,7 +11189,7 @@ document.getElementById('skinBuy').onclick = buyNow;
 (function(){
   var btn = document.getElementById('skinBuy');
   if (!btn) return;
-  var PRICE = 20;
+  var PRICE = 5;
   function getGold(){ try{ var t = document.getElementById('shopGoldVal'); return t ? (+t.textContent||0) : 0; }catch(_){ return 0; } }
   function applyStyle(){ var g = getGold(); if (g >= PRICE){ btn.disabled=false; btn.style.background='#ff8800'; btn.style.opacity='1'; btn.style.cursor='pointer'; } else { btn.disabled=true; btn.style.background='#ff8800'; btn.style.opacity='0.6'; btn.style.cursor='not-allowed'; } }
   applyStyle();
@@ -11109,7 +11227,7 @@ document.getElementById('skinBuy').onclick = buyNow;
           + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
           + '  </div>'
           + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
+          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
           + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
           + '    <div style="min-height:16px;"></div>'
           + '  </div>';
@@ -11140,7 +11258,7 @@ document.getElementById('skinBuy').onclick = buyNow;
         + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
         + '  </div>'
         + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>20</b> ' + ((T.gold||'Gold')) + '</div>'
+        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
         + '    <button id="btnOpenSkin" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
         + '    <div style="min-height:16px;"></div>'
         + '  </div>';

@@ -7,6 +7,12 @@
       "ts": 1700000001000
     },
     {
+      "player": "Opiumdead",
+      "wave": 8,
+      "kills": 243,
+      "ts": 1756562223571
+    },
+    {
       "player": "Lexun46",
       "wave": 7,
       "kills": 194,
@@ -101,6 +107,12 @@
       "wave": 6,
       "kills": 72,
       "ts": 1700000016000
+    },
+    {
+      "player": "kkk",
+      "wave": 6,
+      "kills": 2,
+      "ts": 1756562847940
     },
     {
       "player": "KyunbrZero64",
@@ -587,18 +599,6 @@
       "wave": 2,
       "kills": 6,
       "ts": 1700000096000
-    },
-    {
-      "player": "LexujaxGo80",
-      "wave": 2,
-      "kills": 6,
-      "ts": 1700000097000
-    },
-    {
-      "player": "Uvanyv",
-      "wave": 2,
-      "kills": 5,
-      "ts": 1700000098000
     }
   ]
 }
