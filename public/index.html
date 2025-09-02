@@ -2,114 +2,6 @@
 
 <html lang="fr">
 <head>
-<script>
-// --- CrazyGames support: route all API/Socket to zombination.io when embedded ---
-(function(){
-  try {
-    // Detect if we are on CrazyGames (or any non-zombination host)
-    var onCrazy = /(^|\.)crazygames\.com$/i.test(location.hostname);
-    var onZombi  = /(^|\.)zombination\.io$/i.test(location.hostname);
-    // API_BASE used by fetch() calls
-    window.API_BASE = onCrazy || !onZombi ? 'https://zombination.io' : '';
-  } catch(_){ window.API_BASE = ''; }
-})();
-</script>
-<script>
-// -- Normalise tous les fetch() pour CrazyGames / local --
-(function(){
-  if (!('fetch' in window)) return;
-  var ORIG_FETCH = window.fetch;
-  var KNOWN = ['me','servers','username-taken','leaderboard','lobbies','match','auth','account','profile'];
-
-  function ensureApiPrefix(pathname){
-    try{
-      if (!/^\/api(\/|$)/.test(pathname)){
-        var seg = String(pathname||'').replace(/^\/+/, '').split('/')[0];
-        if (KNOWN.indexOf(seg) !== -1){
-          return '/api' + (pathname.startsWith('/') ? pathname : '/' + pathname);
-        }
-      }
-    }catch(_){}
-    return pathname;
-  }
-
-  function norm(u){
-    try{
-      if (typeof u !== 'string') return u;
-      var s = u;
-
-      // Corrige un bug courant de concaténation sans slash : "https://zombination.iome" -> "https://zombination.io/me"
-      if (/^https?:\/\/zombination\.io(?!\/)/i.test(s)) {
-        s = s.replace(/^https?:\/\/zombination\.io/i, 'https://zombination.io/');
-      }
-
-      // Si URL absolue : on peut quand même devoir préfixer /api si c'est notre hôte
-      if (/^https?:\/\//i.test(s)) {
-        try{
-          var url = new URL(s, location.href);
-          var isOurHost = /^(?:zombination\.io|localhost|127\.0\.0\.1)$/i.test(url.hostname) || url.origin === location.origin;
-          if (isOurHost) {
-            url.pathname = ensureApiPrefix(url.pathname);
-            return url.toString();
-          }
-        }catch(_){}
-        return s; // autres hôtes inchangés
-      }
-
-      // URL relative : ajoute le / de tête et /api si nécessaire
-      var base = (typeof API_BASE!=='undefined' && API_BASE) ? API_BASE.replace(/\/+$/,'') : '';
-      var path = s;
-      if (!/^\//.test(path)) path = '/' + path;
-      path = ensureApiPrefix(path);
-      return base ? (base + path) : path;
-    }catch(e){ return u; }
-  }
-
-  window.fetch = function(input, init){
-    try { return ORIG_FETCH(norm(input), init); } catch(e){ return ORIG_FETCH(input, init); }
-  };
-})();
-</script>
-<script id="asset-path-normalizer">
-// Normalize asset paths so they work on CrazyGames and on zombination.io
-(function(){
-  try{
-    function computeAssetPath(src){
-      try{
-        if (!src) return src;
-        // Leave data/blobs and absolute external URLs intact
-        if (/^(?:data:|blob:|https?:)/i.test(src)) return src;
-        var host = (location && location.hostname) ? location.hostname : '';
-        var onOurHost = /(^|\.)zombination\.io$/i.test(host) || /^(localhost|127\.0\.0\.1)$/i.test(host);
-        // If it is an absolute root path to our asset folders, make it relative when not on our host
-        if (src[0] === '/' && /(\/sprites\/|\/flags\/|\/icons\/)/.test(src)) {
-          return onOurHost ? src : ('.' + src);
-        }
-        // If it already starts as relative 'sprites/...', 'flags/...', 'icons/...', ensure it has ./ prefix
-        if (/^(?:sprites|flags|icons)\//i.test(src)) return './' + src;
-        return src;
-      }catch(_){ return src; }
-    }
-    // Expose helper
-    try { window.assetPath = computeAssetPath; } catch(_){}
-    // Intercept assignments to <img>.src so any code setting '/sprites/...' etc. gets normalized
-    try{
-      var desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
-      if (desc && typeof desc.set === 'function'){
-        var origSet = desc.set, origGet = desc.get;
-        Object.defineProperty(HTMLImageElement.prototype, 'src', {
-          configurable: true,
-          get: function(){ return origGet.call(this); },
-          set: function(v){ try { v = computeAssetPath(v); } catch(_){ } return origSet.call(this, v); }
-        });
-      }
-    }catch(_){}
-  }catch(_){}
-})();
-</script>
-
-
-
 
 <script>
 // Set a stable client id (zid) for sticky balancing per-player even on same IP
@@ -697,20 +589,6 @@ if (!window.ensureMySkinLoaded) {
 body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 </style>
 <style>#rotateOverlay{display:none !important;}</style>
-
-    <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
-<style id="crazygames-hide-auth-shop">
-/* CrazyGames build: hide auth & shop entry points (UI only, logic untouched) */
-#btnLogin,
-#btnSignup,
-#btnAccountShop,
-#shopBtn { 
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-</style>
-
 </head>
 <body>
 <!-- top-message helper -->
@@ -972,7 +850,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 </div>
 </div>
 <button id="shopBtn" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;" title="Upgrades">
-<img alt="Upgrades" src="./icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
+<img alt="Upgrades" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
 	  SHOP
 	</button>
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
@@ -1026,7 +904,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 <div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
 <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-<img alt="Upgrades" src="./icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
+<img alt="Upgrades" src="/icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
 <span id="shopTitleText">UPGRADES</span>
 </div>
 <div id="shopUpgrades">
@@ -1039,7 +917,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 <!-- workerBox inserted -->
 <script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+<script src="/socket.io/socket.io.js"></script>
 <!-- Server selection overlay -->
 <style>
   #serverOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:999999;}
@@ -1093,7 +971,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 
   async function refreshServers(){
     try {
-      const r = await fetch(API_BASE + 'servers', { cache: 'no-store' });
+      const r = await fetch('/api/servers', { cache: 'no-store' });
       const j = await r.json();
       if (!j || !j.ok) throw new Error('bad');
       var list = document.getElementById('srvList');
@@ -1112,7 +990,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
             ev.preventDefault();
             if (disabled) return;
             // Selecting a server navigates with ?w=N
-            try { (function(){try{var u=new URL(location.href);u.searchParams.set('w',idx);u.hash='';location.href=u.toString();}catch(_){location.search='?w='+idx;}})(); } catch(_){}
+            try { location.href = '/?w=' + idx; } catch(_){}
           });
         })(i+1, full);
         row.appendChild(left); row.appendChild(btn); list.appendChild(row);
@@ -1150,8 +1028,7 @@ if (__wParam) {
 // Important: until the user explicitly joins, no 'w' cookie is written by the server.
 
 try { if (window.socket) socket.on('accountShopUpdated', function(up){ try{ window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); if (typeof renderShopUpgrades==='function') renderShopUpgrades(); }catch(_){}}); } catch(_){ }
-const SOCKET_URL=(typeof API_BASE!=='undefined'&&API_BASE)?API_BASE:undefined;
-const socket = io(SOCKET_URL, ioOpts);
+const socket = io(ioOpts);
 // Keep client in sync with account-level shop upgrades (hp/dmg) in real time
 try { socket.on('accountShopUpdated', function(up){
   try { window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); } catch(_){}
@@ -1293,7 +1170,7 @@ setInterval(() => {
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
-<script src="./translations.js">
+<script src="/translations.js">
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <script>
@@ -1754,7 +1631,7 @@ if (lobbyJoin)       lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
   if (shopBtn) {
     shopBtn.title = tr.shop || 'Shop';
     // Recompose inner content with cart icon + label
-    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="./icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
+    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
   }
   const shopTitleText = document.getElementById('shopTitleText');
   if (shopTitleText) shopTitleText.textContent = tr.shop || 'Shop';
@@ -2378,7 +2255,6 @@ const MAX_PINCH = 1.8;
 
 	function updateRenderScale() {
   try {
-    // Compute the 'base' scale that fits the visibility halo to screen edges
     if (!isMobileDevice) {
       baseRenderScale = 1;
       renderScale = baseRenderScale * pinchScale;
@@ -2387,30 +2263,34 @@ const MAX_PINCH = 1.8;
     const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 300;
     const cw = (canvas && canvas.width) || window.innerWidth || 0;
     const ch = (canvas && canvas.height) || window.innerHeight || 0;
-    const minDim = Math.min(cw, ch);
-    if (minDim > 0 && VR > 0) {
-      baseRenderScale = minDim / (2 * VR);
-    } else {
-      baseRenderScale = 1;
+    const fill = 0.80; // 80% target
+    let newBase = 1;
+    if (cw > 0 && ch > 0 && VR > 0) {
+      const portrait = ch >= cw;
+      const axis = portrait ? cw : ch;
+      newBase = (axis * fill) / (2 * VR);
+      if (!isFinite(newBase) || newBase <= 0) newBase = 1;
     }
+    baseRenderScale = newBase;
     renderScale = baseRenderScale * pinchScale;
-  } catch(e) {
-    try { console.warn('[updateRenderScale] error', e && (e.message||e)); } catch(_){}
+  } catch (e) {
+    try { console.warn('[updateRenderScale] error', e && (e.message || e)); } catch (_) {}
   }
 }
 
 // Keep mobile zoom correct when the screen size/orientation changes
 try {
   window.addEventListener('resize', function(){
-    try { updateRenderScale(); updateCamera && updateCamera(); } catch(_){}
+    try { updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){}
   }, { passive: true });
   window.addEventListener('orientationchange', function(){
-    try { setTimeout(function(){ updateRenderScale(); updateCamera && updateCamera(); }, 0); } catch(_){}
+    try { setTimeout(function(){ updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); }, 60); } catch(_){}
   }, { passive: true });
 } catch(_){}
 
 updateRenderScale();
-    const TILE_SIZE = 40;
+
+const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 300;
@@ -4300,7 +4180,9 @@ if (lobbyJoin)           try { pseudoInput.style.background = '#c7f7c7'; pseudoI
       if (e.key === "Enter") if (lobbyJoin) lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => {
+      try { pinchScale = 1; updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){ }
+ currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -7523,7 +7405,7 @@ return true;
       btnSubmit.style.display = 'none';
 (async function(){
         try{
-          const r = await fetch(API_BASE + 'me', { credentials:'include' });
+          const r = await fetch('/api/me', { credentials:'include' });
           const j = await r.json();
           const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
           if (!j || !j.ok) { try{ showTopMessage((T.needLoginShop || 'You must be logged in to access the shop.')); }catch(_){} try{ overlay.style.display='none'; modal.style.display='none'; }catch(_){} return; }
@@ -7571,7 +7453,7 @@ return true;
             btn.addEventListener('click', async function(){
               const type = this.getAttribute('data-shop-buy');
               try{
-                const r = await fetch(API_BASE + 'shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
+                const r = await fetch('/api/shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
                 const jj = await r.json();
                 if (jj && jj.ok){
                   // refresh view in-place
@@ -7634,7 +7516,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const p2 = document.getElementById('authPass2').value;
       if (!u || !p || !p2) { showTopMessage(trAuth('fillAll')); return; }
       if (p !== p2) { showTopMessage(trAuth('confirmPassword') + ' ✖'); return; }
-      const { ok, data, status } = await fetchJSON(API_BASE + 'signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && (!data || data.ok)) { hideModal(); showTopMessage(trAuth('signupOk')); }
       else {
         if (data && data.code === 'exists') showTopMessage(trAuth('userExists'));
@@ -7648,7 +7530,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const u = document.getElementById('authUser').value.trim();
       const p = document.getElementById('authPass').value;
       if (!u || !p) { showTopMessage(trAuth('fillAll')); return; }
-      const { ok, data } = await fetchJSON(API_BASE + 'login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      const { ok, data } = await fetchJSON('/api/login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && data && data.username) { hideModal(); setAuthUI(true, data.username);
         try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); window.linkSocketToSession && window.linkSocketToSession(); }catch(_){ } }, 300); } }catch(_){ }
         try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); }catch(_){ } }, 150); } }catch(_){ }
@@ -7663,7 +7545,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const n2 = (document.getElementById('newPass2') && document.getElementById('newPass2').value) || '';
       if (!c || !n || !n2) { showTopMessage(trAuth('fillAll')); return; }
       if (n !== n2) { showTopMessage(trAuth('confirmNewPassword') + ' ✖'); return; }
-      const { ok, data } = await fetchJSON(API_BASE + 'change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
+      const { ok, data } = await fetchJSON('/api/change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
       if (ok) { hideModal(); setAuthUI(false); showTopMessage(trAuth('pwdChanged')); }
       else { if (data && data.code === 'weak_password') showTopMessage(trAuth('weakPassword')); else showTopMessage(trAuth('invalidCredentials')); }
     } catch(e){ showTopMessage('Error'); }
@@ -7679,7 +7561,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       if (loggedUser && name.toLowerCase() === (loggedUser||'').toLowerCase()) {
         reservedPseudo = false; setButtonsEnabled(true); return;
       }
-      const { ok, data } = await fetchJSON(API_BASE + 'username-taken?u=' + encodeURIComponent(name), { method:'GET' });
+      const { ok, data } = await fetchJSON('/api/username-taken?u=' + encodeURIComponent(name), { method:'GET' });
       reservedPseudo = !!(ok && data && data.taken && !loggedUser);
       setButtonsEnabled(!reservedPseudo);
     } catch(_){ reservedPseudo = false; setButtonsEnabled(true); }
@@ -7700,7 +7582,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   if (btnShop) btnShop.addEventListener('click', async function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
   if (btnSignup) btnSignup.addEventListener('click', async function(){ showModal('signup'); }, { passive:true });
   if (btnLogout) btnLogout.addEventListener('click', async function(){
-    try { await fetchJSON(API_BASE + 'logout', { method:'POST' }); } catch(_){ }
+    try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ }
     try { if (typeof setAuthUI === 'function') setAuthUI(false); } catch(_){ }
     try { if (typeof showTopMessage === 'function') showTopMessage(trAuth('logoutOk')); } catch(_){ }
     try {
@@ -7751,7 +7633,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   // Initial state from server
   async function refreshMe(){
     try {
-      const { ok, data } = await fetchJSON(API_BASE + 'me', { method:'GET' });
+      const { ok, data } = await fetchJSON('/api/me', { method:'GET' });
       if (ok && data && data.username) setAuthUI(true, data.username);
       else setAuthUI(false);
     } catch(_){ setAuthUI(false); }
@@ -7907,7 +7789,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
     try { var row = document.getElementById('lobbyBtnRow'); if (row) row.style.display='flex'; } catch(_){}
     try{ if (typeof pseudoInput!=='undefined' && pseudoInput) pseudoInput.style.display='none'; }catch(_){ }
     // Fetch ladder
-    fetch(API_BASE + 'ladder', { method: 'GET' })
+    fetch('/api/ladder', { method: 'GET' })
       .then(r => r.json().catch(()=>({ok:false})))
       .then(data => {
         try{
@@ -8099,7 +7981,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
     try {
       if (!document.getElementById('shopUpgradesLobby')) { content.innerHTML = '<div style="padding:8px;color:#9ab;">Loading...</div>'; }
       titleEl.textContent = tr('shopMain','Shop');
-      const r = await fetch(API_BASE + 'me', { credentials:'include' });
+      const r = await fetch('/api/me', { credentials:'include' });
       const j = await r.json();
       if (!j || !j.ok){
         try { if (typeof showTopMessage==='function') showTopMessage(tr('needLoginShop','Please log in to access the shop.')); } catch(_){}
@@ -8171,7 +8053,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       html += (
         '<div data-skin-item="1" style="display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
       + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-      + '    <img src="./sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+      + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
       + '  </div>'
       + '  <div style="flex:1;">'
       + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
@@ -8205,7 +8087,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         btn.addEventListener('click', async function(){
           const type = this.getAttribute('data-shop-buy');
           try {
-            const r = await fetch(API_BASE + 'shop/buy', {
+            const r = await fetch('/api/shop/buy', {
               method:'POST', headers:{ 'Content-Type': 'application/json' },
               credentials:'include', body: JSON.stringify({ type })
             });
@@ -9290,7 +9172,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   }
 
   try {
-    fetch(API_BASE + 'me', { credentials:'include' })
+    fetch('/api/me', { credentials:'include' })
       .then(function(r){ return r.json(); })
       .then(function(j){ if (j && j.ok){ try{ window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ }  window.__meOk = true; window.accountGold = j.gold|0; window.accountShop = Object.assign({hp:0,dmg:0}, (j.shopUpgrades||{}));
             try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
@@ -10062,7 +9944,7 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
           toast('Payment unavailable.');
           return;
         }
-        const r = await fetch(API_BASE + 'checkout', {
+        const r = await fetch('/api/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -10077,49 +9959,6 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
-
-<script>
-(function(){
-  function log(){ try { console.log.apply(console, arguments); } catch(_) {} }
-  function ready(fn){ if(document.readyState!=='loading'){ fn(); } else { document.addEventListener('DOMContentLoaded', fn); } }
-  ready(async function(){
-    if(!window.CrazyGames || !window.CrazyGames.SDK){
-      log('[CG] SDK object not present');
-      return;
-    }
-    try{
-      await window.CrazyGames.SDK.init();
-      log('[CG] SDK initialized');
-    }catch(e){
-      console.warn('[CG] SDK init failed:', e);
-    }
-    // Use SDK 'game' module (v3) exactly as docs require for detection
-    var btn = document.getElementById('cgInviteBtn');
-    // Determine or create a roomId
-    var roomId = (window.CrazyGames && window.CrazyGames.SDK && window.CrazyGames.SDK.game && window.CrazyGames.SDK.game.getInviteParam)
-      ? window.CrazyGames.SDK.game.getInviteParam('roomId') : null;
-    if(!roomId){ roomId = (localStorage.getItem('cg-room-id') || Math.random().toString(36).slice(2)); localStorage.setItem('cg-room-id', roomId); }
-    // Always show CrazyGames default invite button so the portal can auto-detect it
-    try{
-      if(window.CrazyGames.SDK.game && window.CrazyGames.SDK.game.showInviteButton){
-        window.CrazyGames.SDK.game.showInviteButton({ roomId: roomId });
-        log('[CG] showInviteButton called with roomId:', roomId);
-      }
-    }catch(e){ console.warn('showInviteButton error', e); }
-    // Wire our own button to call inviteLink (also auto-detected by portal)
-    if(btn){
-      btn.addEventListener('click', async function(){
-        try{
-          var link = await window.CrazyGames.SDK.game.inviteLink({ roomId: roomId });
-          log('[CG] inviteLink returned:', link);
-          if(link && navigator.clipboard){ await navigator.clipboard.writeText(link); alert('Invite link copied to clipboard!'); }
-        }catch(e){ console.warn('inviteLink error', e); }
-      }, { once: false });
-    }
-    window.addEventListener('beforeunload', function(){ try{ window.CrazyGames.SDK.game.hideInviteButton(); }catch(_){} });
-  });
-})();
-</script>
 </body>
 <!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
 <style id="mobile-build-robust-visibility">
@@ -10620,7 +10459,7 @@ try {
   }
 
   function fetchMe(){
-    return fetch(API_BASE + 'me', { credentials:'include' })
+    return fetch('/api/me', { credentials:'include' })
       .then(function(r){ return r.json(); })
       .then(function(j){
         if (j && j.ok){ try{ if (Number.isFinite(j.gold)) window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ } 
@@ -11183,7 +11022,7 @@ function drawPreview(){
 
     function buyNow(){
       msg.textContent = '';
-      fetch(API_BASE + 'skin/buy', {
+      fetch('/api/skin/buy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -11247,7 +11086,7 @@ document.getElementById('skinBuy').onclick = buyNow;
         div.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
         div.innerHTML = ''
           + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-          + '    <img src="./sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+          + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
           + '  </div>'
           + '  <div style="flex:1;">'
           + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
@@ -11278,7 +11117,7 @@ document.getElementById('skinBuy').onclick = buyNow;
       item.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
       item.innerHTML = ''
         + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-        + '    <img src="./sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+        + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
         + '  </div>'
         + '  <div style="flex:1;">'
         + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
@@ -12405,69 +12244,3 @@ if (!hudStats) return;
     }
   })();
 </script>
-
-<!-- ===== CrazyGames multiplayer detection patch (InviteLink + InviteButton) ===== -->
-<script src="https://sdk.crazygames.com/crazygames.js"></script>
-<script>
-(function(){
-  function getCG(){
-    try {
-      if (window.CrazyGames && window.CrazyGames.SDK) return window.CrazyGames;
-      if (window.parent && window.parent.CrazyGames && window.parent.CrazyGames.SDK) return window.parent.CrazyGames;
-    } catch(_) {}
-    return null;
-  }
-  function safeInt(x){ x = parseInt(x, 10); return isNaN(x) ? undefined : x; }
-  function regionFromURL(){
-    var m = (location.search||'').match(/[?&]region=([a-z]{2})/i);
-    return m ? m[1].toUpperCase() : undefined;
-  }
-  function ensureBtn(){
-    var id='cg-invite-btn';
-    if (document.getElementById(id)) return;
-    var b=document.createElement('button');
-    b.id=id;
-    b.textContent='Invite friends';
-    b.style.cssText='position:fixed;z-index:2147483647;right:10px;top:10px;padding:10px 14px;border-radius:10px;border:1px solid #888;background:#fff;cursor:pointer;font:600 14px system-ui';
-    b.addEventListener('click', function(){ doInviteLink(); });
-    document.body.appendChild(b);
-  }
-  function doInviteLink(){
-    try {
-      var cg = getCG(); if (!cg || !cg.SDK || !cg.SDK.game) return;
-      var api = cg.SDK.game;
-      var payload = { roomId: safeInt(window.__ROOM_ID__ || 1) };
-      var r = regionFromURL(); if (r) payload.region = r;
-      if (typeof api.inviteLink === 'function') api.inviteLink(payload);
-      console.log('[CrazyGames] inviteLink used', payload);
-    } catch(e){ console.warn(e); }
-  }
-  function showInviteBtn(){
-    try {
-      var cg = getCG(); if (!cg || !cg.SDK || !cg.SDK.game) { ensureBtn(); return; }
-      var api = cg.SDK.game;
-      var payload = { roomId: safeInt(window.__ROOM_ID__ || 1) };
-      var r = regionFromURL(); if (r) payload.region = r;
-      if (typeof api.showInviteButton === 'function') api.showInviteButton(payload);
-      else if (typeof api.inviteButton === 'function') api.inviteButton(payload);
-      else if (typeof api.showInvite === 'function') api.showInvite(payload);
-      else ensureBtn();
-      console.log('[CrazyGames] invite button requested', payload);
-    } catch(e){ console.warn(e); ensureBtn(); }
-  }
-
-  // Try a few times after load so the SDK has time to initialize
-  var tries = 0, MAX = 10;
-  function tick(){
-    showInviteBtn();
-    doInviteLink(); // also call once for automatic detection
-    if (++tries < MAX) setTimeout(tick, 1000);
-  }
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(tick, 600);
-  } else {
-    window.addEventListener('DOMContentLoaded', function(){ setTimeout(tick, 600); });
-  }
-})();
-</script>
-<!-- ===== /CrazyGames patch ===== -->
