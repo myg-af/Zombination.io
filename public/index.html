@@ -2,6 +2,114 @@
 
 <html lang="fr">
 <head>
+<script>
+// --- CrazyGames support: route all API/Socket to zombination.io when embedded ---
+(function(){
+  try {
+    // Detect if we are on CrazyGames (or any non-zombination host)
+    var onCrazy = /(^|\.)crazygames\.com$/i.test(location.hostname);
+    var onZombi  = /(^|\.)zombination\.io$/i.test(location.hostname);
+    // API_BASE used by fetch() calls
+    window.API_BASE = onCrazy || !onZombi ? 'https://zombination.io' : '';
+  } catch(_){ window.API_BASE = ''; }
+})();
+</script>
+<script>
+// -- Normalise tous les fetch() pour CrazyGames / local --
+(function(){
+  if (!('fetch' in window)) return;
+  var ORIG_FETCH = window.fetch;
+  var KNOWN = ['me','servers','username-taken','leaderboard','lobbies','match','auth','account','profile'];
+
+  function ensureApiPrefix(pathname){
+    try{
+      if (!/^\/api(\/|$)/.test(pathname)){
+        var seg = String(pathname||'').replace(/^\/+/, '').split('/')[0];
+        if (KNOWN.indexOf(seg) !== -1){
+          return '/api' + (pathname.startsWith('/') ? pathname : '/' + pathname);
+        }
+      }
+    }catch(_){}
+    return pathname;
+  }
+
+  function norm(u){
+    try{
+      if (typeof u !== 'string') return u;
+      var s = u;
+
+      // Corrige un bug courant de concaténation sans slash : "https://zombination.iome" -> "https://zombination.io/me"
+      if (/^https?:\/\/zombination\.io(?!\/)/i.test(s)) {
+        s = s.replace(/^https?:\/\/zombination\.io/i, 'https://zombination.io/');
+      }
+
+      // Si URL absolue : on peut quand même devoir préfixer /api si c'est notre hôte
+      if (/^https?:\/\//i.test(s)) {
+        try{
+          var url = new URL(s, location.href);
+          var isOurHost = /^(?:zombination\.io|localhost|127\.0\.0\.1)$/i.test(url.hostname) || url.origin === location.origin;
+          if (isOurHost) {
+            url.pathname = ensureApiPrefix(url.pathname);
+            return url.toString();
+          }
+        }catch(_){}
+        return s; // autres hôtes inchangés
+      }
+
+      // URL relative : ajoute le / de tête et /api si nécessaire
+      var base = (typeof API_BASE!=='undefined' && API_BASE) ? API_BASE.replace(/\/+$/,'') : '';
+      var path = s;
+      if (!/^\//.test(path)) path = '/' + path;
+      path = ensureApiPrefix(path);
+      return base ? (base + path) : path;
+    }catch(e){ return u; }
+  }
+
+  window.fetch = function(input, init){
+    try { return ORIG_FETCH(norm(input), init); } catch(e){ return ORIG_FETCH(input, init); }
+  };
+})();
+</script>
+<script id="asset-path-normalizer">
+// Normalize asset paths so they work on CrazyGames and on zombination.io
+(function(){
+  try{
+    function computeAssetPath(src){
+      try{
+        if (!src) return src;
+        // Leave data/blobs and absolute external URLs intact
+        if (/^(?:data:|blob:|https?:)/i.test(src)) return src;
+        var host = (location && location.hostname) ? location.hostname : '';
+        var onOurHost = /(^|\.)zombination\.io$/i.test(host) || /^(localhost|127\.0\.0\.1)$/i.test(host);
+        // If it is an absolute root path to our asset folders, make it relative when not on our host
+        if (src[0] === '/' && /(\/sprites\/|\/flags\/|\/icons\/)/.test(src)) {
+          return onOurHost ? src : ('.' + src);
+        }
+        // If it already starts as relative 'sprites/...', 'flags/...', 'icons/...', ensure it has ./ prefix
+        if (/^(?:sprites|flags|icons)\//i.test(src)) return './' + src;
+        return src;
+      }catch(_){ return src; }
+    }
+    // Expose helper
+    try { window.assetPath = computeAssetPath; } catch(_){}
+    // Intercept assignments to <img>.src so any code setting '/sprites/...' etc. gets normalized
+    try{
+      var desc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+      if (desc && typeof desc.set === 'function'){
+        var origSet = desc.set, origGet = desc.get;
+        Object.defineProperty(HTMLImageElement.prototype, 'src', {
+          configurable: true,
+          get: function(){ return origGet.call(this); },
+          set: function(v){ try { v = computeAssetPath(v); } catch(_){ } return origSet.call(this, v); }
+        });
+      }
+    }catch(_){}
+  }catch(_){}
+})();
+</script>
+
+
+
 
 <script>
 // Set a stable client id (zid) for sticky balancing per-player even on same IP
@@ -850,7 +958,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 </div>
 </div>
 <button id="shopBtn" style="display: flex; align-items: center; position: fixed; right: 20px; bottom: 52px; z-index: 21; background: #232; color: #fff; border-radius: 13px; border: none; font-size: 22px; padding: 10px 26px 10px 19px; box-shadow: 0 2px 14px #0006; cursor: pointer; gap: 13px; transition: background 0.17s;" title="Upgrades">
-<img alt="Upgrades" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
+<img alt="Upgrades" src="./icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>
 	  SHOP
 	</button>
 <!-- ==== BARRE D'ACHATS STRUCTURES (au-dessus du SHOP) ==== -->
@@ -904,7 +1012,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 <div id="shopModal" style="display:none; position:fixed; right:34px; bottom:90px; background:#181e19ee; border-radius:18px; box-shadow:0 8px 28px #000c; padding:18px 16px 16px 16px; width:360px; max-height:calc(100dvh - 120px); overflow:hidden;">
 <button id="shopClose" style="position:absolute; right:17px; top:10px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; filter:drop-shadow(0 2px 6px #0009);">✕</button>
 <div style="font-size:26px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-<img alt="Upgrades" src="/icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
+<img alt="Upgrades" src="./icons/cart.svg" style="width:30px; filter:brightness(1.2); vertical-align:middle;"/>
 <span id="shopTitleText">UPGRADES</span>
 </div>
 <div id="shopUpgrades">
@@ -917,7 +1025,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 <!-- workerBox inserted -->
 <script>window.GAME_VERSION = "1.0.0";</script>
 <div id="waveMessage"></div>
-<script src="/socket.io/socket.io.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 <!-- Server selection overlay -->
 <style>
   #serverOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);z-index:999999;}
@@ -971,7 +1079,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 
   async function refreshServers(){
     try {
-      const r = await fetch('/api/servers', { cache: 'no-store' });
+      const r = await fetch(API_BASE + 'servers', { cache: 'no-store' });
       const j = await r.json();
       if (!j || !j.ok) throw new Error('bad');
       var list = document.getElementById('srvList');
@@ -990,7 +1098,7 @@ body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
             ev.preventDefault();
             if (disabled) return;
             // Selecting a server navigates with ?w=N
-            try { location.href = '/?w=' + idx; } catch(_){}
+            try { (function(){try{var u=new URL(location.href);u.searchParams.set('w',idx);u.hash='';location.href=u.toString();}catch(_){location.search='?w='+idx;}})(); } catch(_){}
           });
         })(i+1, full);
         row.appendChild(left); row.appendChild(btn); list.appendChild(row);
@@ -1028,7 +1136,8 @@ if (__wParam) {
 // Important: until the user explicitly joins, no 'w' cookie is written by the server.
 
 try { if (window.socket) socket.on('accountShopUpdated', function(up){ try{ window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); if (typeof renderShopUpgrades==='function') renderShopUpgrades(); }catch(_){}}); } catch(_){ }
-const socket = io(ioOpts);
+const SOCKET_URL=(typeof API_BASE!=='undefined'&&API_BASE)?API_BASE:undefined;
+const socket = io(SOCKET_URL, ioOpts);
 // Keep client in sync with account-level shop upgrades (hp/dmg) in real time
 try { socket.on('accountShopUpdated', function(up){
   try { window.accountShop = Object.assign({hp:0,dmg:0}, up||{}); } catch(_){}
@@ -1170,7 +1279,7 @@ setInterval(() => {
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
-<script src="/translations.js">
+<script src="./translations.js">
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
 </script>
 <script>
@@ -1631,7 +1740,7 @@ if (lobbyJoin)       lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
   if (shopBtn) {
     shopBtn.title = tr.shop || 'Shop';
     // Recompose inner content with cart icon + label
-    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="/icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
+    shopBtn.innerHTML = `<img alt="${tr.shop || 'Shop'}" src="./icons/cart.svg" style="width: 27px; height: 27px; margin-right: 8px; filter: brightness(1.25) drop-shadow(0 2px 5px #0006);"/>` + (tr.shop || 'Shop');
   }
   const shopTitleText = document.getElementById('shopTitleText');
   if (shopTitleText) shopTitleText.textContent = tr.shop || 'Shop';
@@ -2255,6 +2364,7 @@ const MAX_PINCH = 1.8;
 
 	function updateRenderScale() {
   try {
+    // Compute the 'base' scale that fits the visibility halo to screen edges
     if (!isMobileDevice) {
       baseRenderScale = 1;
       renderScale = baseRenderScale * pinchScale;
@@ -2263,34 +2373,30 @@ const MAX_PINCH = 1.8;
     const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 300;
     const cw = (canvas && canvas.width) || window.innerWidth || 0;
     const ch = (canvas && canvas.height) || window.innerHeight || 0;
-    const fill = 0.80; // 80% target
-    let newBase = 1;
-    if (cw > 0 && ch > 0 && VR > 0) {
-      const portrait = ch >= cw;
-      const axis = portrait ? cw : ch;
-      newBase = (axis * fill) / (2 * VR);
-      if (!isFinite(newBase) || newBase <= 0) newBase = 1;
+    const minDim = Math.min(cw, ch);
+    if (minDim > 0 && VR > 0) {
+      baseRenderScale = minDim / (2 * VR);
+    } else {
+      baseRenderScale = 1;
     }
-    baseRenderScale = newBase;
     renderScale = baseRenderScale * pinchScale;
-  } catch (e) {
-    try { console.warn('[updateRenderScale] error', e && (e.message || e)); } catch (_) {}
+  } catch(e) {
+    try { console.warn('[updateRenderScale] error', e && (e.message||e)); } catch(_){}
   }
 }
 
 // Keep mobile zoom correct when the screen size/orientation changes
 try {
   window.addEventListener('resize', function(){
-    try { updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){}
+    try { updateRenderScale(); updateCamera && updateCamera(); } catch(_){}
   }, { passive: true });
   window.addEventListener('orientationchange', function(){
-    try { setTimeout(function(){ updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); }, 60); } catch(_){}
+    try { setTimeout(function(){ updateRenderScale(); updateCamera && updateCamera(); }, 0); } catch(_){}
   }, { passive: true });
 } catch(_){}
 
 updateRenderScale();
-
-const TILE_SIZE = 40;
+    const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 300;
@@ -4180,9 +4286,7 @@ if (lobbyJoin)           try { pseudoInput.style.background = '#c7f7c7'; pseudoI
       if (e.key === "Enter") if (lobbyJoin) lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => {
-      try { pinchScale = 1; updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){ }
- currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => { currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
@@ -7405,7 +7509,7 @@ return true;
       btnSubmit.style.display = 'none';
 (async function(){
         try{
-          const r = await fetch('/api/me', { credentials:'include' });
+          const r = await fetch(API_BASE + 'me', { credentials:'include' });
           const j = await r.json();
           const T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
           if (!j || !j.ok) { try{ showTopMessage((T.needLoginShop || 'You must be logged in to access the shop.')); }catch(_){} try{ overlay.style.display='none'; modal.style.display='none'; }catch(_){} return; }
@@ -7453,7 +7557,7 @@ return true;
             btn.addEventListener('click', async function(){
               const type = this.getAttribute('data-shop-buy');
               try{
-                const r = await fetch('/api/shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
+                const r = await fetch(API_BASE + 'shop/buy', { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body: JSON.stringify({ type }) });
                 const jj = await r.json();
                 if (jj && jj.ok){
                   // refresh view in-place
@@ -7516,7 +7620,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const p2 = document.getElementById('authPass2').value;
       if (!u || !p || !p2) { showTopMessage(trAuth('fillAll')); return; }
       if (p !== p2) { showTopMessage(trAuth('confirmPassword') + ' ✖'); return; }
-      const { ok, data, status } = await fetchJSON('/api/signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      const { ok, data, status } = await fetchJSON(API_BASE + 'signup', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && (!data || data.ok)) { hideModal(); showTopMessage(trAuth('signupOk')); }
       else {
         if (data && data.code === 'exists') showTopMessage(trAuth('userExists'));
@@ -7530,7 +7634,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const u = document.getElementById('authUser').value.trim();
       const p = document.getElementById('authPass').value;
       if (!u || !p) { showTopMessage(trAuth('fillAll')); return; }
-      const { ok, data } = await fetchJSON('/api/login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
+      const { ok, data } = await fetchJSON(API_BASE + 'login', { method:'POST', body: JSON.stringify({ username: u, password: p })});
       if (ok && data && data.username) { hideModal(); setAuthUI(true, data.username);
         try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); window.linkSocketToSession && window.linkSocketToSession(); }catch(_){ } }, 300); } }catch(_){ }
         try{ if (window.socket){ try{ socket.disconnect(); }catch(_){ } setTimeout(function(){ try{ socket.connect(); }catch(_){ } }, 150); } }catch(_){ }
@@ -7545,7 +7649,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       const n2 = (document.getElementById('newPass2') && document.getElementById('newPass2').value) || '';
       if (!c || !n || !n2) { showTopMessage(trAuth('fillAll')); return; }
       if (n !== n2) { showTopMessage(trAuth('confirmNewPassword') + ' ✖'); return; }
-      const { ok, data } = await fetchJSON('/api/change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
+      const { ok, data } = await fetchJSON(API_BASE + 'change-password', { method:'POST', body: JSON.stringify({ currentPassword: c, newPassword: n })});
       if (ok) { hideModal(); setAuthUI(false); showTopMessage(trAuth('pwdChanged')); }
       else { if (data && data.code === 'weak_password') showTopMessage(trAuth('weakPassword')); else showTopMessage(trAuth('invalidCredentials')); }
     } catch(e){ showTopMessage('Error'); }
@@ -7561,7 +7665,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
       if (loggedUser && name.toLowerCase() === (loggedUser||'').toLowerCase()) {
         reservedPseudo = false; setButtonsEnabled(true); return;
       }
-      const { ok, data } = await fetchJSON('/api/username-taken?u=' + encodeURIComponent(name), { method:'GET' });
+      const { ok, data } = await fetchJSON(API_BASE + 'username-taken?u=' + encodeURIComponent(name), { method:'GET' });
       reservedPseudo = !!(ok && data && data.taken && !loggedUser);
       setButtonsEnabled(!reservedPseudo);
     } catch(_){ reservedPseudo = false; setButtonsEnabled(true); }
@@ -7582,7 +7686,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   if (btnShop) btnShop.addEventListener('click', async function(){ try{ if (typeof window.showShopPanel==='function') window.showShopPanel(); else (typeof window.refreshShopPanel==='function' ? window.refreshShopPanel() : (typeof showModal==='function' ? showModal('shop') : void 0)); }catch(e){ console.error(e);} }, { passive:true });
   if (btnSignup) btnSignup.addEventListener('click', async function(){ showModal('signup'); }, { passive:true });
   if (btnLogout) btnLogout.addEventListener('click', async function(){
-    try { await fetchJSON('/api/logout', { method:'POST' }); } catch(_){ }
+    try { await fetchJSON(API_BASE + 'logout', { method:'POST' }); } catch(_){ }
     try { if (typeof setAuthUI === 'function') setAuthUI(false); } catch(_){ }
     try { if (typeof showTopMessage === 'function') showTopMessage(trAuth('logoutOk')); } catch(_){ }
     try {
@@ -7633,7 +7737,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
   // Initial state from server
   async function refreshMe(){
     try {
-      const { ok, data } = await fetchJSON('/api/me', { method:'GET' });
+      const { ok, data } = await fetchJSON(API_BASE + 'me', { method:'GET' });
       if (ok && data && data.username) setAuthUI(true, data.username);
       else setAuthUI(false);
     } catch(_){ setAuthUI(false); }
@@ -7789,7 +7893,7 @@ function hideModal(){ overlay.style.display='none'; modal.style.display='none'; 
     try { var row = document.getElementById('lobbyBtnRow'); if (row) row.style.display='flex'; } catch(_){}
     try{ if (typeof pseudoInput!=='undefined' && pseudoInput) pseudoInput.style.display='none'; }catch(_){ }
     // Fetch ladder
-    fetch('/api/ladder', { method: 'GET' })
+    fetch(API_BASE + 'ladder', { method: 'GET' })
       .then(r => r.json().catch(()=>({ok:false})))
       .then(data => {
         try{
@@ -7981,7 +8085,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
     try {
       if (!document.getElementById('shopUpgradesLobby')) { content.innerHTML = '<div style="padding:8px;color:#9ab;">Loading...</div>'; }
       titleEl.textContent = tr('shopMain','Shop');
-      const r = await fetch('/api/me', { credentials:'include' });
+      const r = await fetch(API_BASE + 'me', { credentials:'include' });
       const j = await r.json();
       if (!j || !j.ok){
         try { if (typeof showTopMessage==='function') showTopMessage(tr('needLoginShop','Please log in to access the shop.')); } catch(_){}
@@ -8053,7 +8157,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
       html += (
         '<div data-skin-item="1" style="display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;">'
       + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-      + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
+      + '    <img src="./sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
       + '  </div>'
       + '  <div style="flex:1;">'
       + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
@@ -8087,7 +8191,7 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         btn.addEventListener('click', async function(){
           const type = this.getAttribute('data-shop-buy');
           try {
-            const r = await fetch('/api/shop/buy', {
+            const r = await fetch(API_BASE + 'shop/buy', {
               method:'POST', headers:{ 'Content-Type': 'application/json' },
               credentials:'include', body: JSON.stringify({ type })
             });
@@ -9172,7 +9276,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   }
 
   try {
-    fetch('/api/me', { credentials:'include' })
+    fetch(API_BASE + 'me', { credentials:'include' })
       .then(function(r){ return r.json(); })
       .then(function(j){ if (j && j.ok){ try{ window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ }  window.__meOk = true; window.accountGold = j.gold|0; window.accountShop = Object.assign({hp:0,dmg:0}, (j.shopUpgrades||{}));
             try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
@@ -9944,7 +10048,7 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
           toast('Payment unavailable.');
           return;
         }
-        const r = await fetch('/api/checkout', {
+        const r = await fetch(API_BASE + 'checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -9959,7 +10063,7 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
-</body>
+
 <!-- [PATCH] Robust hide of mobile build buttons on desktop/zoom + chat placement in main menu -->
 <style id="mobile-build-robust-visibility">
   /* Mobile build UI fully disabled per request */
@@ -9985,2262 +10089,167 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
 })();
 </script>
 
-</html>
-      try { window.lobbyData = lobbyData; } catch(_){}
-<!-- [PATCH] turret-skins-swap v1 -->
-</script>
 
-<script>
-(function(){"use strict";
-  const SPRITES = {
-    T: new Image(), t: new Image(), G: new Image(),
-    T_shoot: new Image(), t_shoot: new Image(), G_shoot: new Image(),
-  };
-  SPRITES.T.src = "/sprites/turret.png";
-  SPRITES.t.src = "/sprites/mini_turret.png";
-  SPRITES.G.src = "/sprites/big_turret.png";
-  SPRITES.T_shoot.src = "/sprites/turret_shoot.png";
-  SPRITES.t_shoot.src = "/sprites/mini_turret_shoot.png";
-  SPRITES.G_shoot.src = "/sprites/big_turret_shoot.png";
-  try { window.__TURRET_SPRITES__ = SPRITES; } catch(_){}
-
-  function getSpriteFor(type, shooting){ return shooting ? (SPRITES[type + "_shoot"] || SPRITES[type]) : SPRITES[type]; }
-  function imgReady(img){ return img && img.complete && img.naturalWidth > 0; }
-
-  // Draw an image slightly larger than the tile, clipped to tile bounds (fills the square cleanly).
-  function drawSpriteCover(ctx, img, x, y, size, scale, shiftUpPx, allowTopOverflowPx){
-  // Anisotropic cover: slightly taller than wide so the base touches bottom & top
-  const sBase = (typeof scale === 'number') ? scale : 1.7;
-  const sX = Array.isArray(scale) ? (scale[0] ?? sBase) : sBase;
-  const sY = Array.isArray(scale) ? (scale[1] ?? sBase) : (sBase * 1.15); // ~+15% height
-  const up = (typeof shiftUpPx === 'number') ? shiftUpPx : (0.11 * size + 1);
-  const allow = (typeof allowTopOverflowPx === 'number') ? allowTopOverflowPx : (0.18 * size);
-  const cx = x + size/2, cy = y + size/2 - up;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y - allow, size, size + allow);
-  ctx.clip();
-  ctx.drawImage(img, cx - (size*sX)/2, cy - (size*sY)/2, size*sX, size*sY);
-  ctx.restore();
-}
-
-  // Track firing state to show *_shoot skins while laser is visible
-  const turretFireUntil = new Map(); // key "ty,tx" -> epoch ms
-  const LASER_LIFE_MS = 60;
-
-  function markTurretFiredFromXY(x0, y0){
-    try {
-      const ts = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const TILE = (typeof TILE_SIZE !== 'undefined') ? TILE_SIZE : (window.TILE_SIZE || 40);
-      const tx = Math.floor(x0 / TILE);
-      const ty = Math.floor(y0 / TILE);
-      turretFireUntil.set(ty + "," + tx, ts + LASER_LIFE_MS);
-    } catch(_){}
-  }
-
-  function markFromActiveLasers(){
-    try {
-      const arr = (typeof turretLasers !== 'undefined') ? turretLasers : window.turretLasers;
-      if (!arr || !arr.length) return;
-      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      for (let i = 0; i < arr.length; i++) {
-        const b = arr[i]; if (!b) continue;
-        if (typeof b.t !== 'number') continue;
-        if (now - b.t > LASER_LIFE_MS) continue;
-        if (typeof b.x0 !== 'number' || typeof b.y0 !== 'number') continue;
-        markTurretFiredFromXY(b.x0, b.y0);
-      }
-    } catch(_){}
-  }
-
-  (function attachLaserListeners(){
-    try {
-      if (!window.socket || attachLaserListeners._bound) return;
-      attachLaserListeners._bound = true;
-      socket.on('laserBeam', function(b){ if (b) markTurretFiredFromXY(b.x0 ?? b.x, b.y0 ?? b.y); });
-      socket.on('laserBeams', function(arr){ try { for (let i=0;i<(arr?.length||0);i++){ const b=arr[i]; if (b) markTurretFiredFromXY(b.x0 ?? b.x, b.y0 ?? b.y); } } catch(_e){} });
-    } catch(_e){}
-  })();
-
-  // --- Build tiles / Shop upgrades (unchanged from previous patch) ---
-  function patchBuildTiles(){
-    try{
-      const cont=document.getElementById('buildTiles'); if(!cont) return;
-      cont.querySelectorAll('.build-tile').forEach(btn=>{
-        const type=btn.getAttribute('data-type'); if(!/^[tTG]$/.test(type||"")) return;
-        const box=btn.querySelector(':scope > div:first-child'); if(!box) return;
-        if(box.querySelector('img[data-skin="1"]')) return;
-        box.innerHTML="";
-        const img=document.createElement('img');
-        img.src=(type==='T')?SPRITES.T.src:(type==='t')?SPRITES.t.src:SPRITES.G.src;
-        img.setAttribute('data-skin','1');
-        img.alt=(type==='T')?'Tourelle rouge':(type==='t')?'Mini-tourelle bleue':'Grande tourelle violette';
-        Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain',imageRendering:'pixelated'});
-        img.decoding='async';
-        box.appendChild(img);
-      });
-    }catch(_){}
-  }
-  try{patchBuildTiles();}catch(_){}
-  try{setInterval(patchBuildTiles,800);}catch(_){}
-
-  (function(){
-    try{
-      const prev=window.renderShopUpgrades;
-      window.renderShopUpgrades=function(){
-        try{ if(typeof prev==='function') prev.apply(this,arguments); }catch(_){}
-        try{
-          const root=document.getElementById('shopUpgrades'); if(!root) return;
-          root.querySelectorAll('.shop-upg-item').forEach(item=>{
-            const btn=item.querySelector('.btn-turret-up[data-type]'); if(!btn) return;
-            const type=btn.getAttribute('data-type'); if(!/^[tTG]$/.test(type||"")) return;
-            const box=item.querySelector(':scope > div:first-child'); if(!box) return;
-            if(box.querySelector('img[data-skin="1"]')) return;
-            box.innerHTML='';
-            const img=document.createElement('img');
-            img.src=(type==='T')?SPRITES.T.src:(type==='t')?SPRITES.t.src:SPRITES.G.src;
-            img.setAttribute('data-skin','1');
-            img.alt=(type==='T')?'Tourelle rouge':(type==='t')?'Mini-tourelle bleue':'Grande tourelle violette';
-            Object.assign(img.style,{width:'100%',height:'100%',objectFit:'contain',imageRendering:'pixelated'});
-            img.decoding='async';
-            box.appendChild(img);
-          });
-        }catch(_){}
-      };
-    }catch(_){}
-  })();
-
-  // Override drawStructures: call original, then overlay turret sprites (scaled + clipped)
-  (function(){
-    try {
-      const orig = window.drawStructures;
-      const patched = function(){
-        try {
-          // Draw everything as before
-          try { if (typeof orig === 'function') orig(); } catch(_){}
-
-          // Mark shooting from active lasers to ensure "*_shoot" skins always sync
-          markFromActiveLasers();
-
-          // Overlay sprites
-          const _structures = (typeof structures !== 'undefined') ? structures : window.structures;
-          const _ctx = (typeof ctx !== 'undefined') ? ctx : window.ctx;
-          const TILE=(typeof TILE_SIZE!=='undefined')?TILE_SIZE:(window.TILE_SIZE||40);
-          const camX=(typeof cameraX!=='undefined')?cameraX:(window.cameraX||0);
-          const camY=(typeof cameraY!=='undefined')?cameraY:(window.cameraY||0);
-          const _canvas=(typeof canvas!=='undefined')?canvas:window.canvas;
-          const _renderScale=(typeof renderScale!=='undefined')?renderScale:(window.renderScale||1);
-          if(!_structures||!_ctx) return;
-
-          const rows=_structures.length, cols=rows?(_structures[0]?.length||0):0;
-          const scrW=(_canvas&&_canvas.width)?(_canvas.width/_renderScale):(cols*TILE);
-          const scrH=(_canvas&&_canvas.height)?(_canvas.height/_renderScale):(rows*TILE);
-          const minCol=Math.max(0,Math.floor(camX/TILE)-1);
-          const minRow=Math.max(0,Math.floor(camY/TILE)-1);
-          const maxCol=Math.min(cols-1,Math.floor((camX+scrW)/TILE)+1);
-          const maxRow=Math.min(rows-1,Math.floor((camY+scrH)/TILE)+1);
-
-          for(let r=minRow;r<=maxRow;r++){
-            const row=_structures[r]; if(!row) continue;
-            for(let c=minCol;c<=maxCol;c++){
-              const cell=row[c]; if(!cell) continue;
-              const type=cell.type; if(!(type==='T'||type==='t'||type==='G')) continue;
-              const x=c*TILE-camX, y=r*TILE-camY;
-              const key=r+','+c;
-              const now=(typeof performance!=='undefined'&&performance.now)?performance.now():Date.now();
-              const shooting=(turretFireUntil.get(key)||0)>now;
-              const img=getSpriteFor(type,shooting)||getSpriteFor(type,false);
-              if(imgReady(img)){ _ctx.clearRect(x, y, TILE, TILE);
-              drawSpriteCover(_ctx,img,x,y,TILE,1.7,0.11*TILE+1,0.18*TILE); }
-            }
-          }
-        } catch(e){ try{ if(typeof orig==='function') orig(); }catch(_){} }
-      };
-      window.drawStructures = patched;
-      try { drawStructures = patched; } catch(_){}
-    } catch(_e){}
-  })();
-
-  // Override drawBuildPreview: use same cover+clip drawing in semi-transparency
-  (function(){
-    try {
-      const orig = window.drawBuildPreview;
-      const patched = function(){
-        try {
-          const _buildMode = (typeof buildMode!=='undefined')?buildMode:window.buildMode;
-          const _hover = (typeof buildHover!=='undefined')?buildHover:window.buildHover;
-          if(!_buildMode || !_hover){ if(typeof orig==='function') orig(); return; }
-          const tx=_hover.tx, ty=_hover.ty;
-          const MAP_COLS=(typeof MAP_COLS!=='undefined')?MAP_COLS:(window.MAP_COLS||0);
-          const MAP_ROWS=(typeof MAP_ROWS!=='undefined')?MAP_ROWS:(window.MAP_ROWS||0);
-          const TILE=(typeof TILE_SIZE!=='undefined')?TILE_SIZE:(window.TILE_SIZE||40);
-          const camX=(typeof cameraX!=='undefined')?cameraX:(window.cameraX||0);
-          const camY=(typeof cameraY!=='undefined')?cameraY:(window.cameraY||0);
-          if(tx<0||ty<0||tx>=MAP_COLS||ty>=MAP_ROWS) return;
-          if(!(_buildMode==='T'||_buildMode==='t'||_buildMode==='G')){ if(typeof orig==='function') return orig(); }
-          const _ctx=(typeof ctx!=='undefined')?ctx:window.ctx;
-          const x=tx*TILE-camX, y=ty*TILE-camY;
-          const img=getSpriteFor(_buildMode,false);
-          _ctx.save(); _ctx.globalAlpha=0.5;
-          if(imgReady(img)) drawSpriteCover(_ctx,img,x,y,TILE,1.7,0.11*TILE+1,0.18*TILE);
-          else{ _ctx.fillStyle=(_buildMode==='T')?'#d33':(_buildMode==='t')?'#3aa6ff':'#b48cff'; _ctx.fillRect(x,y,TILE,TILE); }
-          _ctx.restore();
-        } catch(_){ if(typeof orig==='function') try{orig();}catch(__){} }
-      };
-      window.drawBuildPreview = patched;
-      try { drawBuildPreview = patched; } catch(_){}
-    } catch(_e){}
-  })();
-
-  // Also hook drawTurretLasers to mark shooting tiles directly from the buffer (extra reliability)
-  (function(){
-    try {
-      const orig = window.drawTurretLasers;
-      if (typeof orig === 'function') {
-        window.drawTurretLasers = function(){
-          try { orig(); } catch(_){}
-          try { markFromActiveLasers(); } catch(_){}
-        };
-        try { drawTurretLasers = window.drawTurretLasers; } catch(_){}
-      }
-    } catch(_e){}
-  })();
-
-
-  // Global, resilient opener (works even if openSkinModal not yet defined)
-  try {
-    if (typeof window.__openCharacterSkin !== 'function') {
-      window.__openCharacterSkin = function(){
-        try {
-          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
-          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
-          if (typeof openSkinModal === 'function') return openSkinModal();
-          var tries = 0;
-          var id = setInterval(function(){
-            tries++;
-            try {
-              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
-              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
-            } catch(_){}
-            if (tries > 40) clearInterval(id);
-          }, 50);
-        } catch(_){}
-      };
-    }
-    // Document-level capture listener (works even if inner containers stop propagation)
-    document.addEventListener('click', function(ev){
-      try {
-        var t = ev.target;
-        if (!t) return;
-        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        window.__openCharacterSkin();
-      } catch(_){}
-    }, true);
-  } catch(_){}
-
-})();
-</script>
-<!-- /[PATCH] turret-skins-swap v1 -->
-
-<!-- [PATCH] turret-skins-swap v1 - periodic shop patch -->
-<script>
+<!-- CrazyGames Invite integration (auto-detected by CrazyGames) -->
+<script src="https://sdk.crazygames.com/crazygames.js"></script>
+<script id="cg-invite-bridge">
 (function(){
-  function patchShopTurretIcons(){
+  // Run only on CrazyGames or when SDK is present
+  var isCrazyHost = /(^|\.)crazygames\.com$/i.test(location.hostname);
+  var installed = false;
+  var MAX_TRIES = 60; // ~15s
+  var tries = 0;
+
+  function safeInt(v){
+    var n = parseInt(v, 10);
+    return (isFinite(n) && n > 0) ? n : null;
+  }
+
+  function getRegionFromURL(){
     try {
-      const root = document.getElementById('shopUpgrades'); if (!root) return;
-      const items = root.querySelectorAll('.shop-upg-item');
-      items.forEach(item => {
-        const btn = item.querySelector('.btn-turret-up[data-type]'); if (!btn) return;
-        const type = btn.getAttribute('data-type'); if (!/^[tTG]$/.test(type)) return;
-        const box = item.querySelector(':scope > div:first-child'); if (!box) return;
-        if (box.querySelector('img[data-skin="1"]')) return;
-        const src = (type==='T')? "/sprites/turret.png" : (type==='t')? "/sprites/mini_turret.png" : "/sprites/big_turret.png";
-        box.innerHTML = '';
-        const img = document.createElement('img');
-        img.src = src; img.setAttribute('data-skin','1'); img.alt = 'turret';
-        img.style.width='100%'; img.style.height='100%'; img.style.objectFit='contain'; img.style.imageRendering='pixelated'; img.decoding='async';
-        box.appendChild(img);
-      });
-    } catch(_) {}
+      var s = new URLSearchParams(location.search||'');
+      var w = s.get('w');
+      return w ? String(w) : null;
+    } catch(_){ return null; }
   }
-  try { setInterval(patchShopTurretIcons, 1000); } catch(_){}
 
-  // Global, resilient opener (works even if openSkinModal not yet defined)
-  try {
-    if (typeof window.__openCharacterSkin !== 'function') {
-      window.__openCharacterSkin = function(){
-        try {
-          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
-          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
-          if (typeof openSkinModal === 'function') return openSkinModal();
-          var tries = 0;
-          var id = setInterval(function(){
-            tries++;
-            try {
-              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
-              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
-            } catch(_){}
-            if (tries > 40) clearInterval(id);
-          }, 50);
-        } catch(_){}
-      };
-    }
-    // Document-level capture listener (works even if inner containers stop propagation)
-    document.addEventListener('click', function(ev){
-      try {
-        var t = ev.target;
-        if (!t) return;
-        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        window.__openCharacterSkin();
-      } catch(_){}
-    }, true);
-  } catch(_){}
-
-})();
-</script>
-<!-- /[PATCH] turret-skins-swap v1 - periodic shop patch -->
-
-<!-- [PATCH] build-tiles locale sync (ensure names follow menu language) -->
-<script id="build-tiles-locale-sync">
-(function(){ "use strict";
-  if (window.__buildTilesLocaleSyncInstalled) return;
-  window.__buildTilesLocaleSyncInstalled = true;
-
-  function uiLang(){
+  function extractLobby(d){
     try {
-      var raw = (typeof window.currentLang === 'string' && window.currentLang) || (navigator.language||'en');
-      raw = String(raw).slice(0,2);
-      var alias = { ja:'jp', zh:'cn', ko:'kr' };
-      return alias[raw] || raw || 'en';
-    } catch(_){ return 'en'; }
+      var root = d || {};
+      var lobby = root.lobby || root || {};
+      var id = lobby.id || lobby.gameId || root.gameId || root.id;
+      var started = (typeof lobby.started === 'boolean') ? lobby.started :
+                    (typeof root.started === 'boolean') ? root.started : false;
+      var manual = (typeof lobby.manual === 'boolean') ? lobby.manual :
+                   (typeof root.manual === 'boolean') ? root.manual : undefined;
+      return { id: safeInt(id), started: !!started, manual: manual };
+    } catch(_){ return { id:null, started:false }; }
   }
 
-  function upperFirstLocalizedSafe(s){
-    try { return (typeof window.upperFirstLocalized==='function') ? window.upperFirstLocalized(s) : (s ? s.charAt(0).toUpperCase()+s.slice(1) : s); }
-    catch(_){ return s; }
-  }
-
-  function computeTipForType(type){
+  function init(){
     try {
-      var T = window.TRANSLATIONS || {};
-      var L = uiLang();
-      var tr = (T[L] || T['en']) || {};
-      var names = tr.turretType || {};
-      var hpLabel = tr.hpShort || 'HP';
-      var dmgLabel = tr.damage || 'Damage';
-      var rateLabel = tr.fireRate || 'Fire rate';
-      var perSec  = tr.perSec || '/s';
-      var baseHP = { T:500, t:200, G:2500, B:500, D:500 };
-      var name = (type==='B') ? (tr.buildWall || 'Wall')
-               : (type==='D') ? (tr.buildDoor || 'Door')
-               : (names[type] || 'Turret');
-      name = upperFirstLocalizedSafe(name);
-      if (type==='B' || type==='D') {
-        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ')';
-      } else {
-        var rate = (type==='T') ? '1' : (type==='G') ? '2' : '0.5';
-        var baseDmg = {t:5,T:10,G:25}[type] || 0;
-        var dmg = (typeof window.computeTurretDamageDisplay==='function') ? window.computeTurretDamageDisplay(type) : baseDmg;
-        return name + ' (' + hpLabel + ': ' + (baseHP[type]||0) + ', ' + dmgLabel + ': ' + dmg + ', ' + rateLabel + ': ' + rate + perSec + ')';
-      }
-    } catch(_){ return ''; }
-  }
-
-  function syncBuildTileLocale(){
-    try{
-      var cont = document.getElementById('buildTiles'); if (!cont) return;
-      var T = window.TRANSLATIONS || {}; var L = uiLang(); var tr = (T[L]||T['en'])||{};
-      cont.querySelectorAll('.build-tile').forEach(function(btn){
-        try{
-          var type = btn.getAttribute('data-type'); if (!type) return;
-          // 1) Update tooltip source so every handler (legacy/new) uses the right language
-          var tip = computeTipForType(type);
-          if (tip) btn.setAttribute('data-tip', tip);
-
-          // 2) Accessibility label for screen-readers
-          var baseName = (type==='B') ? (tr.buildWall || 'Wall')
-                        : (type==='D') ? (tr.buildDoor || 'Door')
-                        : ((tr.turretType||{})[type] || 'Turret');
-          baseName = upperFirstLocalizedSafe(baseName);
-          btn.setAttribute('aria-label', baseName);
-        }catch(_){}
-      });
-
-      // Also update mobile build button labels (idempotent)
-      try{
-        document.querySelectorAll('.mobile-build .mb-btn').forEach(function(b){
-          var t = b.getAttribute('data-type'); if (!t) return;
-          if (t==='B') { b.textContent = tr.buildWall || b.textContent; b.setAttribute('aria-label', (tr.buildWall||b.textContent) + ' (B)'); }
-          else if (t==='D') { b.textContent = tr.buildDoor || b.textContent; b.setAttribute('aria-label', (tr.buildDoor||b.textContent) + ' (D)'); }
-          else if (t==='t') { b.textContent = tr.buildMiniTurret || b.textContent; b.setAttribute('aria-label', (tr.buildMiniTurret||b.textContent) + ' (t)'); }
-          else if (t==='T') { b.textContent = tr.buildTurret || b.textContent; b.setAttribute('aria-label', (tr.buildTurret||b.textContent) + ' (T)'); }
-        });
-      }catch(_){}
-
-      // If tooltip is currently visible, refresh its text to the new language
-      try{
-        var visibleTip = document.getElementById('buildTooltipStable') || document.getElementById('buildTooltip');
-        if (visibleTip && visibleTip.style && visibleTip.style.display==='block'){
-          // Try to find the currently hovered tile
-          var e = document.querySelector('#buildTiles .build-tile:hover');
-          if (e){
-            var t = e.getAttribute('data-type');
-            var txt = computeTipForType(t);
-            if (txt) visibleTip.textContent = txt;
-          }
-        }
-      }catch(_){}
-    }catch(_){}
-  }
-
-  // Expose
-  try { window.syncBuildTileLocale = syncBuildTileLocale; } catch(_){}
-
-  // Patch updateUITexts once to also sync tiles after any language change
-  try {
-    var _orig = window.updateUITexts;
-    if (typeof _orig === 'function'){
-      window.updateUITexts = function(){
-        try { _orig.apply(this, arguments); } finally { try { syncBuildTileLocale(); } catch(_e){} }
-      };
-    }
-  } catch(_){}
-
-  // Initial run (post-DOM)
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', syncBuildTileLocale, {passive:true});
-  } else {
-    syncBuildTileLocale();
-  }
-})(); 
-</script>
-
-<!-- [PATCH] character-skin shop & recolor v1 -->
-<script>
-(function(){
-  if (window.__skinShopInstalled) return; 
-  window.__skinShopInstalled = true;
-
-  // ======= State & helpers =======
-
-// Robust: ensure my skin is loaded before joining/starting a game (handles reconnect timing)
-async function ensureMySkinLoaded(timeoutMs = 1200){
-  try {
-    if (__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
-    // Fire a fetch; don't throw if it fails
-    try { await fetchMe(); } catch(_){}
-    if (__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes) return true;
-    // Wait a tiny bit for any in-flight /api/me
-    await new Promise(r => setTimeout(r, 200));
-    return !!(__mySkin && __mySkin.hair && __mySkin.skin && __mySkin.clothes);
-  } catch(_){ return false; }
-}
-try {
-  // On initial socket connect, refresh my profile+skin and bust cached sprite
-  if (window.socket && typeof socket.on==='function'){
-    socket.on('connect', function(){
-      try { if (__myUser) __spriteCache[String(__myUser).toLowerCase()] = null; } catch(_){}
-      try { fetchMe(); } catch(_){}
-    });
-  }
-} catch(_){}
-
-  var __basePlayerImg = (typeof playerImg !== 'undefined') ? playerImg : null;
-  var __myUser = null;
-  var __mySkin = null; // { hair, skin, clothes }
-  var __spriteCache = {}; // pseudoLower -> Image
-
-  function uiLang(){
-    try { var raw = (window.currentLang||navigator.language||'en').slice(0,2); var alias={ja:'jp',zh:'cn',ko:'kr'}; return alias[raw]||raw||'en'; }catch(_){ return 'en'; }
-  }
-
-  function fetchMe(){
-    return fetch('/api/me', { credentials:'include' })
-      .then(function(r){ return r.json(); })
-      .then(function(j){
-        if (j && j.ok){ try{ if (Number.isFinite(j.gold)) window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ } 
-          __myUser = j.username || null;
-          __mySkin = j.skin || __mySkin;
-        }
-      }).catch(function(_){ try{ if (j && j.ok && Number.isFinite(j.gold)) { window.accountGold = (j.gold|0); window.__meOk = true; } }catch(_){ } try{ if (typeof __refreshHudGoldLine==='function') __refreshHudGoldLine(); }catch(_){ } });
-  }
-
-  function hexToRgb(h){ var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(h||'')); return m?{r:parseInt(m[1],16),g:parseInt(m[2],16),b:parseInt(m[3],16)}:null; }
-  function rgbToHsl(r,g,b){
-    r/=255; g/=255; b/=255;
-    var max=Math.max(r,g,b), min=Math.min(r,g,b);
-    var h,s,l=(max+min)/2;
-    if (max==min){ h=s=0; }
-    else{
-      var d=max-min;
-      s=l>0.5? d/(2-max-min) : d/(max+min);
-      switch(max){
-        case r: h=(g-b)/d + (g<b?6:0); break;
-        case g: h=(b-r)/d + 2; break;
-        case b: h=(r-g)/d + 4; break;
-      }
-      h/=6;
-    }
-    return {h:h,s:s,l:l};
-  }
-  function hslToRgb(h,s,l){
-    var r,g,b;
-    if(s===0){ r=g=b=l; }
-    else{
-      function hue2rgb(p,q,t){ if(t<0) t+=1; if(t>1) t-=1; if(t<1/6) return p+(q-p)*6*t; if(t<1/2) return q; if(t<2/3) return p+(q-p)*(2/3 - t)*6; return p; }
-      var q = l < 0.5 ? l * (1 + s) : l + s - l*s;
-      var p = 2 * l - q;
-      r = hue2rgb(p,q,h + 1/3);
-      g = hue2rgb(p,q,h);
-      b = hue2rgb(p,q,h - 1/3);
-    }
-    return {r:Math.round(r*255), g:Math.round(g*255), b:Math.round(b*255)};
-  }
-
-  // Classify pixel by hue/sat ranges (robust to different base shades)
-  
-
-function classifyRegion(r,g,b,a){
-    // Ignore near-transparent pixels entirely (anti-aliased halo)
-    if (a < 64) return 'none';
-    var hsl = rgbToHsl(r,g,b);
-    var h = hsl.h*360, s = hsl.s, l = hsl.l;
-
-    // Ignore outlines/eyes and fully transparent
-    // Ignore outlines/eyes and fully transparent
-    // Previous: l-extremes OR low saturation were skipped, which blocked near‑white/near‑black highlights.
-    // Keep ignoring truly gray/outline pixels, but allow colored extremes so gradients with white/black apply correctly.
-    if (s <= 0.06 || l <= 0.10 || l >= 0.94) return 'none';
-
-    // Clothes: greens/cyans from the base sprite. Wider band to catch all shades.
-    if (s > 0.12 && h >= 70 && h <= 190) return 'clothes';
-
-    // Base orange/brown band used by hair/skin. Split by lightness.
-    if (h >= 8 && h <= 70 && s > 0.06){
-      return (l <= 0.56) ? 'hair' : 'skin';
-    }
-
-    // Fallback classification for borderline pixels (anti‑alias shades)
-    var diffGreen = Math.min(Math.abs(h - 120), 360 - Math.abs(h - 120));
-    var diffOrange = Math.min(Math.abs(h - 30),  360 - Math.abs(h - 30));
-    if (s > 0.05){
-      if (diffGreen < 30) return 'clothes';
-      if (diffOrange < 35) return (l <= 0.56) ? 'hair' : 'skin';
-    }
-    return 'none';
-  }
-
-  function applyTintPreserveLight(rgbTarget, srcHsl){
-    // If user picked pure black or pure white, apply it exactly
-    // (do not preserve source lightness), otherwise keep the original shading behavior.
-    if (rgbTarget && rgbTarget.r===0 && rgbTarget.g===0 && rgbTarget.b===0) return {r:0,g:0,b:0};
-    if (rgbTarget && rgbTarget.r===255 && rgbTarget.g===255 && rgbTarget.b===255) return {r:255,g:255,b:255};
-    var thsl = rgbToHsl(rgbTarget.r, rgbTarget.g, rgbTarget.b);
-    // Blend saturation slightly to keep sprite relief
-    var h = thsl.h;
-    var s = Math.min(1, Math.max(0, thsl.s*0.85 + srcHsl.s*0.15));
-    // Allow target lightness to influence the result near extremes (for white/black gradients),
-    // while preserving shading in mid‑tones.
-    var t = thsl.l; // target lightness
-    // closeness=0 in mid-range (~[0.25..0.75]), -> preserve src lightness
-    // closeness=1 near pure black/white -> follow target lightness (to let gradients work)
-    var closeness = Math.max(0, Math.min(1, (Math.abs(t - 0.5) - 0.25) / 0.25));
-    var l = srcHsl.l*(1 - closeness) + t*closeness;
-    var out = hslToRgb(h,s,l);
-    return out;
-  }function recolorPlayerImage(baseImg, colors, cb){
-    try{
-      var canvas = document.createElement('canvas');
-      var w = baseImg.naturalWidth||baseImg.width||64;
-      var h = baseImg.naturalHeight||baseImg.height||64;
-      if (!w || !h) { if (cb) cb(null); return; }
-      canvas.width = w; canvas.height = h;
-      var ctx = canvas.getContext('2d');
-      try { ctx.imageSmoothingEnabled = false; }catch(_){}
-      ctx.drawImage(baseImg, 0, 0, w, h);
-      var id = ctx.getImageData(0,0,w,h);
-      var d = id.data;
-      var rgbHair = hexToRgb(colors.hair||'#6b4d2e');
-      var rgbSkin = hexToRgb(colors.skin||'#f4c2c2');
-      var rgbClothes = hexToRgb(colors.clothes||'#2aa84a');
-      for (var i=0;i<d.length;i+=4){
-        var r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
-        var reg = classifyRegion(r,g,b,a);
-        if (reg==='none') continue;
-        var hsl = rgbToHsl(r,g,b);
-        var target = (reg==='hair')?rgbHair : (reg==='skin')?rgbSkin : rgbClothes;
-        var out = applyTintPreserveLight(target, hsl);
-        d[i]=out.r; d[i+1]=out.g; d[i+2]=out.b; // keep alpha
-      }
-      
-      // Post-process: clear near-transparent noise / isolated speckles
-      // 1) Normalize ultra-low alpha to 0
-      for (var j=0;j<d.length;j+=4){ if (d[j+3] <= 16) d[j+3] = 0; }
-      // 2) Remove isolated 1px dots with weak alpha (4-neighbour check)
-      var pxW = w, pxH = h;
-      for (var y=1; y<pxH-1; y++){
-        for (var x=1; x<pxW-1; x++){
-          var k = (y*pxW + x) * 4;
-          var a0 = d[k+3];
-          if (a0 > 0 && a0 <= 80){
-            var aL = d[k-4+3], aR = d[k+4+3], aT = d[k-4*pxW+3], aB = d[k+4*pxW+3];
-            var aTL = d[k-4*pxW-4+3], aTR = d[k-4*pxW+4+3], aBL = d[k+4*pxW-4+3], aBR = d[k+4*pxW+4+3];
-            var neigh = 0; if (aL>0) neigh++; if (aR>0) neigh++; if (aT>0) neigh++; if (aB>0) neigh++;
-            if (aTL>0) neigh++; if (aTR>0) neigh++; if (aBL>0) neigh++; if (aBR>0) neigh++;
-            if (neigh <= 1) { d[k+3] = 0; }
-          }
-        }
-      }
-ctx.putImageData(id,0,0);
-      var url = canvas.toDataURL('image/png');
-      var im = new Image(); im.src = url; im.decoding='async'; im.style.imageRendering='pixelated';
-      if (cb) { if (im.complete) cb(im); else im.onload=function(){ cb(im); }; }
-    }catch(e){ if (cb) cb(null); }
-  }
-
-  function getPlayerSpriteFor(pseudo, skinOpt){
-    try{
-      if (!pseudo) return __basePlayerImg;
-      var key = String(pseudo||'').toLowerCase();
-      if (__spriteCache[key]) return __spriteCache[key];
-      var s = null;
-      // Prefer explicit skin info from state payload
-      if (skinOpt && typeof skinOpt==='object') {
-        var hex = /^#[0-9a-fA-F]{6}$/;
-        var h = hex.test(skinOpt.hair)? String(skinOpt.hair).toLowerCase() : null;
-        var sk = hex.test(skinOpt.skin)? String(skinOpt.skin).toLowerCase() : null;
-        var c = hex.test(skinOpt.clothes)? String(skinOpt.clothes).toLowerCase() : null;
-        if (h && sk && c) { s = { hair:h, skin:sk, clothes:c }; }
-      }
-      // Fallback: local user skin (for ourselves) if not provided
-      if (!s && __myUser && key === String(__myUser||'').toLowerCase() && __mySkin) {
-        s = __mySkin;
-      }
-      if (s && __basePlayerImg){
-        // async recolor; cache per pseudo
-        recolorPlayerImage(__basePlayerImg, s, function(img){ __spriteCache[key] = img || __basePlayerImg; });
-      }
-      return __basePlayerImg;
-    }catch(_){ return __basePlayerImg; }
-  }
-  try { window.getPlayerSpriteFor = getPlayerSpriteFor; } catch(_){}
-  try { if (typeof window.fetchMe!=='function') window.fetchMe = fetchMe; } catch(_){ }
-  try { if (typeof window.openSkinModal!=='function') window.openSkinModal = openSkinModal; } catch(_){ }
-
-  // ======= Shop UI injection =======
-  function ensureSkinModal(){
-    var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
-    
-    if (document.getElementById('skinModal')) return;
-    var modal = document.createElement('div');
-    modal.id = 'skinModal';
-    modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:2147483646; align-items:center; justify-content:center;';
-    modal.innerHTML = ''
-      + '<div id="skinBox" style="background:#111;border:1px solid #222;max-width: min(92vw, 540px); color:#eee; box-shadow:0 10px 30px #000a;">'
-      + '  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">'
-      + '    <div style="font-weight:800;font-size:18px;">' + ((T.customizeCharacter||'Customize character')) + '</div>'
-      + '    <button id="skinClose" style="background:#333;color:#fff;border:none;border-radius:8px;padding:6px 10px;cursor:pointer;">✕</button>'
-      + '  </div>'
-      + '  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">'
-      + '    <div style="flex:1;min-width:200px;text-align:center;">'
-      + '      <canvas id="skinPreview" width="96" height="96" style="width:160px;height:160px;border:1px solid #333;border-radius:8px;background:#222;"></canvas>'
-      + '      <div style="margin-top:8px;font-size:12px;color:#9ab;">' + ((T.preview||'Preview')) + '</div>'
-      + '    </div>'
-      + '    <div style="flex:1;min-width:240px;">'
-      + '      <div style="display:flex;flex-direction:column;gap:10px;">'
-      + '        <label>' + ((T.hair||'Hair')) + ' <input id="hairColor" type="color" value="#6b4d2e" style="margin-left:8px;"></label>'
-      + '        <label>' + ((T.skin||'Skin')) + ' <input id="skinColor" type="color" value="#f4c2c2" style="margin-left:8px;"></label>'
-      + '        <label>' + ((T.clothes||'Clothes')) + ' <input id="clothesColor" type="color" value="#2aa84a" style="margin-left:8px;"></label>'
-      + '        <div style="margin-top:4px;color:#ccc;font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
-      + '        <div id="skinMsg" style="min-height:18px;font-size:12px;color:#9ab;"></div>'
-      + '        <div style="display:flex;gap:8px;flex-wrap:wrap;">'
-      + '          <button id="skinBuy" style="flex:1;background:#ff8800;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.buy||'Buy')) + '</button>'
-      + '          <button id="skinCancel" style="flex:1;background:#222;color:#fff;border:none;border-radius:8px;padding:10px 14px;cursor:pointer;">' + ((T.cancel||'Cancel')) + '</button>'
-      + '        </div>'
-      + '      </div>'
-      + '    </div>'
-      + '  </div>'
-      + '</div>';
-    document.body.appendChild(modal);
-try { modal.addEventListener('click', function(ev){ if (ev.target && (ev.target.id==='skinCancel' || ev.target.id==='skinClose')) { modal.style.display='none'; } }, {passive:true}); } catch(_){ }
-function close(){ modal.style.display='none'; }
-    modal.addEventListener('click', function(ev){ if (ev.target===modal) close(); }, { passive:true });
-    modal.querySelector('#skinClose').addEventListener('click', close, { passive:true });
-    modal.querySelector('#skinCancel').addEventListener('click', close, { passive:true });
-  }
-
-  function openSkinModal(){
-    var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
-    
-    ensureSkinModal();
-    var modal = document.getElementById('skinModal');
-    var canvas = document.getElementById('skinPreview');
-    var ctx = canvas.getContext('2d');
-    try { ctx.imageSmoothingEnabled = false; }catch(_){}
-
-    var hairInp = document.getElementById('hairColor');
-    var skinInp = document.getElementById('skinColor');
-    var clothesInp = document.getElementById('clothesColor');
-    var msg = document.getElementById('skinMsg');
-
-    
-    
-    // --- Custom in-DOM color palette with "Valider" inside (replaces native popup) ---
-    (function(){
-      var overlay, svCanvas, svCtx, hueCanvas, hueCtx, okBtn, rIn, gIn, bIn, activeInput = null;
-      function clamp(v,min,max){ return v<min?min: (v>max?max:v); }
-      function hsv2rgb(h,s,v){
-        h = (h%360+360)%360; s = clamp(s,0,1); v = clamp(v,0,1);
-        var c = v*s, x = c*(1-Math.abs((h/60)%2-1)), m=v-c, r=0,g=0,b=0;
-        if (h<60){ r=c; g=x; b=0; } else if (h<120){ r=x; g=c; b=0; }
-        else if (h<180){ r=0; g=c; b=x; } else if (h<240){ r=0; g=x; b=c; }
-        else if (h<300){ r=x; g=0; b=c; } else { r=c; g=0; b=x; }
-        return { r: Math.round((r+m)*255), g: Math.round((g+m)*255), b: Math.round((b+m)*255) };
-      }
-      function rgb2hsv(r,g,b){
-        r/=255; g/=255; b/=255;
-        var max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min, h=0, s=max===0?0:d/max, v=max;
-        if(d!==0){
-          switch(max){
-            case r: h = 60*(((g-b)/d)%6); break;
-            case g: h = 60*(((b-r)/d)+2); break;
-            case b: h = 60*(((r-g)/d)+4); break;
-          }
-        }
-        if (h<0) h+=360;
-        return {h:h, s:s, v:v};
-      }
-      function hex2rgb(hex){
-        hex = (hex||'').toString().trim();
-        if (hex[0]==='#') hex = hex.slice(1);
-        if (hex.length===3) hex = hex.split('').map(function(c){return c+c;}).join('');
-        var n = parseInt(hex,16);
-        if (isNaN(n) || hex.length!==6) return {r:0,g:0,b:0};
-        return { r: (n>>16)&255, g: (n>>8)&255, b: n&255 };
-      }
-      function rgb2hex(r,g,b){ function h(x){ return (x|0).toString(16).padStart(2,'0'); } return '#' + h(r)+h(g)+h(b); }
-
-      var hue = 240, sat = 1, val = 1;
-
-      function ensureOverlay(){
-        if (overlay) return;
-        overlay = document.createElement('div');
-        overlay.id = 'colorPaletteOverlay';
-        overlay.style.position = 'fixed';
-        overlay.style.zIndex = '2147483647';
-        overlay.style.background = '#111';
-        overlay.style.border = '1px solid #333';
-        overlay.style.borderRadius = '10px';
-        overlay.style.boxShadow = '0 10px 30px rgba(0,0,0,.5)';
-        overlay.style.padding = '10px';
-        overlay.style.display = 'none';
-        overlay.style.width = '260px';
-
-        var title = document.createElement('div');
-        title.textContent = (T.color||'Color');
-        title.style.color='#fff';
-        title.style.fontWeight='700';
-        title.style.margin='0 0 6px';
-        overlay.appendChild(title);
-
-        svCanvas = document.createElement('canvas');
-        svCanvas.width = 240; svCanvas.height = 150;
-        svCanvas.style.display = 'block';
-        svCanvas.style.border = '1px solid #222';
-        svCanvas.style.borderRadius = '8px';
-        overlay.appendChild(svCanvas);
-        svCtx = svCanvas.getContext('2d');
-
-        hueCanvas = document.createElement('canvas');
-        hueCanvas.width = 240; hueCanvas.height = 16;
-        hueCanvas.style.display='block';
-        hueCanvas.style.margin = '8px 0';
-        hueCanvas.style.borderRadius = '8px';
-        hueCanvas.style.border = '1px solid #222';
-        overlay.appendChild(hueCanvas);
-        hueCtx = hueCanvas.getContext('2d');
-
-        var rgbWrap = document.createElement('div');
-        rgbWrap.style.display='grid';
-        rgbWrap.style.gridTemplateColumns='1fr 1fr 1fr';
-        rgbWrap.style.gap='8px';
-        function mkNum(label){
-          var wrap=document.createElement('div');
-          var i=document.createElement('input');
-          i.type='number'; i.min='0'; i.max='255'; i.step='1';
-          i.style.width='100%'; i.style.boxSizing='border-box';
-          i.style.padding='6px 8px';
-          i.style.borderRadius='6px'; i.style.border='1px solid #222'; i.style.background='#000'; i.style.color='#fff';
-          var l=document.createElement('div');
-          l.textContent=label; l.style.color='#9ab'; l.style.fontSize='12px'; l.style.marginTop='4px'; l.style.textAlign='center';
-          wrap.appendChild(i); wrap.appendChild(l);
-          return {wrap:wrap,input:i};
-        }
-        var nr=mkNum('R'), ng=mkNum('G'), nb=mkNum('B');
-        rIn = nr.input; gIn = ng.input; bIn = nb.input;
-        rgbWrap.appendChild(nr.wrap); rgbWrap.appendChild(ng.wrap); rgbWrap.appendChild(nb.wrap);
-        overlay.appendChild(rgbWrap);
-
-        var actions = document.createElement('div');
-        actions.style.display='flex'; actions.style.gap='8px'; actions.style.marginTop='10px';
-        okBtn = document.createElement('button');
-        okBtn.textContent=(T.validate||'Apply');
-        okBtn.style.flex='1';
-        okBtn.style.background='#2a6aff'; okBtn.style.color='#fff'; okBtn.style.border='none';
-        okBtn.style.padding='10px 14px'; okBtn.style.borderRadius='8px'; okBtn.style.cursor='pointer';
-        actions.appendChild(okBtn);
-overlay.appendChild(actions);
-
-        document.body.appendChild(overlay);
-document.addEventListener('keydown', function(e){ if (e.key==='Escape') hide(); }, {passive:true});
-        document.addEventListener('mousedown', function(e){ try { if (overlay && overlay.style.display!=='none' && !overlay.contains(e.target) && e.target!==activeInput) { overlay.hide(); } } catch(_){ } }, true);
-
-        function hide(){ overlay.style.display='none'; activeInput = null; }
-        overlay.hide = hide;
-
-        function drawHue(){
-          var grd = hueCtx.createLinearGradient(0,0,hueCanvas.width,0);
-          grd.addColorStop(0,'#f00'); grd.addColorStop(1/6,'#ff0');
-          grd.addColorStop(2/6,'#0f0'); grd.addColorStop(3/6,'#0ff');
-          grd.addColorStop(4/6,'#00f'); grd.addColorStop(5/6,'#f0f'); grd.addColorStop(1,'#f00');
-          hueCtx.fillStyle = grd; hueCtx.fillRect(0,0,hueCanvas.width,hueCanvas.height);
-        }
-        function drawSV(){
-          var w=svCanvas.width,h=svCanvas.height;
-          var rgb=hsv2rgb(hue,1,1);
-          svCtx.fillStyle = 'rgb('+rgb.r+','+rgb.g+','+rgb.b+')';
-          svCtx.fillRect(0,0,w,h);
-          var g1=svCtx.createLinearGradient(0,0,w,0);
-          g1.addColorStop(0,'#fff'); g1.addColorStop(1,'rgba(255,255,255,0)');
-          svCtx.fillStyle=g1; svCtx.fillRect(0,0,w,h);
-          var g2=svCtx.createLinearGradient(0,0,0,h);
-          g2.addColorStop(0,'rgba(0,0,0,0)'); g2.addColorStop(1,'#000');
-          svCtx.fillStyle=g2; svCtx.fillRect(0,0,w,h);
-          var x = clamp(sat,0,1)*w, y = (1-clamp(val,0,1))*h;
-          svCtx.beginPath(); svCtx.arc(x,y,6,0,Math.PI*2);
-          svCtx.lineWidth=2; svCtx.strokeStyle='#fff'; svCtx.stroke();
-          svCtx.beginPath(); svCtx.arc(x,y,5,0,Math.PI*2);
-          svCtx.strokeStyle='#000'; svCtx.stroke();
-        }
-        function updateInputs(){
-          var rgb=hsv2rgb(hue,sat,val);
-          rIn.value=rgb.r; gIn.value=rgb.g; bIn.value=rgb.b;
-        }
-        function setFromRGB(r,g,b){
-          r=clamp(+r||0,0,255); g=clamp(+g||0,0,255); b=clamp(+b||0,0,255);
-          var hsv=rgb2hsv(r,g,b); hue=hsv.h; sat=hsv.s; val=hsv.v;
-          drawHue(); drawSV(); updateInputs(); pushPreview();
-        }
-        function pushPreview(){
-          var hex = window.__sanitizeHex(rgb2hex(+rIn.value||0, +gIn.value||0, +bIn.value||0));
-          if (activeInput===hairInp) { applied.hair = hex; schedulePreview(); }
-          else if (activeInput===skinInp) { applied.skin = hex; schedulePreview(); }
-          else if (activeInput===clothesInp) { applied.clothes = hex; schedulePreview(); }
-        }
-
-        hueCanvas.addEventListener('mousedown', function(e){
-          var rect=hueCanvas.getBoundingClientRect();
-          function move(ev){
-            var x = clamp((ev.clientX-rect.left)/rect.width,0,1);
-            hue = x*360; drawSV(); updateInputs(); pushPreview();
-          }
-          function up(){ window.removeEventListener('mousemove',move); window.removeEventListener('mouseup',up); }
-          move(e); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
-        });
-        svCanvas.addEventListener('mousedown', function(e){
-          var rect=svCanvas.getBoundingClientRect();
-          function move(ev){
-            var x = clamp((ev.clientX-rect.left)/rect.width,0,1);
-            var y = clamp((ev.clientY-rect.top)/rect.height,0,1);
-            sat = x; val = 1-y; drawSV(); updateInputs(); pushPreview();
-          }
-          function up(){ window.removeEventListener('mousemove',move); window.removeEventListener('mouseup',up); }
-          move(e); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
-        });
-        [rIn,gIn,bIn].forEach(function(inp){
-          inp.addEventListener('input', function(){ setFromRGB(rIn.value,gIn.value,bIn.value); }, {passive:true});
-        });
-
-        okBtn.addEventListener('click', async function(){
-          try {
-            var hex = window.__sanitizeHex(rgb2hex(+rIn.value||0, +gIn.value||0, +bIn.value||0));
-            if (activeInput){ activeInput.value = hex; }
-            pushPreview();
-            overlay.hide();
-          } catch(_){}
-        }, {passive:true});
-      }
-
-      function openPickerFor(input){
-        ensureOverlay();
-        activeInput = input;
-        var rect = input.getBoundingClientRect();
-        overlay.style.left = Math.min(window.innerWidth-280, rect.left) + 'px';
-        overlay.style.top  = Math.min(window.innerHeight-260, rect.bottom + 6) + 'px';
-        overlay.style.display='block';
-        var rgb = hex2rgb(input.value||'#000000');
-        var hsv = rgb2hsv(rgb.r, rgb.g, rgb.b);
-        hue=hsv.h; sat=hsv.s; val=hsv.v;
-        (function renderStart(){
-          // draw hue
-          var grd = hueCtx.createLinearGradient(0,0,hueCanvas.width,0);
-          grd.addColorStop(0,'#f00'); grd.addColorStop(1/6,'#ff0');
-          grd.addColorStop(2/6,'#0f0'); grd.addColorStop(3/6,'#0ff');
-          grd.addColorStop(4/6,'#00f'); grd.addColorStop(5/6,'#f0f'); grd.addColorStop(1,'#f00');
-          hueCtx.fillStyle = grd; hueCtx.fillRect(0,0,hueCanvas.width,hueCanvas.height);
-          // draw SV and inputs
-          var w=svCanvas.width,h=svCanvas.height;
-          var base=hsv2rgb(hue,1,1);
-          svCtx.fillStyle='rgb('+base.r+','+base.g+','+base.b+')'; svCtx.fillRect(0,0,w,h);
-          var g1=svCtx.createLinearGradient(0,0,w,0);
-          g1.addColorStop(0,'#fff'); g1.addColorStop(1,'rgba(255,255,255,0)');
-          svCtx.fillStyle=g1; svCtx.fillRect(0,0,w,h);
-          var g2=svCtx.createLinearGradient(0,0,0,h);
-          g2.addColorStop(0,'rgba(0,0,0,0)'); g2.addColorStop(1,'#000');
-          svCtx.fillStyle=g2; svCtx.fillRect(0,0,w,h);
-          rIn.value=rgb.r; gIn.value=rgb.g; bIn.value=rgb.b;
-          var x = clamp(sat,0,1)*w, y = (1-clamp(val,0,1))*h;
-          svCtx.beginPath(); svCtx.arc(x,y,6,0,Math.PI*2); svCtx.lineWidth=2; svCtx.strokeStyle='#fff'; svCtx.stroke();
-          svCtx.beginPath(); svCtx.arc(x,y,5,0,Math.PI*2); svCtx.strokeStyle='#000'; svCtx.stroke();
-        })();
-      }
-
-      function intercept(input){
-        function handler(ev){ try { ev.preventDefault(); ev.stopPropagation(); input.blur(); openPickerFor(input); } catch(_){ } return false; }
-        input.addEventListener('mousedown', handler, true);
-        input.addEventListener('focus', function(ev){ handler(ev); }, true);
-        input.addEventListener('click', handler, true);
-      }
-      intercept(hairInp); intercept(skinInp); intercept(clothesInp);
-    })();
-    // --- end custom color palette ---
-// Floating 'Valider' overlay near native color picker (cannot inject inside OS picker)
-    var __colorOverlay;
-    function hideColorOverlay(){ try { if(__colorOverlay) __colorOverlay.style.display='none'; } catch(_){}}
-    function showColorOverlay(target){
-      var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang]||TRANSLATIONS['en'])) || {};
-       try {
-      if(!__colorOverlay){
-        __colorOverlay = document.createElement('div');
-        __colorOverlay.id = 'colorValidateOverlay';
-        __colorOverlay.style.position = 'fixed';
-        __colorOverlay.style.zIndex = '999999';
-        __colorOverlay.style.padding = '6px';
-        __colorOverlay.style.background = '#111';
-        __colorOverlay.style.border = '1px solid #333';
-        __colorOverlay.style.borderRadius = '8px';
-        __colorOverlay.style.boxShadow = '0 6px 18px rgba(0,0,0,.35)';
-        var __btn = document.createElement('button');
-        __btn.id = 'skinApplyAllInline';
-        __btn.textContent = ((T.validate||'Apply'));
-        __btn.style.background = '#2a6aff';
-        __btn.style.color = '#fff';
-        __btn.style.border = 'none';
-        __btn.style.borderRadius = '6px';
-        __btn.style.padding = '8px 12px';
-        __btn.style.cursor = 'pointer';
-        __btn.onclick = function(){ try { applied.hair = hairInp.value; applied.skin = skinInp.value; applied.clothes = clothesInp.value; drawPreview(); } catch(_){ } hideColorOverlay(); };
-        __colorOverlay.appendChild(__btn);
-        document.body.appendChild(__colorOverlay);
-      }
-      var r = target.getBoundingClientRect();
-      var left = Math.min(window.innerWidth - 160, Math.max(8, r.right + 8));
-      var top = Math.min(window.innerHeight - 48, Math.max(8, r.top));
-      __colorOverlay.style.left = left + 'px';
-      __colorOverlay.style.top = top + 'px';
-      __colorOverlay.style.display = 'block';
-    } catch(_){}}
-    ;[hairInp, skinInp, clothesInp].forEach(function(inp){
-      try {
-        inp.addEventListener('focus', function(){ showColorOverlay(inp); }, {passive:true});
-        inp.addEventListener('click', async function(){ showColorOverlay(inp); }, {passive:true});
-        inp.addEventListener('blur', function(){ setTimeout(hideColorOverlay, 150); }, {passive:true});
-      } catch(_){ }
-    });
-// Throttled live preview bookkeeping
-    var previewToken = 0;
-    var _rafPending = false;
-    function schedulePreview(){
-      if (_rafPending) return;
-      _rafPending = true;
-      requestAnimationFrame(function(){
-        _rafPending = false;
-        drawPreview();
-      });
-    }
-
-
-    // Applied colors state (validated by the user)
-    var applied = { hair: hairInp.value, skin: skinInp.value, clothes: clothesInp.value };
-    try {
-      if (__mySkin) {
-        if (__mySkin.hair) { applied.hair = __mySkin.hair; hairInp.value = __mySkin.hair; }
-        if (__mySkin.skin) { applied.skin = __mySkin.skin; skinInp.value = __mySkin.skin; }
-        if (__mySkin.clothes) { applied.clothes = __mySkin.clothes; clothesInp.value = __mySkin.clothes; }
-      }
-    } catch(_){}
-
-
-    
-function drawPreview(){
-      if (!__basePlayerImg || !__basePlayerImg.complete) { 
-        ctx.clearRect(0,0,canvas.width,canvas.height);
+      if (installed) return;
+      var cg = (window.CrazyGames && CrazyGames.SDK) ? CrazyGames.SDK : null;
+      if (!cg || !cg.game) {
+        if (++tries < MAX_TRIES) return void setTimeout(init, 250);
         return;
       }
-      // Token to drop stale async renders
-      previewToken++;
-      var myToken = previewToken;
-      recolorPlayerImage(__basePlayerImg, applied, function(img){
-        // drop outdated renders that finished later
-        if (myToken !== previewToken) return;
-        try {
-          ctx.clearRect(0,0,canvas.width,canvas.height);
-          var s = Math.min(canvas.width / (__basePlayerImg.width||64), canvas.height / (__basePlayerImg.height||64));
-          var w = (__basePlayerImg.width||64) * s;
-          var h = (__basePlayerImg.height||64) * s;
-          var x = (canvas.width - w)/2, y = (canvas.height - h)/2;
-          ctx.drawImage(img||__basePlayerImg, x, y, w, h);
-        } catch(_){}
-      });
-    }
+      if (!(isCrazyHost || cg)) return;
+      installed = true;
 
+      // Mark "InviteLink functionality used" for the automatic checker.
+      try { cg.game.inviteLink({ roomId: 1 }); } catch(_){}
 
-    // Prefill from saved skin if any
-    if (__mySkin){
-      try { if (__mySkin.hair) hairInp.value = __mySkin.hair; }catch(_){}
-      try { if (__mySkin.skin) skinInp.value = __mySkin.skin; }catch(_){}
-      try { if (__mySkin.clothes) clothesInp.value = __mySkin.clothes; }catch(_){}
-    }
-    // Live preview while picking (even before clicking “Valider”)
-    hairInp.oninput = function(){ hairInp.value = window.__sanitizeHex(hairInp.value); applied.hair = hairInp.value; schedulePreview(); };
-    skinInp.oninput = function(){ skinInp.value = window.__sanitizeHex(skinInp.value); applied.skin = skinInp.value; schedulePreview(); };
-    clothesInp.oninput = function(){ clothesInp.value = window.__sanitizeHex(clothesInp.value); applied.clothes = clothesInp.value; schedulePreview(); };
-
-    function buyNow(){
-      msg.textContent = '';
-      fetch('/api/skin/buy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ hair: applied.hair, skin: applied.skin, clothes: applied.clothes })
-      }).then(function(r){ return r.json(); })
-        .then(function(j){
-          if (j && j.ok){ try{ if (Number.isFinite(j.gold)) window.accountGold = (j.gold|0); window.__meOk = true; }catch(_){ } 
-            __mySkin = j.skin || { hair: hairInp.value, skin: skinInp.value, clothes: clothesInp.value };
-            // Bust my cached sprite
-            try { if (__myUser) __spriteCache[String(__myUser).toLowerCase()] = null; } catch(_){}
-            // Update shop gold value if present
-            try { var gv = document.getElementById('shopGoldVal'); if (gv) gv.textContent = String(j.gold|0); } catch(_){}
-            msg.style.color = '#9f9';
-            msg.textContent = (T.saved||'Saved!');
-            setTimeout(function(){ try { document.getElementById('skinModal').style.display='none'; }catch(_){ } }, 500);
-          } else {
-            msg.style.color = '#f99';
-            if (j && j.code === 'not_enough_gold') msg.textContent = 'Not enough gold.';
-            else if (j && j.code === 'bad_colors') msg.textContent = 'Pick valid colors.';
-            else msg.textContent = 'Action impossible.';
-          }
-        }).catch(function(){
-          msg.style.color = '#f99'; msg.textContent = 'Server unavailable.';
-        });
-    }
-document.getElementById('skinBuy').onclick = buyNow;
-
-    
-// Style Buy button based on Gold
-(function(){
-  var btn = document.getElementById('skinBuy');
-  if (!btn) return;
-  var PRICE = 5;
-  function getGold(){ try{ var t = document.getElementById('shopGoldVal'); return t ? (+t.textContent||0) : 0; }catch(_){ return 0; } }
-  function applyStyle(){ var g = getGold(); if (g >= PRICE){ btn.disabled=false; btn.style.background='#ff8800'; btn.style.opacity='1'; btn.style.cursor='pointer'; } else { btn.disabled=true; btn.style.background='#ff8800'; btn.style.opacity='0.6'; btn.style.cursor='not-allowed'; } }
-  applyStyle();
-  try{ var gv=document.getElementById('shopGoldVal'); if (gv && window.MutationObserver){ var mo=new MutationObserver(applyStyle); mo.observe(gv,{childList:true,characterData:true,subtree:true}); } }catch(_){}
-  // Also re-apply style after any click in modal (safety)
-  try{ var modal=document.getElementById('skinModal'); if (modal){ modal.addEventListener('click', async function(){ setTimeout(applyStyle,0); }, {passive:true}); } }catch(_){ }
-})();
-// Ensure base image ready
-    if (!__basePlayerImg) { __basePlayerImg = new Image(); try{ __basePlayerImg.onerror=function(){ try{ this.onerror=null; this.src='/sprites/player.png'; }catch(_){}}; }catch(_){} __basePlayerImg.src='public/sprites/player.png'; }
-    if (__basePlayerImg.complete) { drawPreview(); } else { __basePlayerImg.onload = drawPreview; }
-
-    modal.style.display = 'flex';
-  }
-  try { window.openSkinModal = openSkinModal; } catch(_){}
-  try { if (!window.fetchMe) window.fetchMe = fetchMe; } catch(_){}
-
-
-  function injectSkinItem(){
-    // also handle account modal variant
-    try{
-      var wrap = document.getElementById('shopUpgradesLobby');
-      if (wrap && !wrap.querySelector('[data-skin-item="1"]')){
-        // Always ensure any existing Customize buttons are bound
-        try{ Array.prototype.slice.call(wrap.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
-
-        var div = document.createElement('div');
-        div.setAttribute('data-skin-item','1');
-        div.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
-        div.innerHTML = ''
-          + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-          + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
-          + '  </div>'
-          + '  <div style="flex:1;">'
-          + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
-          + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
-          + '  </div>'
-          + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-          + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
-          + '    <button class="skinOpenBtn" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
-          + '    <div style="min-height:16px;"></div>'
-          + '  </div>';
-        wrap.appendChild(div);
-        var b = div.querySelector('.skinOpenBtn'); if (b && !b.__bound){ b.__bound=true;
-        try { if (b) { b.removeAttribute('style'); b.classList.add('skinOpenBtn'); } } catch(_){}
- b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
+      var shown = false;
+      function hideBtn(){
+        try { if (shown) cg.game.hideInviteButton(); } catch(_){}
+        shown = false;
       }
-    }catch(_){ }
 
-    try{
-      var cont = document.getElementById('shopPanelContent');
-      if (!cont) return;
-      if (cont.querySelector('[data-skin-item="1"]')) return;
-
-      // Always ensure any existing Customize buttons are bound
-      try{ Array.prototype.slice.call(cont.querySelectorAll('.skinOpenBtn')).forEach(function(b){ if (!b.__bound){ b.__bound=true; b.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); } }); }catch(_){}
-
-      var item = document.createElement('div');
-      item.setAttribute('data-skin-item', '1');
-      item.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid #344;padding:12px;border-radius:12px;margin:8px 0;';
-      item.innerHTML = ''
-        + '  <div style="width:40px;height:40px;border-radius:10px;border:2px solid #66c;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#223;">'
-        + '    <img src="/sprites/player.png" alt="player" style="width:100%;height:100%;image-rendering:pixelated;object-fit:contain;">'
-        + '  </div>'
-        + '  <div style="flex:1;">'
-        + '    <div style="font-size:17px;font-weight:700;">' + ((T.characterSkin||'Character skin')) + '</div>'
-        + '    <div style="color:#9ab;font-size:13px;">' + ((T.characterSkinDesc||'Customize hair, skin and clothes colors.')) + '</div>'
-        + '  </div>'
-        + '  <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:180px;width:180px;">'
-        + '    <div style="font-size:14px;">' + ((T.price||'Price')) + ': <b>5</b>' + ((T.gold||'Gold')) + '</div>'
-        + '    <button id="btnOpenSkin" type="button" style="pointer-events:auto; onclick="try{window.__openCharacterSkin && window.__openCharacterSkin();}catch(e){}" style="pointer-events:auto; padding:7px 14px;background:#4aa3ff;color:#fff;border:none;border-radius:8px;cursor:pointer;">' + ((T.customize||'Customize')) + '</button>'
-        + '    <div style="min-height:16px;"></div>'
-        + '  </div>';
-      cont.appendChild(item);
-      var o = document.getElementById('btnOpenSkin');
-      if (o && !o.__bound){ o.__bound=true;
-      try { if (o) { o.removeAttribute('style'); o.classList.add('skinOpenBtn'); } } catch(_){}
- o.addEventListener('click', async function(){ try{ (window.__openCharacterSkin||window.openSkinModal||openSkinModal||function(){})();; }catch(_){ } }, { passive:true }); }
-    }catch(_){}
-  }
-
-  // Hook into refreshShopPanel to insert the item after default upgrades are rendered
-  (function hook(){
-    try{
-      var orig = window.refreshShopPanel;
-      window.refreshShopPanel = function(){
-        try{ if (typeof orig==='function') orig.apply(this, arguments); }catch(_){}
-        try{ injectSkinItem(); }catch(_){}
-      };
-    }catch(_){
-      // If not yet defined, retry
-      setTimeout(hook, 80);
-      return;
-    }
-  })();
-
-  // Initial fetch (lazy) to learn username + saved skin
-  try { setTimeout(fetchMe, 0); } catch(_){}
-
-  // Ensure injection even if shop is already open at startup
-  try {
-    var __obs = new MutationObserver(function(){ try{ injectSkinItem(); }catch(_){} });
-    __obs.observe(document.body, { childList:true, subtree:true });
-    // Also attempt a few times on a timer (idempotent)
-    var __tries=0; var __tm = setInterval(function(){ try{ injectSkinItem(); }catch(_){} if(++__tries>20) clearInterval(__tm); }, 250);
-  } catch(_){}
-
-
-  // Global, resilient opener (works even if openSkinModal not yet defined)
-  try {
-    if (typeof window.__openCharacterSkin !== 'function') {
-      window.__openCharacterSkin = function(){
+      function updateFrom(d){
         try {
-          if (typeof window.fetchMe === 'function') { try{ window.fetchMe(); }catch(_){} }
-          if (typeof window.openSkinModal === 'function') return window.openSkinModal();
-          if (typeof openSkinModal === 'function') return openSkinModal();
-          var tries = 0;
-          var id = setInterval(function(){
-            tries++;
-            try {
-              if (typeof window.openSkinModal === 'function') { clearInterval(id); window.openSkinModal(); return; }
-              if (typeof openSkinModal === 'function')         { clearInterval(id); openSkinModal(); return; }
-            } catch(_){}
-            if (tries > 40) clearInterval(id);
-          }, 50);
-        } catch(_){}
-      };
-    }
-    // Document-level capture listener (works even if inner containers stop propagation)
-    document.addEventListener('click', function(ev){
+          var info = extractLobby(d);
+          if (!info.id || info.started) { hideBtn(); return; }
+          if (typeof info.manual !== 'undefined' && !info.manual) { hideBtn(); return; }
+
+          var payload = { roomId: info.id };
+          var region = getRegionFromURL();
+          if (region) payload.region = region;
+
+          try { cg.game.showInviteButton(payload); shown = true; } catch(_){}
+        } catch(_){ hideBtn(); }
+      }
+
+      // Socket events
       try {
-        var t = ev.target;
-        if (!t) return;
-        var btn = t.closest ? t.closest('.skinOpenBtn') : null;
-        if (!btn) return;
-        ev.preventDefault();
-        window.__openCharacterSkin();
+        if (window.socket && typeof window.socket.on === 'function') {
+          socket.on('lobbyUpdate', updateFrom);
+          socket.on('gameStarted', hideBtn);
+        }
       } catch(_){}
-    }, true);
-  } catch(_){}
 
-})();
-</script>
-<!-- /[PATCH] character-skin shop & recolor v1 -->
+      // If we already have a lobby snapshot, update immediately
+      try { if (window.lobbyData) updateFrom(window.lobbyData); } catch(_){}
 
-<!-- In‑game Bottom Menu (auto‑injected by patch) -->
-<!-- In-game Bottom Menu (updated patch) -->
-<!-- In-game Bottom Menu (updated patch v2) -->
-<style id="igMenuStyle">
-  #inGameMenu {
-    position: fixed;
-    left: 50%;
-    transform: translateX(-50%) scale(var(--igScale, 1));
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-    z-index: 10050;
-    display: none;
-    gap: 8px;
-    padding: 8px;
-    border-radius: 14px;
-    background: rgba(12,14,18,0.68);
-    box-shadow: 0 8px 28px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.06);
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    pointer-events: auto;
-  
-  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
-
-  transform-origin: bottom center;
-
-  box-sizing: border-box;
-
-  flex-wrap: wrap;
-
-  justify-content: center;
-}
-.ig-btn {
-    appearance: none;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: linear-gradient(#1b2027, #13161b);
-    color: #f2f6ff;
-    border-radius: 10px;
-    padding: 8px 12px;
-    font: 600 14px/1 ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-    letter-spacing: .2px;
-    cursor: pointer;
-    /* Prevent text selection and focus outline on in‑game buttons. The
-       global form-focus override sets user-select:text on all buttons, so
-       we override it here with !important flags. This also removes the
-       default focus outline to avoid the white border when using keyboard
-       navigation. */
-    -webkit-user-select: none !important;
-    user-select: none !important;
-    outline: none !important;
-    transition: transform .06s ease, background .12s ease, box-shadow .12s ease, border-color .12s ease, color .12s ease;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-    min-width: 76px;
-  
-    position: relative;
-  }
-  .ig-btn:active { transform: translateY(1px) scale(0.99); filter: brightness(1.15); }
-  .ig-btn.notify::after{
-    content:''; position:absolute; right:-4px; top:-4px; width:10px; height:10px; border-radius:50%;
-    background:#e33; border:2px solid rgba(18,18,18,0.8);
-  }
-  .ig-btn.active {
-    background: linear-gradient(#2b3a52, #1a2230);
-    border-color: #4b6aa9;
-    box-shadow: 0 0 0 2px rgba(82,136,255,0.25) inset, 0 4px 14px rgba(0,0,0,0.35);
-    color: #dfe9ff;
-  }
-  .ig-btn.danger { border-color: rgba(255,68,68,0.35); }
-  .ig-btn.danger.active, .ig-btn.danger:active { background: linear-gradient(#612226, #3e1518); border-color: #b3363c; color: #fff; }
-
-  /* Stats = reuse legacy #hudStats, but float it like a bubble */
-  #hudStats.ig-floating {
-    position: fixed !important;
-    /* Place stats bubble near the bottom‑left of the screen instead of centered */
-    left: 12px !important;
-    transform: none !important;
-    bottom: 8px !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
-    z-index: 10051 !important;
-    display: none;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(14,16,20,0.88);
-    color: #fff;
-    box-shadow: 0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06);
-    font: 600 14px/1.25 ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;
-    white-space: nowrap;
-   width: -moz-fit-content; width: fit-content; max-width: min(96vw, 520px);}
-
-  /* Chat floating above menu (narrower) */
-  #chatPanel.ig-floating {
-    position: fixed !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    bottom: 66px !important;
-    z-index: 10051 !important;
-    display: none;
-    max-height: min(50vh, 480px);
-    width: min(84vw, 520px);
-    box-shadow: 0 8px 28px rgba(0,0,0,.6);
-    border-radius: 12px;
-    overflow: hidden auto;
-  }
-
-  /* Build mini panel (larger; fixed hint) */
-  #igBuildPanel {
-    position: fixed;
-    left: 50%;
-    transform: translateX(-50%);
-    bottom: 66px;
-    z-index: 10051;
-    display: none;
-    padding: 12px 14px;
-    border-radius: 12px;
-    background: rgba(14,16,20,0.88);
-    color: #fff;
-    box-shadow: 0 8px 28px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06);
-    min-width: unset;
-    width: -moz-fit-content;
-    width: fit-content;
-    max-width: min(96vw, 720px);
-  }
-  #igBuildTiles { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: center; }
-  #igBuildTiles .build-tile { outline: none; }
-  #igBuildHint { margin-top: 6px; text-align: center; font: 600 13px/1.1 ui-sans-serif,system-ui; color:#cfe2ff; opacity:.92; height: 18px; overflow: hidden; text-overflow: ellipsis; }
-
-  /* Tooltip bubble outside panel to avoid resizing */
-  #buildTooltip { position:absolute; display:none; left:0; top:0; background:#121418ee; color:#fff; border-radius:10px; padding:8px 10px; font:600 13px ui-sans-serif,system-ui; box-shadow:0 6px 24px #000c; pointer-events:none; white-space:nowrap; z-index:11000; }
-
-  /* Confirm modal (login-like) */
-  #igConfirmOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 12000; display: none; align-items: center; justify-content: center; }
-  #igConfirmBox { width: min(440px, 92vw); background: rgba(27,29,34,.96); border-radius: 16px; box-shadow: 0 12px 48px #000c; padding: 18px; color:#eef3ff; }
-  #igConfirmBox h3 { margin: 0 0 8px; font: 800 22px/1 ui-sans-serif,system-ui; }
-  #igConfirmBox p { margin: 0 0 14px; color:#b9c5d9; }
-  #igConfirmBtns { display:flex; gap:10px; justify-content:flex-end; }
-  #igConfirmBtns .ig-btn { min-width: 96px; }
-
-  /* Upgrades panel: remove green outline */
-  #shopModal { border: none !important; outline: none !important; box-shadow: 0 8px 28px rgba(0,0,0,.7) !important; }
-
-  @media (hover: none) and (pointer: coarse){
-    #inGameMenu{ gap:6px; padding:6px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); 
-  width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
-  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
-
-  transform-origin: bottom center;
-
-  box-sizing: border-box;
-
-  flex-wrap: wrap;
-
-  justify-content: center;
-  align-items: stretch;
-
-}
-    .ig-btn{ padding:9px 11px; font-size:15px; min-width:0; flex: 1 1 clamp(100px, 28vw, 160px); }
-    #chatPanel.ig-floating{ bottom: 70px; font-size:15px; }
-    #igBuildPanel{ bottom: 70px; }
-  }
-</style>
-<style id="igMenuLandscape">
-/* Force single-row menu on mobile LANDSCAPE */
-@media (hover: none) and (pointer: coarse) and (orientation: landscape){
-  #inGameMenu{
-    flex-wrap: nowrap !important;
-    gap: 6px !important;
-    padding: 6px !important;
-    width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px) !important;
-    max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px) !important;
-    overflow-x: auto; /* still one row, scrollable if extremely narrow */
-    -webkit-overflow-scrolling: touch;
-    white-space: normal; /* flex items control wrapping */
-  }
-  #inGameMenu .ig-btn{
-    flex: 1 1 auto !important;
-    min-width: 0 !important;      /* allow shrink to fit */
-    padding: 8px 10px !important;
-    font-size: 14px !important;
-    white-space: nowrap !important;
-  }
-}
-</style>
-
-
-<script id="igMenuPatch">
-(function(){
-  try{
-    // ---------- tiny utils
-    function $(id){ return document.getElementById(id); }
-    function show(el){ if (el) el.style.display='block'; }
-    function hide(el){ if (el) el.style.display='none'; }
-    function isShown(el){
-      if (!el) return false;
-      var cs = window.getComputedStyle(el);
-      return !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0');
-    }
-    function toggle(el){ if (!el) return; isShown(el) ? hide(el) : show(el); }
-    function setActive(btn, on){ if (!btn) return; btn.classList[on?'add':'remove']('active'); }
-    function vibr(ms){ try{ if (navigator && navigator.vibrate) navigator.vibrate(ms||6); }catch(_){ } }
-
-    // When true, the Upgrades button is forced visually inactive even if the panel stays open (used when opening Chat)
-    var __forceShopBtnInactive = false;
-
-    // ---------- menu container
-    var menu = $('inGameMenu');
-    if (!menu){
-      menu = document.createElement('div');
-      menu.id = 'inGameMenu';
-      menu.setAttribute('aria-label','In-game quick menu');
-      document.body.appendChild(menu);
-    }
-
-    function mkBtn(key, label){
-      var b = document.createElement('button');
-      b.className = 'ig-btn';
-      b.type = 'button';
-      b.dataset.action = key;
-      b.textContent = label;
-  // Remove the button from the tab order to prevent keyboard focus and
-  // accidental arrow‑key selection. This also helps avoid the white
-  // outline that appears when a button receives focus via the keyboard.
-  b.tabIndex = -1;
-      return b;
-    }
-
-    var T = (window.TRANSLATIONS && (window.TRANSLATIONS[window.currentLang] || window.TRANSLATIONS.en)) || {};
-    var L = {
-      stats   : T.stats     || 'Stats',
-      chat    : T.chat      || 'Chat',
-      autofire: (T.autoFire||T.autofire||'Auto fire'),
-      build   : T.build     || 'Build',
-      upgrade : (T.upgradeLabel || T.shop || (T.upgrades && (T.upgrades.title || T.upgrades.button)) || 'Upgrades'),
-      leave   : T.leaveGame || 'Leave'
-    };
-
-    var btnStats = mkBtn('stats', L.stats);
-    var btnChat  = mkBtn('chat',  L.chat);
-    var btnAuto  = mkBtn('autofire', L.autofire);
-    var btnBuild = mkBtn('build', L.build);
-    var btnShop  = mkBtn('upgrade', L.upgrade);
-    var btnLeave = mkBtn('leave', L.leave); btnLeave.classList.add('danger');
-
-    if (!menu.__filled){
-      menu.__filled = true;
-      menu.appendChild(btnStats);
-      menu.appendChild(btnChat);
-      menu.appendChild(btnAuto);
-      menu.appendChild(btnBuild);
-      menu.appendChild(btnShop);
-    // --- Keep Upgrades open when toggling Auto fire or Stats (robust, capture-phase) ---
-    try {
-      if (!window.__igShopReopenOnUtilityClicks) {
-        window.__igShopReopenOnUtilityClicks = true;
-        document.addEventListener('click', function(ev){
+      // Auto-join from CrazyGames invite parameters
+      try {
+        var rid = cg.game.getInviteParam && cg.game.getInviteParam('roomId');
+        var region = cg.game.getInviteParam && cg.game.getInviteParam('region');
+        var id = safeInt(rid);
+        if (region && !getRegionFromURL()) {
           try {
-            var t = ev && ev.target;
-            if (!t) return;
-            var b = t.closest ? t.closest('.ig-btn') : null;
-            if (!b) return;
-            var act = b.getAttribute('data-action') || '';
-            if (act === 'autofire' || act === 'stats') {
-              var need = (typeof upgradesOpen === 'function') ? upgradesOpen() : false;
-              if (need) {
-                setTimeout(function(){
-                  try { if (typeof openUpgrades === 'function') ensureUpgradesVisible(); } catch(_){}
-                }, 0);
-              }
-            }
+            var u = new URL(location.href);
+            u.searchParams.set('w', region);
+            location.replace(u.toString());
+            return;
           } catch(_){}
-        }, true);
-      }
-    } catch(_){}
-
-      
-      // Safety net: keep Upgrades open when interacting with Auto/Stats
-      try {
-        if (!window.__igKeepShopOpenOnUtilityClicks){
-          window.__igKeepShopOpenOnUtilityClicks = true;
-          [btnStats, btnAuto].forEach(function(b){
-            if (!b) return;
-            b.addEventListener('click', function(){
-              try{
-                if (shop && typeof isShown==='function' && isShown(shop)) {
-                  setTimeout(function(){
-                    try { if (typeof show==='function') show(shop); if (typeof setActive==='function') setActive(btnShop, true); } catch(_){}
-                  }, 0);
-                }
-              }catch(_){}
-            }, true);
-          });
         }
-      }catch(_){}      
-        
-      
-menu.appendChild(btnLeave);
-// --- Ensure mutual exclusivity of panels + chat notify clear ---
-try{
-  btnStats.addEventListener('click', function(){
-      var __wasShopOpen = false; try{ __wasShopOpen = (typeof upgradesOpen==='function' && upgradesOpen()); }catch(_){}
-
-    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
-try{
-      // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
-      if (chat) hide(chat);
-      if (buildPanel) hide(buildPanel);
-      // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
-      setActive(btnChat,false);
-      setActive(btnBuild,false);
-    }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
-}, true);
-  btnChat.addEventListener('click', function(){
-      try {
-        var __willShowChat = true;
-        try {
-          if (typeof chat !== 'undefined' && chat) {
-            var __cs = (chat.style && chat.style.display) ? chat.style.display : null;
-            if (typeof window.getComputedStyle === 'function') {
-              var __g = window.getComputedStyle(chat);
-              __willShowChat = (__cs === 'none') || (__g && __g.display === 'none');
-            } else {
-              __willShowChat = (__cs === 'none');
-            }
-          } else {
-            __willShowChat = true;
+        if (id) {
+          function tryJoin(){
+            try {
+              if (!window.socket || !socket.connected) return;
+              var pseudoInput = document.getElementById('pseudoInput');
+              var pseudo = (pseudoInput && pseudoInput.value && pseudoInput.value.trim()) || '';
+              try { if (!pseudo) pseudo = (localStorage.getItem('zombi_pseudo')||'').trim(); } catch(_){}
+              if (!pseudo) { try { pseudoInput && pseudoInput.focus(); } catch(_){ } return; }
+              try {
+                socket.emit('joinLobbyById', { gameId: id, pseudo: pseudo }, function(res){
+                  try { console.log('[CG InviteBridge] joinLobbyById =>', res); } catch(_){}
+                });
+              } catch(_){}
+            } catch(_){}
           }
-        } catch(__){ __willShowChat = true; }
-
-        if (__willShowChat){
-          // 1) Ferme le panneau Upgrades s'il est ouvert
-          try { if (typeof closeUpgrades === 'function') closeUpgrades(); } catch(__){}
-          // 2) Force la désélection visuelle du bouton Upgrades (comme Build)
-          try {
-            if (typeof setActive === 'function' && typeof btnShop !== 'undefined' && btnShop) {
-              setActive(btnShop, false);
-            } else {
-              var __shopBtn = (typeof btnShop !== 'undefined' && btnShop) ? btnShop : document.querySelector('#inGameMenu .ig-btn[data-action="upgrade"]');
-              if (__shopBtn && __shopBtn.classList) __shopBtn.classList.remove('active');
-            }
-          } catch(__){}
-          // 3) Désactive toute resynchronisation qui réactiverait le bouton
-          try { window.__forceShopBtnInactive = true; } catch(__){}
-        }
-
-        // Supprime toujours la pastille de notification du Chat
-        try{ if (typeof btnChat !== 'undefined' && btnChat) btnChat.classList.remove('notify'); }catch(__){}
-      } catch(__) {}
-    
-}, true);
-  btnBuild.addEventListener('click', function(){
-    try{
-      // Opening the build panel should not close the stats bubble or deselect the stats button.
-    }catch(_){}
-  }, true);
-  btnShop.addEventListener('click', function(){
-    __forceShopBtnInactive = false;
-      try{
-      // Opening the upgrades panel should not close the stats bubble or deselect the stats button.
-    }catch(_){}
-  }, true);
-}catch(_){}
-// Chat notification helpers (used by chat module)
-try{
-  if (!window.__igChatNotify) window.__igChatNotify = function(){
-    try{ if (btnChat && chat && chat.style && chat.style.display==='none'){ btnChat.classList.add('notify'); } }catch(_){}
-  };
-  if (!window.__igChatClearNotify) window.__igChatClearNotify = function(){
-    try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
-  };
-}catch(_){}
-
-    // --- Ensure mutual exclusivity of panels + chat notify clear ---
-    try{
-      btnStats.addEventListener('click', function(){
-    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
-try{
-          // Masque uniquement le chat et le panneau de construction lors de l'affichage des statistiques.
-          if (chat) hide(chat);
-          if (buildPanel) hide(buildPanel);
-          // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
-          setActive(btnChat,false);
-          setActive(btnBuild,false);
-        }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
-}, true);
-      btnChat.addEventListener('click', function(){
-    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
-try{
-          // Do not hide stats or deselect it; just remove the notification badge
-          try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
-        }catch(_){}
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
-}, true);
-      btnBuild.addEventListener('click', function(){
-        try{
-          // Opening the build or upgrades panel should not close the stats bubble or deselect the stats button.
-        }catch(_){ }
-      }, true);
-      btnShop.addEventListener('click', function(){
-        try{
-          // Opening the build or upgrades panel should not close the stats bubble or deselect the stats button.
-        }catch(_){ }
-      }, true);
-    }catch(_){}
-    // Chat notification helpers (used by chat module)
-    try{
-      if (!window.__igChatNotify) window.__igChatNotify = function(){
-        try{ if (btnChat && !(chat && chat.style && chat.style.display!== 'none')){ /* reserved */ } }catch(_){}
-        try{ if (btnChat && chat && chat.style && chat.style.display==='none'){ btnChat.classList.add('notify'); } }catch(_){}
-      };
-      if (!window.__igChatClearNotify) window.__igChatClearNotify = function(){
-        try{ if (btnChat) btnChat.classList.remove('notify'); }catch(_){}
-      };
-    }catch(_){}
-
-    }
-
-    // ---------- floating panels
-    var hudStats = $('hudStats'); if (hudStats){ hudStats.classList.add('ig-floating'); hide(hudStats); }
-    var chat = $('chatPanel');
-
-    // ---------- Build panel and tooltips
-    var buildPanel = $('igBuildPanel');
-    if (!buildPanel){
-      buildPanel = document.createElement('div');
-      buildPanel.id = 'igBuildPanel';
-      buildPanel.innerHTML = '<div id="igBuildTiles"></div><div id="igBuildHint" aria-live="polite"></div>';
-      document.body.appendChild(buildPanel);
-    }
-    var igTiles = $('igBuildTiles');
-
-    function tipForType(dt){
-      try { if (typeof computeTipForType === 'function') { var t = computeTipForType(dt); if (t) return t; } } catch(_){}
-      try {
-        var origWrap = $('buildTiles');
-        if (origWrap){
-          var orig = origWrap.querySelector('.build-tile[data-type="'+dt+'"]');
-          if (orig) return orig.getAttribute('data-tip') || orig.getAttribute('title') || orig.getAttribute('aria-label') || '';
+          if (window.socket && socket.connected) tryJoin();
+          else if (window.socket && typeof socket.on === 'function') socket.on('connect', tryJoin);
         }
       } catch(_){}
-      return '';
+
+      // Cleanup on unload
+      try { window.addEventListener('beforeunload', hideBtn, {passive:true}); } catch(_){}
+
+    } catch(_){
+      // swallow
     }
-    function ensureTooltip(){
-      try { if (window.getBuildTooltipBox) { return window.getBuildTooltipBox(); } } catch(_){}
-      var box = document.getElementById('buildTooltip') || document.getElementById('buildTooltipStable');
-      if (!box || box.id === 'buildTooltipStable') {
-        if (box && box.id === 'buildTooltipStable') return box;
-        box = document.createElement('div');
-        box.id = 'buildTooltip';
-        box.style.cssText = 'position:absolute;display:none;left:0;top:0;background:#111c;color:#fff;font-size:13px;padding:8px 10px;border-radius:8px;box-shadow:0 4px 18px #000c;pointer-events:none;white-space:nowrap;z-index:11000;';
-        document.body.appendChild(box);
-      }
-      return box;
-    }
-
-    function positionTooltipNear(el, box){
-      var r = el.getBoundingClientRect();
-      var x = r.left + r.width/2, y = r.top - 10;
-      box.style.left = Math.max(8, Math.min(window.innerWidth - 8, x)) + 'px';
-      box.style.top  = Math.max(8, y) + 'px';
-    }
-
-    function bindTileClone(clone, dt){
-      // prevent native tooltip flicker on clones
-      if (clone.hasAttribute('title')) clone.setAttribute('title','');
-      clone.addEventListener('click', function(e){
-        // Empêche la fermeture involontaire du panneau de construction en stoppant la propagation de l'événement
-        try {
-          if (e) {
-            if (typeof e.preventDefault === 'function') e.preventDefault();
-            if (typeof e.stopPropagation === 'function') e.stopPropagation();
-          }
-        } catch(_){}
-        try { var orig = $('buildTiles').querySelector('.build-tile[data-type="'+dt+'"]'); if (orig) orig.click(); } catch(_){}
-        try {
-          if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
-            var __p = document.getElementById('igBuildPanel');
-            if (__p) __p.style.display = 'none';
-            var __b = document.getElementById('btnBuild');
-            if (__b && __b.classList) __b.classList.remove('active');
-          }
-        } catch(_){}}, { passive:false });
-      clone.addEventListener('mouseenter', function(){
-        try {
-          var tip = tipForType(dt);
-          var box = ensureTooltip();
-          box.textContent = tip || '';
-          positionTooltipNear(clone, box);
-          box.style.display = 'block';
-        } catch(_){}
-      
-      try{ if (__wasShopOpen) ensureUpgradesVisible(); }catch(_){}
-}, { passive:true });
-      clone.addEventListener('mousemove', function(){
-        try { var box = $('buildTooltip'); if (box && box.style.display==='block') positionTooltipNear(clone, box); } catch(_){}
-      }, { passive:true });
-      clone.addEventListener('mouseleave', function(){ try{ var box=$('buildTooltip'); if (box) box.style.display='none'; }catch(_){} }, { passive:true });
-    }
-
-    function cloneTiles(){
-      if (!igTiles) return;
-      igTiles.innerHTML = ''; // always rebuild for safety
-      var src = $('buildTiles');
-      if (src){
-        var tiles = src.querySelectorAll('.build-tile[data-type]');
-        tiles.forEach(function(t){
-          var dt = t.getAttribute('data-type');
-          var clone = t.cloneNode(true);
-          clone.classList.add('build-tile');
-          bindTileClone(clone, dt);
-          igTiles.appendChild(clone);
-        });
-        igTiles.__filled = true;
-      } else {
-        // if not available yet, observe and fill when it appears
-        if (window.MutationObserver && !igTiles.__observing){
-          igTiles.__observing = true;
-          var obs = new MutationObserver(function(){
-            if ($('buildTiles')){ try{ cloneTiles(); obs.disconnect(); }catch(_){ } }
-          });
-          obs.observe(document.body, { childList:true, subtree:true });
-        }
-      }
-    }
-    cloneTiles();
-
-    // ---------- Confirm modal for Leave
-    var confirmOverlay = $('igConfirmOverlay');
-    if (!confirmOverlay){
-      confirmOverlay = document.createElement('div');
-      confirmOverlay.id = 'igConfirmOverlay';
-      confirmOverlay.innerHTML = (function(){var tr=(window.TRANSLATIONS&&(TRANSLATIONS[window.currentLang]||TRANSLATIONS['en']))||{};var title=tr.confirmTitle||tr.confirm||'Confirm';var text=tr.leaveConfirm||tr.leaveConfirmText||'Leave the game and return to the lobby?';var cancel=tr.cancel||'Cancel';var leave=tr.leaveGame||tr.leave||'Leave';return '<div id="igConfirmBox"><h3>'+title+'</h3><p>'+text+'</p><div id="igConfirmBtns"><button id="igCancel" class="ig-btn">'+cancel+'</button><button id="igDoLeave" class="ig-btn danger">'+leave+'</button></div></div>';})();
-      document.body.appendChild(confirmOverlay);
-    }
-    var btnCancel = $('igCancel');
-    var btnDoLeave = $('igDoLeave');
-
-    // ---------- Upgrades panel: ULTRA-robust toggle
-    function getShopModal(){
-      return $('shopModal') || document.querySelector('.shop-modal, #upgradesPanel, .upgrades-panel');
-    }
-    function openUpgrades(){
-      var sm = getShopModal();
-      try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){}
-      if (!sm){
-        try { if (typeof showShopPanel === 'function') showShopPanel(); } catch(_){}
-        sm = getShopModal();
-      }
-      if (sm){
-        // clean hide classes & show
-        ['open','visible','active','show','hidden'].forEach(function(c){ sm.classList.remove(c); });
-        sm.removeAttribute('aria-hidden');
-        show(sm);
-        sm.dataset.igOpen = '1';
-      }
-      setActive(btnShop, true);
-      // second render after paint in case of late data
-      setTimeout(function(){ try { if (typeof renderShopUpgrades === 'function') renderShopUpgrades(); } catch(_){} }, 50);
-    }
-    try { bindShopCloseSync(); } catch(_){ }
-    function closeUpgrades(){
-      var sm = getShopModal();
-      if (sm){
-        // use native hide API if present
-        try { if (typeof hideShopPanel === 'function') { hideShopPanel(); } } catch(_){}
-        // click on any close control if exists
-        try {
-          var closeBtn = sm.querySelector('[data-close], .close, .btn-close, .x, .close-btn');
-          if (closeBtn) closeBtn.click();
-        } catch(_){}
-        // hard hide
-        hide(sm);
-        ['open','visible','active','show'].forEach(function(c){ sm.classList.remove(c); });
-        sm.setAttribute('aria-hidden','true');
-        delete sm.dataset.igOpen;
-      }
-      setActive(btnShop, false);
-    }
-    try { __forceShopBtnInactive = false; } catch(_){ }
-    function upgradesOpen(){
-      var sm = getShopModal();
-      if (!sm) return false;
-      if (sm.dataset && sm.dataset.igOpen === '1') return true;
-      return isShown(sm);
-    }
-
-    
-    
-
-// --- Keep btnShop state in sync when the upgrades panel is closed by its own controls (X), overlay or ESC
-function bindShopCloseSync(){
-  try{
-    var sm = getShopModal && getShopModal();
-    if (!sm || sm.__closeSyncBound) return;
-    sm.__closeSyncBound = true;
-    // Clicks on any close control inside the shop should deselect the Upgrades button
-    sm.addEventListener('click', function(ev){
-      try{
-        var t = ev.target;
-        if (!t) return;
-        var closeEl = t.closest ? t.closest('#shopClose, [data-close], .close, .btn-close, .x, .close-btn') : null;
-        if (closeEl) {
-          try { setActive(btnShop, false); __forceShopBtnInactive = false; } catch(_) {}
-          try { if (sm.dataset) delete sm.dataset.igOpen; } catch(_) {}
-        }
-      }catch(_){}
-    }, true);
-    // ESC while shop is open
-    document.addEventListener('keydown', function(e){
-      try{
-        if (!sm) return;
-        var shown = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
-        if (!shown) return;
-        var k = e.key ? e.key.toLowerCase() : '';
-        if (k === 'escape') { try { setActive(btnShop, false); } catch(_){} }
-      }catch(_){}
-    }, true);
-    // Observe visibility changes
-    try{
-      var mo = new MutationObserver(function(){
-        try{
-          var visible = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
-          if (!visible) { try { setActive(btnShop, false); __forceShopBtnInactive = false; } catch(_){} }
-        }catch(_){}
-      });
-      mo.observe(sm, { attributes:true, attributeFilter:['style','class','aria-hidden'] });
-    }catch(_){}
-  }catch(_){}
-}
-
-// [PATCH] Ultra-robust: if the Upgrades panel is closed by clicking outside,
-// ensure the Upgrades button is deselected as well.
-// We listen at capture-phase and run our check after other handlers.
-(function(){
-  try{
-    if (window.__shopOutsideDeselectInstalled) return;
-    window.__shopOutsideDeselectInstalled = true;
-    function handler(ev){
-      try{
-        var sm = (typeof getShopModal==='function') ? getShopModal() : null;
-        if (!sm) return;
-        var t = ev && ev.target;
-        if (!t) return;
-        // Skip if the click was inside the upgrades panel
-        if (sm.contains(t)) return;
-        // Skip if the click was on the Upgrades button itself (its own logic will handle state)
-        try{
-          if (typeof btnShop!=='undefined' && btnShop){
-            if (t===btnShop) return;
-            if (t.closest && t.closest('[data-action="upgrade"], #shopBtn') === btnShop) return;
-          }
-        }catch(_){}
-        // After other listeners potentially hid the panel, sync the button state.
-        setTimeout(function(){
-          try{
-            var visible = (typeof isShown==='function') ? isShown(sm) : (sm.style && sm.style.display !== 'none');
-            if (!visible){
-              try { setActive(btnShop, false); } catch(_){}
-              try { __forceShopBtnInactive = false; } catch(_){}
-              try { if (sm.dataset) delete sm.dataset.igOpen; } catch(_){}
-            }
-          }catch(_){}
-        }, 0);
-      }catch(_){}
-    }
-    try{ document.addEventListener('pointerdown', handler, true); }catch(_){}
-    try{ document.addEventListener('click', handler, true); }catch(_){}
-  }catch(_){}
-})();
-
-
-// Keep the upgrades panel visible without re-rendering (avoid flicker)
-    function ensureUpgradesVisible(){
-      try {
-        var sm = getShopModal();
-        if (!sm) return;
-        ['open','visible','hidden'].forEach(function(c){ sm.classList.remove(c); });
-        sm.removeAttribute('aria-hidden');
-        show(sm);
-        if (sm.dataset) sm.dataset.igOpen = '1';
-        setActive(btnShop, true);
-      } catch(_){}
-    }
-
-// ---------- Actions
-    btnStats.addEventListener('click', function(){
-    try{ var __keepShopOpen = (typeof shop!=='undefined' && shop && (typeof isShown==='function') && isShown(shop)); }catch(_){ var __keepShopOpen=false; }
-if (!hudStats) return;
-      var willShow = !isShown(hudStats);
-      toggle(hudStats);
-      setActive(btnStats, willShow);
-      vibr(6);
-    }, { passive:true });
-
-    btnChat.addEventListener('click', function(){
-      if (!chat) return;
-      var willShow = !isShown(chat);
-      toggle(chat);
-      setActive(btnChat, willShow);
-      
-      if (willShow) {
-        // Ferme uniquement le panneau de construction lorsque le chat est ouvert.
-        // Ne pas fermer le panneau des améliorations ni désélectionner le bouton Upgrades.
-        try { hide(buildPanel); setActive(btnBuild, false); } catch(_){}
-      }
-      try { var inp = $('chatInput'); if (willShow && inp) inp.focus({ preventScroll:true }); } catch(_){}
-    }, { passive:true });
-
-    btnAuto.addEventListener('click', function(){
-      var __wasShopOpen = false; try{ __wasShopOpen = (typeof upgradesOpen==='function' && upgradesOpen()); }catch(_){}
-
-      try { var ab = $('autoFireBtn'); if (ab) { ab.click(); } } catch(_){}
-      setTimeout(syncAutoBtn, 20);
-    
-      try{ if (__wasShopOpen) ensureUpgradesVisible(); }catch(_){}
-}, { passive:true });
-
-    btnBuild.addEventListener('click', function(){
-      cloneTiles();
-      var willShow = !isShown(buildPanel);
-      toggle(buildPanel);
-      setActive(btnBuild, willShow);
-  // Repositionner le panneau de construction et la barre mobile au-dessus du menu in‑game
-  try { if (typeof positionInGameOverlays === 'function') positionInGameOverlays(); } catch(_){}
-      if (willShow) {
-        // Close Chat & Upgrades when opening Build
-        try { hide(chat); setActive(btnChat, false); } catch(_){}
-        try { if (typeof upgradesOpen==='function' && typeof closeUpgrades==='function' && upgradesOpen()) { closeUpgrades(); } } catch(_){}
-        try { setActive(btnShop, false); } catch(_){}
-      }
-      vibr(6);
-    }, { passive:true });
-
-    btnShop.addEventListener('click', function(){
-      try {
-        var wasOpen = (typeof upgradesOpen==='function') ? upgradesOpen() : false;
-        if (wasOpen) {
-          if (typeof closeUpgrades==='function') closeUpgrades();
-          setActive(btnShop, false);
-        } else {
-          // Close Chat & Build before opening Upgrades
-          try { hide(chat); setActive(btnChat, false); } catch(_){}
-          try { hide(buildPanel); setActive(btnBuild, false); } catch(_){}
-          if (typeof openUpgrades==='function') openUpgrades();
-          setActive(btnShop, true);
-        }
-      } catch(_){}
-    }, { passive:true });
-
-    btnLeave.addEventListener('click', function(){
-      try { confirmOverlay.style.display = 'flex'; } catch(_){}
-    }, { passive:true });
-
-    if (btnCancel) btnCancel.addEventListener('click', function(){ try{ confirmOverlay.style.display='none'; }catch(_){} }, { passive:true });
-    if (btnDoLeave) btnDoLeave.addEventListener('click', function(){
-      try { confirmOverlay.style.display='none'; } catch(_){}
-      try { if (window.socket && socket.emit) socket.emit('leaveLobby'); } catch(_){}
-      // Full refresh to guarantee clean lobby state
-      setTimeout(function(){
-        try { window.location.reload(); } catch(e){ try{ window.location.href = window.location.href; }catch(_){ } }
-      }, 50);
-    }, { passive:true });
-
-    // --- Apply i18n to bottom menu + confirm modal ---
-    function applyIgMenuI18n(){
-      try{
-        var T = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
-        if (btnStats) btnStats.textContent = T.stats || 'Stats';
-        if (btnChat)  btnChat.textContent  = T.chat || 'Chat';
-        if (btnAuto)  btnAuto.textContent  = (T.autoFire || T.autofire || 'Auto fire');
-        if (btnBuild) btnBuild.textContent = T.build || 'Build';
-        if (btnShop)  btnShop.textContent  = (T.upgradeLabel || T.shop || (T.upgrades && (T.upgrades.title||T.upgrades.button)) || 'Upgrades');
-        if (btnLeave) btnLeave.textContent = T.leaveGame || 'Leave';
-        // Refresh confirm box contents in-place
-        var title = T.confirmTitle || T.confirm || 'Confirm';
-        var text  = T.leaveConfirm || T.leaveConfirmText || 'Leave the game and return to the lobby?';
-        var cancel= T.cancel || 'Cancel';
-        var leave = T.leaveGame || T.leave || 'Leave';
-        var box = document.getElementById('igConfirmBox');
-        if (confirmOverlay && box){
-          box.innerHTML = '<h3>'+title+'</h3><p>'+text+'</p><div id="igConfirmBtns"><button id="igCancel" class="ig-btn">'+cancel+'</button><button id="igDoLeave" class="ig-btn danger">'+leave+'</button></div>';
-          btnCancel = document.getElementById('igCancel');
-          btnDoLeave = document.getElementById('igDoLeave');
-          if (btnCancel) btnCancel.addEventListener('click', function(){ try{ confirmOverlay.style.display='none'; }catch(_){ } }, {passive:true});
-          if (btnDoLeave) btnDoLeave.addEventListener('click', function(){
-            try { confirmOverlay.style.display='none'; } catch(_){}
-            try { if (window.socket && socket.emit) socket.emit('leaveLobby'); } catch(_){}
-            setTimeout(function(){ try{ window.location.reload(); } catch(e){ try{ window.location.href = window.location.href; }catch(_){ } } }, 50);
-          }, {passive:true});
-        }
-      }catch(_){}
-    }
-    // initial call; will be called again on language changes
-    applyIgMenuI18n();
-
-    // Prevent arrow or WASD keys from focusing in‑game buttons and causing a focus outline.
-    // When a navigation key is pressed while a bottom menu button has focus, we blur the button
-    // so that the browser does not draw a white outline. We do not prevent the default action
-    // to ensure that the keys still control the player.
-    try {
-      document.addEventListener('keydown', function(e){
-        try {
-          var k = e.key ? e.key.toLowerCase() : '';
-          if (k === 'arrowup' || k === 'arrowdown' || k === 'arrowleft' || k === 'arrowright' || k === 'w' || k === 'a' || k === 's' || k === 'd') {
-            var ae = document.activeElement;
-            if (ae && ae.classList && ae.classList.contains('ig-btn')) {
-              ae.blur();
-            }
-          }
-        } catch(_) { }
-    try{ if (__keepShopOpen && typeof show==='function' && ((typeof setActive==='function')||true) && shop){ show(shop); try{ setActive(btnShop, false); }catch(_){ try{ var bs=document.getElementById('btnShop'); if(bs) bs.classList.remove('active'); }catch(__){} }} }catch(_){ }
-}, true);
-    } catch(_){ }
-    if (typeof window.updateUITexts === 'function'){
-      try{
-        var __prev = window.updateUITexts;
-        window.updateUITexts = function(){ try{ __prev.apply(this, arguments); }catch(_){ } applyIgMenuI18n(); };
-      }catch(_){}
-    }
-
-    // ---------- Sync toggles
-    function syncAutoBtn(){
-      try {
-        var enabled = false;
-        try { enabled = !!window.AUTO_FIRE_ENABLED || !!(typeof AUTO_FIRE_ENABLED!=='undefined' && AUTO_FIRE_ENABLED); } catch(_){}
-        if (!enabled) {
-          var lbl = $('autoFireLabel');
-          enabled = !!(lbl && /on/i.test(String(lbl.textContent||'')));
-        }
-        setActive(btnAuto, enabled);
-      } catch(_){}
-    }
-    function syncShopBtn(){ try { var on = upgradesOpen(); if (on && typeof __forceShopBtnInactive!=='undefined' && __forceShopBtnInactive) on = false; setActive(btnShop, on); } catch(_){} }
-
-    // ---------- In-game visibility
-    function showInGameUI(){
-      try {
-        if (menu) menu.style.display = 'flex';
-        // Place the chat panel into floating mode and hide it by default
-        var c = document.getElementById('chatPanel');
-        if (c){ c.classList.add('ig-floating'); try { setCollapsed(true); } catch(_){ c.style.display='none'; try{ var b=document.getElementById('chatCollapsedBtn'); if(b) b.style.display='flex'; }catch(_){} } }
-        // Automatically show the stats bubble and mark its button as active when entering the game
-// MOBILE-ONLY CHANGE: keep it CLOSED by default on touch devices.
-(function(){
-  try {
-    var touch = false;
-    try { touch = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches); } catch(_){ touch = false; }
-    if (!touch) {
-      if (typeof hudStats !== 'undefined' && hudStats){
-        hudStats.style.display = 'block';
-        try { setActive(btnStats, true); } catch(_){}
-      }
-    } else {
-      if (typeof hudStats !== 'undefined' && hudStats){
-        hudStats.style.display = 'none';
-        try { setActive(btnStats, false); } catch(_){}
-      }
-    }
-  } catch(_e){}
-})();
-      } catch(_){ }
-    }
-    function hideInGameUI(){
-      try {
-        hide(hudStats); setActive(btnStats,false);
-        hide(buildPanel); setActive(btnBuild,false);
-        setActive(btnChat,false);
-        var c=document.getElementById('chatPanel'); if (c){ c.classList.remove('ig-floating'); try { setCollapsed(false); } catch(_){ c.style.display='flex'; try{ var b=document.getElementById('chatCollapsedBtn'); if(b) b.style.display='none'; }catch(_){} } }
-        closeUpgrades();
-        if (menu) menu.style.display='none';
-        var tip = $('buildTooltip'); if (tip) tip.style.display='none';
-      } catch(_){ }
-    }
-
-    try {
-      if (window.socket && socket.on) {
-        socket.on('gameStarted', function(){ showInGameUI(); });
-        socket.on('lobbyUpdate', function(data){ try { if (!data || !data.started) hideInGameUI(); } catch(_){ } });
-      }
-    } catch(_){}
-
-    try {
-      var lobby = $('lobbyScreen');
-      if (lobby && window.MutationObserver) {
-        var obs = new MutationObserver(function(){
-          var inLobby = (lobby.style.display !== 'none');
-          if (inLobby) hideInGameUI(); else showInGameUI();
-        });
-        obs.observe(lobby, { attributes:true, attributeFilter:['style','class'] });
-      }
-    } catch(_){}
-
-    try { var lobby = $('lobbyScreen'); if (!lobby || lobby.style.display === 'none') showInGameUI(); } catch(_){}
-
-    setInterval(function(){ syncAutoBtn(); syncShopBtn(); }, 500);
-
-  }catch(e){ console.error('[igMenuPatch] init failed', e); }
-})();
-</script>
-
-
-<script id="build-tooltip-guard">
-(function(){
-  try{
-    function getBox(){
-      try{ if (window.getBuildTooltipBox) return window.getBuildTooltipBox(); }catch(_){}
-      return document.getElementById('buildTooltipStable') || document.getElementById('buildTooltip');
-    }
-    function hideTooltip(){
-      try{
-        var b = getBox();
-        if (b) b.style.display = 'none';
-      }catch(_){}
-    }
-    function isOverTile(target){
-      try{
-        if (!target) return false;
-        if (target.closest && target.closest('.build-tile')) return true;
-      }catch(_){}
-      return false;
-    }
-
-    // Hide when moving and not over any tile
-    document.addEventListener('pointermove', function(ev){
-      try{
-        if (!isOverTile(ev.target)) hideTooltip();
-      }catch(_){}
-    }, {passive:true});
-
-    // Hide on leave of containers
-    function bindContainer(id){
-      var c = document.getElementById(id);
-      if (!c) return;
-      var fn = function(){ hideTooltip(); };
-      c.addEventListener('pointerleave', fn, {passive:true});
-      c.addEventListener('mouseleave', fn, {passive:true});
-      c.addEventListener('pointerout', function(ev){
-        try{
-          var rel = ev.relatedTarget;
-          // When pointer moves to an element outside this container, hide
-          if (!rel || !c.contains(rel)) hideTooltip();
-        }catch(_){ hideTooltip(); }
-      }, {passive:true});
-    }
-    function bind(){
-      ['buildTiles','igBuildTiles'].forEach(bindContainer);
-    }
-    bind();
-
-    // Observe DOM to (re)bind when containers appear later
-    if (window.MutationObserver){
-      var mo = new MutationObserver(function(){ bind(); });
-      mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
-    }
-
-    // Hide when page loses focus or becomes hidden
-    window.addEventListener('blur', hideTooltip);
-    document.addEventListener('visibilitychange', function(){ if (document.hidden) hideTooltip(); });
-
-    // Safety: hide when scrolling and nothing hovered
-    window.addEventListener('scroll', function(){
-      try{
-        var b = getBox();
-        if (!b || b.style.display === 'none') return;
-        if (!document.querySelector('.build-tile:hover')) hideTooltip();
-      }catch(_){}
-    }, {passive:true});
-  } catch(e){
-    try{ console.warn('[build-tooltip-guard] failed', e); }catch(__){}
   }
-})();
-</script>
 
-<!-- [PATCH] igPanelPositionFix: ensure in-game panels always open above the bottom menu on all screen sizes -->
-<script id="igPanelPositionFix">
-  (function(){
+  // Kick off
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {passive:true});
+  else init();
+  // Also retry in case SDK loads late
+  setTimeout(init, 500);
+  setTimeout(init, 1500);
+})();
+
+// Extra bindings: ensure detection + show/hide at the right times
+try {
+  function bindUI(){
     try {
-      // Prevent multiple installations
-      if (window.__igPanelPositionFixInstalled) return;
-      window.__igPanelPositionFixInstalled = true;
-      // Function to update the bottom offset of floating panels (chat, build, stats)
-      function updatePositions(){
-        try {
-          var menu  = document.getElementById('inGameMenu');
-          var chat  = document.getElementById('chatPanel');
-          var build = document.getElementById('igBuildPanel');
-          var stats = document.getElementById('hudStats');
-          // Only run if menu and at least one panel exist
-          if (!menu || (!chat && !build && !stats)) return;
-          var rect = menu.getBoundingClientRect();
-          var visible = rect && rect.height && rect.height > 0;
-          var gap = 8;
-          // Default fallback offsets used when menu is hidden: 66px for desktop, 70px for touch devices
-          var defaultBottom = (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) ? 70 : 66;
-          var offset = defaultBottom;
-          if (visible) {
-            var vh = window.innerHeight || document.documentElement.clientHeight || 0;
-            offset = Math.max(0, vh - rect.top) + gap;
-          }
-          var val = offset + 'px';
-          // Apply bottom offset using !important to override CSS rules
-          if (chat) {
-          var floating = !!(chat.classList && chat.classList.contains('ig-floating'));
-          if (floating) {
-            chat.style.setProperty('bottom', val, 'important');
-          } else {
-            chat.style.setProperty('bottom', '12px', 'important');
-          }
+      var ids = ['btnCreateLobby','btnJoinLobbyList','btnStartManual','btnReplay'];
+      for (var i=0;i<ids.length;i++){
+        var el = document.getElementById(ids[i]);
+        if (el && !el.__cgInviteBound){
+          el.__cgInviteBound = true;
+          el.addEventListener('click', function(){ setTimeout(function(){ try { updateFrom(window.lobbyData||null); } catch(_){}} , 300); }, {passive:true});
         }
-          if (build) build.style.setProperty('bottom', val, 'important');
-          if (stats) stats.style.setProperty('bottom', val, 'important');
-        } catch(_) {}
       }
-      // Schedule updates with requestAnimationFrame to avoid thrashing
-      var rafId = null;
-      function schedule(){
-        if (rafId !== null) return;
-        rafId = requestAnimationFrame(function(){
-          rafId = null;
-          updatePositions();
-        });
+      var hides = ['btnBackFromManual','btnBackFromList','btnSpectate'];
+      for (var j=0;j<hides.length;j++){
+        var el2 = document.getElementById(hides[j]);
+        if (el2 && !el2.__cgInviteHideBound){
+          el2.__cgInviteHideBound = true;
+          el2.addEventListener('click', function(){ try { hideBtn(); } catch(_){ } }, {passive:true});
+        }
       }
-      // Observe menu mutations to recompute offsets when its size or content changes
-      function observeMenu(){
-        try {
-          var menu = document.getElementById('inGameMenu');
-          if (!menu || !window.MutationObserver) return;
-          var obs = new MutationObserver(function(){ schedule(); });
-          obs.observe(menu, { attributes:true, childList:true, subtree:true });
-        } catch(_) {}
+      var lobbyEl = document.getElementById('manualLobbyPanel') || document.getElementById('lobbyScreen');
+      if (lobbyEl && window.MutationObserver && !lobbyEl.__cgInviteObs){
+        lobbyEl.__cgInviteObs = new MutationObserver(function(){ try { updateFrom(window.lobbyData||null); } catch(_){}});
+        lobbyEl.__cgInviteObs.observe(lobbyEl, { attributes:true, attributeFilter:['style','class'] });
       }
-      // Initialize on DOM ready
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function(){ schedule(); observeMenu(); }, {passive:true});
-      } else {
-        schedule();
-        observeMenu();
-      }
-      // Refresh positions on resize/orientation changes and when page loads
-      window.addEventListener('resize', schedule, {passive:true});
-      window.addEventListener('orientationchange', schedule, {passive:true});
-      window.addEventListener('load', schedule, {passive:true});
-    } catch(e){
-      try { console.warn('[igPanelPositionFix] init failed', e); } catch(__) {}
-    }
-  })();
+    } catch(_){}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindUI, {passive:true}); else bindUI();
+} catch(_){}
 </script>
+<!-- /CrazyGames Invite integration -->
+</body>
+</html>
