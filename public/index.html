@@ -11470,6 +11470,7 @@ document.getElementById('skinBuy').onclick = buyNow;
 
   @media (hover: none) and (pointer: coarse){
     #inGameMenu{ gap:6px; padding:6px; bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); 
+  width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
   max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px);
 
   transform-origin: bottom center;
@@ -11480,6 +11481,7 @@ document.getElementById('skinBuy').onclick = buyNow;
 
   justify-content: center;
   align-items: stretch;
+
 }
     .ig-btn{ padding:9px 11px; font-size:15px; min-width:0; flex: 1 1 clamp(100px, 28vw, 160px); }
     #chatPanel.ig-floating{ bottom: 70px; font-size:15px; }
