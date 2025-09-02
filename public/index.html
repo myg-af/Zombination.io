@@ -2255,7 +2255,6 @@ const MAX_PINCH = 1.8;
 
 	function updateRenderScale() {
   try {
-    // Compute the 'base' scale that fits the visibility halo to screen edges
     if (!isMobileDevice) {
       baseRenderScale = 1;
       renderScale = baseRenderScale * pinchScale;
@@ -2264,30 +2263,34 @@ const MAX_PINCH = 1.8;
     const VR = (typeof CLIENT_VIEW_RADIUS === 'number' && CLIENT_VIEW_RADIUS > 0) ? CLIENT_VIEW_RADIUS : 300;
     const cw = (canvas && canvas.width) || window.innerWidth || 0;
     const ch = (canvas && canvas.height) || window.innerHeight || 0;
-    const minDim = Math.min(cw, ch);
-    if (minDim > 0 && VR > 0) {
-      baseRenderScale = minDim / (2 * VR);
-    } else {
-      baseRenderScale = 1;
+    const fill = 0.80; // 80% target
+    let newBase = 1;
+    if (cw > 0 && ch > 0 && VR > 0) {
+      const portrait = ch >= cw;
+      const axis = portrait ? cw : ch;
+      newBase = (axis * fill) / (2 * VR);
+      if (!isFinite(newBase) || newBase <= 0) newBase = 1;
     }
+    baseRenderScale = newBase;
     renderScale = baseRenderScale * pinchScale;
-  } catch(e) {
-    try { console.warn('[updateRenderScale] error', e && (e.message||e)); } catch(_){}
+  } catch (e) {
+    try { console.warn('[updateRenderScale] error', e && (e.message || e)); } catch (_) {}
   }
 }
 
 // Keep mobile zoom correct when the screen size/orientation changes
 try {
   window.addEventListener('resize', function(){
-    try { updateRenderScale(); updateCamera && updateCamera(); } catch(_){}
+    try { updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){}
   }, { passive: true });
   window.addEventListener('orientationchange', function(){
-    try { setTimeout(function(){ updateRenderScale(); updateCamera && updateCamera(); }, 0); } catch(_){}
+    try { setTimeout(function(){ updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); }, 60); } catch(_){}
   }, { passive: true });
 } catch(_){}
 
 updateRenderScale();
-    const TILE_SIZE = 40;
+
+const TILE_SIZE = 40;
     const PLAYER_RADIUS = 10;
     const ZOMBIE_RADIUS = 10;
 	const CLIENT_VIEW_RADIUS = 300;
@@ -4177,7 +4180,9 @@ if (lobbyJoin)           try { pseudoInput.style.background = '#c7f7c7'; pseudoI
       if (e.key === "Enter") if (lobbyJoin) lobbyJoin.click();
     };
 
-    socket.on('gameStarted', (data) => { currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
+    socket.on('gameStarted', (data) => {
+      try { pinchScale = 1; updateRenderScale(); if (typeof updateCamera==='function') updateCamera(); } catch(_){ }
+ currentGameId = (data && (data.gameId || data.gid || data.id)) || null; try { const ds = document.getElementById('deathScreen'); if (ds) ds.style.display = 'none'; } catch(e) {} myId = socket.id; isSpectator = false;
       map = data.map;
 	  createMapBuffer();
       MAP_ROWS = map.length;
