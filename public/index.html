@@ -1375,7 +1375,7 @@ setInterval(()=>{
       const rem = Math.max(0, blockCooldownUntil - Date.now());
       cd.textContent = rem > 0 ? (Math.ceil(rem/1000)+'s') : '';
     } else {
-      cd.textContent = (window.trLoc ? trLoc('rotateToPortrait', 'Rotate your device to portrait.') : 'Rotate your device to portrait.');
+      cd.textContent = (window.trLoc ? trLoc('rotateToLandscape', 'Rotate your device to landscape.') : 'Rotate your device to landscape.');
     }
   });
 }, 500);
@@ -8710,7 +8710,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   user-select: none;
 }
 
-@media (hover: none) and (pointer: coarse) and (orientation: landscape){
+@media (hover: none) and (pointer: coarse) and (orientation: portrait){
   #rotateOverlay{ display: flex; }
 }
 
@@ -8743,17 +8743,17 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
       const d = document.createElement('div');
       d.id = 'rotateOverlay';
       d.setAttribute('aria-hidden', 'true');
-      d.textContent = (window.trLoc ? trLoc('rotateToPortrait', 'Rotate your device to portrait.') : 'Rotate your device to portrait.');
+      d.textContent = (window.trLoc ? trLoc('rotateToLandscape', 'Rotate your device to landscape.') : 'Rotate your device to landscape.');
       document.body.appendChild(d);
     }
   }
 
   // Best-effort portrait lock using Screen Orientation API (requires user gesture/fullscreen on many browsers)
-  async function tryLockPortrait(){
+  async function tryLockLandscape(){
     if (!isMobile) return;
     try {
       if (screen.orientation && screen.orientation.lock){
-        await screen.orientation.lock('portrait');
+        await screen.orientation.lock('landscape');
       }
     } catch(_e){
       // ignore — overlay + CSS will enforce UX when in landscape
@@ -8774,9 +8774,9 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
   if (isMobile){
     // Try to lock on first user interaction
-    ['pointerup','touchend','click'].forEach(ev => once(window, ev, tryLockPortrait, {passive:true}));
+    ['pointerup','touchend','click'].forEach(ev => once(window, ev, tryLockLandscape, {passive:true}));
     // Retry on orientation changes
-    window.addEventListener('orientationchange', tryLockPortrait, {passive:true});
+    window.addEventListener('orientationchange', tryLockLandscape, {passive:true});
   }
 
   // Zoom out a bit when the game starts (mobile only) — relies on existing pinchScale/updateRenderScale
@@ -8798,13 +8798,13 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 
   try {
     if (window.socket && typeof socket.on === 'function'){
-      socket.on('gameStarted', function(){ tryLockPortrait(); mobileZoomOut(); });
+      socket.on('gameStarted', function(){ tryLockLandscape(); mobileZoomOut(); });
     } else {
       // Fallback: if socket arrives later, hook then
       const iv = setInterval(function(){
         if (window.socket && typeof socket.on === 'function'){
           clearInterval(iv);
-          socket.on('gameStarted', function(){ tryLockPortrait(); mobileZoomOut(); });
+          socket.on('gameStarted', function(){ tryLockLandscape(); mobileZoomOut(); });
         }
       }, 120);
       setTimeout(()=>clearInterval(iv), 10000);
