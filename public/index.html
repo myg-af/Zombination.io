@@ -8025,11 +8025,11 @@ if (titleEl)      titleEl.textContent      = tr('shopMain','Shop');
         html += '<div id="goldBuyBlock" style="display:flex;flex-direction:column;align-items:center;gap:6px;margin:6px 0 12px 0;text-align:center;">'
              +    '<div id="goldEarnNote" style="font-size:12px;color:#9ab;text-align:center;">'+earnNote+'</div>'
              +    '<div id="goldBuyButtons" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">'
-             +      '<button type="button" onclick="try{window.startCheckout(\'price_1S2AGI1FI4pQv5J1q08Zqe49\');}catch(e){}"'
+             +      '<button type="button" onclick="try{window.startCheckout(\'prod_Sy5flvj2fANACi\');}catch(e){}"'
              +        ' style="background:#6865ff;color:#fff;border:none;border-radius:999px;padding:6px 10px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);">'
              +          label1000
              +      '</button>'
-             +      '<button type="button" onclick="try{window.startCheckout(\'price_1S2AGX1FI4pQv5J1MffQusAI\');}catch(e){}"'
+             +      '<button type="button" onclick="try{window.startCheckout(\'prod_Sy5gAuNdFw1cJg\');}catch(e){}"'
              +        ' style="background:#6865ff;color:#fff;border:none;border-radius:999px;padding:6px 10px;font-weight:600;cursor:pointer;box-shadow:inset 0 0 0 2px rgba(255,255,255,.12);">'
              +          label5000
              +      '</button>'
@@ -10071,7 +10071,7 @@ window.__sanitizeHex = window.__sanitizeHex || function(hex){
     // Public function for inline usage
     window.startCheckout = async function(priceId){
       try{
-        if(!priceId || !/^price_[a-zA-Z0-9]+$/.test(String(priceId))){
+        if(!priceId || !/^(?:price|prod)_[a-zA-Z0-9]+$/.test(String(priceId))){
           toast('Payment unavailable.');
           return;
         }

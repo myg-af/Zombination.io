@@ -547,46 +547,65 @@ app.post('/api/checkout', async (req,res)=>{
     if (!uname) return res.status(401).json({ ok:false, code:'not_logged_in' });
 
     const priceId = String((req.body && req.body.priceId) || '').trim();
-    if (!/^price_[a-zA-Z0-9]+$/.test(priceId)) return res.status(400).json({ ok:false, code:'bad_price_id' });
+// Accept both Stripe price_ and prod_ identifiers for robustness
+if (!/^(?:price|prod)_[a-zA-Z0-9]+$/.test(priceId)) return res.status(400).json({ ok:false, code:'bad_item_id' });
 
-    // Allowlist test prices and expected amounts (EUR cents)
-    const PRICE_MAP = {
-      'price_1S2AGI1FI4pQv5J1q08Zqe49': { gold: 1000, amount: 500  },
-      'price_1S2AGX1FI4pQv5J1MffQusAI': { gold: 5000, amount: 2000 },
-    };
-    const entry = PRICE_MAP[priceId];
-    if (!entry) return res.status(400).json({ ok:false, code:'price_not_allowed' });
+// Allowlist LIVE products/prices and expected amounts (EUR cents)
+const PRODUCT_MAP = {
+  'prod_Sy5flvj2fANACi': { gold: 1000, amount: 500  }, // 5€
+  'prod_Sy5gAuNdFw1cJg': { gold: 5000, amount: 2000 }, // 20€
+};
 
-    // Retrieve price from Stripe and validate amount/devise
-    const price = await stripe.prices.retrieve(priceId);
-    if (!price || price.active !== true) return res.status(400).json({ ok:false, code:'price_inactive' });
+const isProduct = priceId.startsWith('prod_');
+let entry = null;
+if (isProduct) {
+  entry = PRODUCT_MAP[priceId] || null;
+}
+// Backward-compat: allow legacy price_ ids if you still have them live
+const PRICE_MAP = {
+  // (intentionally left empty for live unless you add live price ids)
+};
+if (!entry && priceId.startsWith('price_')) entry = PRICE_MAP[priceId] || null;
+if (!entry) return res.status(400).json({ ok:false, code:'item_not_allowed' });
 
-    // unit_amount can be under currency_options for multi-currency
-    let amount = price.unit_amount != null ? price.unit_amount : null;
-    let currency = price.currency || null;
-    if (amount == null && price.currency_options && price.currency_options.eur){
-      amount = price.currency_options.eur.unit_amount;
-      currency = 'eur';
-    }
-    if (currency !== 'eur') return res.status(400).json({ ok:false, code:'bad_currency' });
-    if (amount !== entry.amount) return res.status(400).json({ ok:false, code:'amount_mismatch', amount });
+if (isProduct) {
+  // Optional hardening: check product exists & is active
+  const product = await stripe.products.retrieve(priceId).catch(function(){ return null; });
+  if (!product || product.active !== true) return res.status(400).json({ ok:false, code:'product_inactive' });
+  // Create a one-off price on-the-fly via price_data, locked to EUR and expected amount
+  var line_items = [{ price_data: { currency: 'eur', unit_amount: entry.amount, product: priceId }, quantity: 1 }];
+} else {
+  // Legacy price path: verify amount/currency server-side before using the price
+  const price = await stripe.prices.retrieve(priceId);
+  if (!price || price.active !== true) return res.status(400).json({ ok:false, code:'price_inactive' });
+  let amount = price.unit_amount != null ? price.unit_amount : null;
+  let currency = price.currency || null;
+  if (amount == null && price.currency_options && price.currency_options.eur){
+    amount = price.currency_options.eur.unit_amount;
+    currency = 'eur';
+  }
+  if (currency !== 'eur') return res.status(400).json({ ok:false, code:'bad_currency' });
+  if (amount !== entry.amount) return res.status(400).json({ ok:false, code:'amount_mismatch', amount });
+  var line_items = [{ price: priceId, quantity: 1 }];
+}
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [{ price: priceId, quantity: 1 }],
-      allow_promotion_codes: false,
-      client_reference_id: String(uname),
-      metadata: {
-        username: String(uname),
-        gold: String(entry.gold),
-        price_id: priceId
-      },
-      success_url: checkoutReturnURL(req, 'success'),
-      cancel_url: checkoutReturnURL(req, 'cancel')
-    });
+const session = await stripe.checkout.sessions.create({
+  mode: 'payment',
+  payment_method_types: ['card'],
+  line_items,
+  allow_promotion_codes: false,
+  client_reference_id: String(uname),
+  metadata: {
+    username: String(uname),
+    gold: String(entry.gold),
+    price_id: isProduct ? '' : priceId,
+    product_id: isProduct ? priceId : ''
+  },
+  success_url: checkoutReturnURL(req, 'success'),
+  cancel_url: checkoutReturnURL(req, 'cancel')
+});
 
-    return res.json({ ok:true, url: session.url });
+return res.json({ ok:true, url: session.url });
   } catch(e){
     try { console.error('[api_checkout]', e); } catch(_){}
     return res.status(500).json({ ok:false, code:'server_error' });
@@ -620,32 +639,45 @@ app.post('/stripe/webhook', async (req, res) => {
       const session = event.data && event.data.object || {};
       if (String(session.payment_status||'') === 'paid') {
         // Allowlist of prices and their rewards/expected amounts
-        const PRICE_MAP = {
-          'price_1S2AGI1FI4pQv5J1q08Zqe49': { gold: 1000, amount: 500  }, // 5€
-          'price_1S2AGX1FI4pQv5J1MffQusAI': { gold: 5000, amount: 2000 }, // 20€
-        };
+        const PRODUCT_MAP = {
+  'prod_Sy5flvj2fANACi': { gold: 1000, amount: 500  }, // 5€
+  'prod_Sy5gAuNdFw1cJg': { gold: 5000, amount: 2000 }, // 20€
+};
 
-        // Prefer metadata first
-        const meta = session.metadata || {}; const clientRef = String(session.client_reference_id||'').trim();
-        const priceId = String(meta.price_id || '').trim();
-        const uname = String(meta.username || clientRef || '').trim();
-        let entry = PRICE_MAP[priceId] || null;
+// Prefer metadata first
+const meta = session.metadata || {}; const clientRef = String(session.client_reference_id||'').trim();
+const uname = String(meta.username || clientRef || '').trim();
+let productId = String(meta.product_id || '').trim();
+let entry = null;
+if (productId && PRODUCT_MAP[productId]) entry = PRODUCT_MAP[productId];
+// Fallback: if only price_id was stored, resolve its product
+if (!entry) {
+  const priceId = String(meta.price_id || '').trim();
+  if (priceId) {
+    try {
+      const price = await stripe.prices.retrieve(priceId);
+      if (price && price.product && PRODUCT_MAP[String(price.product)]) {
+        productId = String(price.product);
+        entry = PRODUCT_MAP[productId];
+      }
+    } catch(_){}
+  }
+}
+// Final fallback: expand the session for line_items to fetch price.product
+const amountTotal = parseInt(session.amount_total||0, 10) || 0;
+const currency = String(session.currency||'').toLowerCase() || 'eur';
+if (!entry) {
+  try {
+    const full = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items.data.price'] });
+    const li = full && full.line_items && full.line_items.data && full.line_items.data[0];
+    const pr = li && li.price;
+    const prod = pr && pr.product;
+    if (prod && PRODUCT_MAP[prod]) { productId = String(prod); entry = PRODUCT_MAP[prod]; }
+  } catch(_){}
+}
 
-        // Validate against the actual amount charged
-        const amountTotal = parseInt(session.amount_total||0, 10) || 0;
-        const currency = String(session.currency||'').toLowerCase() || 'eur';
-        // If we did not find a map by metadata, try retrieving the session with line items
         if (!entry) {
-          try {
-            const full = await stripe.checkout.sessions.retrieve(session.id, { expand: ['line_items.data.price'] });
-            const li = full && full.line_items && full.line_items.data && full.line_items.data[0];
-            const pr = li && li.price && li.price.id;
-            if (pr && PRICE_MAP[pr]) entry = PRICE_MAP[pr];
-          } catch(_){}
-        }
-
-        if (!entry) {
-          try { console.warn('[stripe_webhook] unknown price id', priceId || '(none)'); } catch(_){}
+          try { console.warn('[stripe_webhook] unknown product id', productId || '(none)'); } catch(_){}
         } else if (currency !== 'eur' || amountTotal !== entry.amount) {
           try { console.warn('[stripe_webhook] amount/currency mismatch', { amountTotal, currency }); } catch(_){}
         } else if (uname) {
@@ -5125,6 +5157,5 @@ app.post('/api/skin/buy', (req,res)=>{
     return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
-
 
 
