@@ -569,11 +569,29 @@ if (!entry && priceId.startsWith('price_')) entry = PRICE_MAP[priceId] || null;
 if (!entry) return res.status(400).json({ ok:false, code:'item_not_allowed' });
 
 if (isProduct) {
-  // Optional hardening: check product exists & is active
-  const product = await stripe.products.retrieve(priceId).catch(function(){ return null; });
-  if (!product || product.active !== true) return res.status(400).json({ ok:false, code:'product_inactive' });
-  // Create a one-off price on-the-fly via price_data, locked to EUR and expected amount
-  var line_items = [{ price_data: { currency: 'eur', unit_amount: entry.amount, product: priceId }, quantity: 1 }];
+  // Robust path:
+  // Try to use the existing Stripe product if it exists AND is active;
+  // otherwise, fallback to an ad‑hoc product via `product_data` so the checkout can proceed.
+  let productOk = false;
+  try {
+    const product = await stripe.products.retrieve(priceId);
+    productOk = !!(product && product.active === true);
+  } catch(_){ productOk = false; }
+
+  if (productOk) {
+    var line_items = [{ price_data: { currency: 'eur', unit_amount: entry.amount, product: priceId }, quantity: 1 }];
+  } else {
+    // Fallback: still charge the exact allowed amount in EUR,
+    // and tag metadata with our original product_id so the webhook can grant gold safely.
+    var line_items = [{
+      price_data: {
+        currency: 'eur',
+        unit_amount: entry.amount,
+        product_data: { name: `Zombination.io – ${entry.gold} Gold` }
+      },
+      quantity: 1
+    }];
+  }
 } else {
   // Legacy price path: verify amount/currency server-side before using the price
   const price = await stripe.prices.retrieve(priceId);
