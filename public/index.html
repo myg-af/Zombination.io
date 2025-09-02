@@ -588,6 +588,7 @@ if (!window.ensureMySkinLoaded) {
 /* Hide chat collapsed bubble ONLY in-game (i.e., when main menu UI is not shown) */
 body:not(.menu-hide-ui) #chatCollapsedBtn { display: none !important; }
 </style>
+<style>#rotateOverlay{display:none !important;}</style>
 </head>
 <body>
 <!-- top-message helper -->
@@ -1375,7 +1376,7 @@ setInterval(()=>{
       const rem = Math.max(0, blockCooldownUntil - Date.now());
       cd.textContent = rem > 0 ? (Math.ceil(rem/1000)+'s') : '';
     } else {
-      cd.textContent = (window.trLoc ? trLoc('rotateToLandscape', 'Rotate your device to landscape.') : 'Rotate your device to landscape.');
+      cd.textContent = (window.trLoc ? trLoc('rotateToPortrait', 'Rotate your device to portrait.') : 'Rotate your device to portrait.');
     }
   });
 }, 500);
@@ -8710,9 +8711,7 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
   user-select: none;
 }
 
-@media (hover: none) and (pointer: coarse) and (orientation: portrait){
-  #rotateOverlay{ display: flex; }
-}
+@media (hover: none) and (pointer: coarse) and (orientation: landscape){ #rotateOverlay{ display: none !important; } }
 
 /* Mobile-only UI sizing + right alignment for build tiles */
 @media (hover: none) and (pointer: coarse){
@@ -8733,163 +8732,28 @@ try { if (window.socket && socket.on) { socket.on('gameStarted', function(){ try
 </style>
 
 
-<script id="mobile-portrait-lock-and-zoom">
+<script id="mobile-orientation-unlock">
+// Replaces previous portrait-only lock: allow both portrait AND landscape on mobile.
+// Hides any leftover rotate overlay and keeps canvas sizing robust.
 (function(){
-  const isMobile = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-
-  // Ensure overlay node exists (idempotent)
-  function ensureRotateOverlay(){
-    if (!document.getElementById('rotateOverlay')){
-      const d = document.createElement('div');
-      d.id = 'rotateOverlay';
-      d.setAttribute('aria-hidden', 'true');
-      d.textContent = (window.trLoc ? trLoc('rotateToLandscape', 'Rotate your device to landscape.') : 'Rotate your device to landscape.');
-      document.body.appendChild(d);
-    }
-  }
-
-  // Best-effort portrait lock using Screen Orientation API (requires user gesture/fullscreen on many browsers)
-  async function tryLockLandscape(){
-    if (!isMobile) return;
-    try {
-      if (screen.orientation && screen.orientation.lock){
-        await screen.orientation.lock('landscape');
-      }
-    } catch(_e){
-      // ignore — overlay + CSS will enforce UX when in landscape
-    }
-  }
-
-  function once(el, ev, fn, opts){
-    const wrap = function(e){ try{ fn(e); }finally{ el.removeEventListener(ev, wrap, opts);} };
-    el.addEventListener(ev, wrap, opts);
-  }
-
-  // Inject overlay ASAP
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ensureRotateOverlay, {passive:true});
-  } else {
-    ensureRotateOverlay();
-  }
-
-  if (isMobile){
-    // Try to lock on first user interaction
-    ['pointerup','touchend','click'].forEach(ev => once(window, ev, tryLockLandscape, {passive:true}));
-    // Retry on orientation changes
-    window.addEventListener('orientationchange', tryLockLandscape, {passive:true});
-  }
-
-  // Zoom out a bit when the game starts (mobile only) — relies on existing pinchScale/updateRenderScale
-  function mobileZoomOut(){
-    if (!isMobile) return;
-    try {
-      // Respect existing clamp constants if present
-      var minP = (typeof MIN_PINCH === 'number') ? MIN_PINCH : 0.6;
-      var maxP = (typeof MAX_PINCH === 'number') ? MAX_PINCH : 1.6;
-      var target = 0.85; // slightly zoomed out
-      if (typeof pinchScale === 'number') {
-        pinchScale = Math.max(minP, Math.min(maxP, target));
-      } else {
-        window.pinchScale = target;
-      }
-      if (typeof updateRenderScale === 'function') updateRenderScale();
-    } catch(_e){ /* no-op */ }
-  }
-
-  try {
-    if (window.socket && typeof socket.on === 'function'){
-      socket.on('gameStarted', function(){ tryLockLandscape(); mobileZoomOut(); });
-    } else {
-      // Fallback: if socket arrives later, hook then
-      const iv = setInterval(function(){
-        if (window.socket && typeof socket.on === 'function'){
-          clearInterval(iv);
-          socket.on('gameStarted', function(){ tryLockLandscape(); mobileZoomOut(); });
-        }
-      }, 120);
-      setTimeout(()=>clearInterval(iv), 10000);
-    }
-  } catch(_e){ /* ignore */ }
-})();
-
-
-
-
-
-
-
-
-
-
-// ---- Mobile drag-to-place: select block, drag on canvas, auto-place on release ----
-(function(){
-  try {
-    var touchCap = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    if (!touchCap) return;
-    if (!canvas || canvas.__dragPlaceV2) return;
-    canvas.__dragPlaceV2 = true;
-
-    var placing = false;
-    var activeId = null;
-    var lastX = 0, lastY = 0;
-
-    function findById(e, id){
-      if (!e) return null;
-      var pools = [e.touches, e.changedTouches];
-      for (var p=0; p<pools.length; p++){
-        var list = pools[p] ? Array.prototype.slice.call(pools[p]) : [];
-        for (var i=0;i<list.length;i++){ if (list[i].identifier === id) return list[i]; }
-      }
-      return null;
-    }
-
-    function ts(e){
-      if (!buildMode) return;
-      if (!(e.touches && e.touches.length === 1)) return; // ignore multi-touch (pinch/joysticks)
-      var t = e.changedTouches && e.changedTouches[0];
-      if (!t) return;
-      // ignore if touch starts on joystick
+  try{
+    function hideRotateOverlay(){
       try{
-        var el = document.elementFromPoint(t.clientX, t.clientY);
-        if (el && el.classList && (el.classList.contains('joystick-base') || el.classList.contains('joystick-stick'))) return;
+        var el = document.getElementById('rotateOverlay');
+        if (el) { el.style.display = 'none'; el.setAttribute('aria-hidden','true'); }
       }catch(_){}
-      placing = true; activeId = t.identifier;
-      lastX = t.clientX; lastY = t.clientY;
-      var st = screenToWorldTile(lastX, lastY);
-      buildHover.tx = st.tx; buildHover.ty = st.ty;
-      e.preventDefault(); e.stopPropagation();
     }
-    function tm(e){
-      if (!placing || !buildMode) return;
-      var t = findById(e, activeId) || (e.changedTouches && e.changedTouches[0]);
-      if (!t) return;
-      lastX = t.clientX; lastY = t.clientY;
-      var st = screenToWorldTile(lastX, lastY);
-      buildHover.tx = st.tx; buildHover.ty = st.ty;
-      e.preventDefault(); e.stopPropagation();
-    }
-    function te(e){
-      if (!placing) return;
-      // Use last coords
-      try {
-        tryPlaceStructureAtCursor(lastX, lastY);
-      } catch(_){}
-      placing = false; activeId = null;
-      // Exit build mode so auto-fire & other controls are usable immediately
-      try { buildMode = null; buildHover = { tx:-1, ty:-1 }; } catch(_){}
-      try { if (document && document.body && document.body.dataset) document.body.dataset.buildMode = ''; } catch(_){}
-try { if (window.__applyBuildTileHighlight) window.__applyBuildTileHighlight(); } catch(_){}
-e.preventDefault(); e.stopPropagation();
-    }
-
-    canvas.addEventListener('touchstart', ts,   { passive: false });
-    canvas.addEventListener('touchmove',  tm,   { passive: false });
-    canvas.addEventListener('touchend',   te,   { passive: false });
-    canvas.addEventListener('touchcancel',te,   { passive: false });
-  } catch(_e) { /* ignore */ }
+    hideRotateOverlay();
+    window.addEventListener('orientationchange', hideRotateOverlay, {passive:true});
+    window.addEventListener('resize', hideRotateOverlay, {passive:true});
+    // If some browsers keep a previous orientation lock, try to unlock gracefully where supported.
+    try{
+      if (screen.orientation && typeof screen.orientation.unlock === 'function'){
+        screen.orientation.unlock();
+      }
+    }catch(_){}
+  }catch(_){}
 })();
-// ---- /Mobile drag-to-place ----
-
 </script>
 
 
@@ -11488,6 +11352,29 @@ document.getElementById('skinBuy').onclick = buyNow;
     #igBuildPanel{ bottom: 70px; }
   }
 </style>
+<style id="igMenuLandscape">
+/* Force single-row menu on mobile LANDSCAPE */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape){
+  #inGameMenu{
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    padding: 6px !important;
+    width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px) !important;
+    max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 12px) !important;
+    overflow-x: auto; /* still one row, scrollable if extremely narrow */
+    -webkit-overflow-scrolling: touch;
+    white-space: normal; /* flex items control wrapping */
+  }
+  #inGameMenu .ig-btn{
+    flex: 1 1 auto !important;
+    min-width: 0 !important;      /* allow shrink to fit */
+    padding: 8px 10px !important;
+    font-size: 14px !important;
+    white-space: nowrap !important;
+  }
+}
+</style>
+
 
 <script id="igMenuPatch">
 (function(){
