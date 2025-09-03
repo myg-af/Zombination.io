@@ -3086,7 +3086,10 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
   
 
   socket.on('leaveLobby', () => {
-    const gameId = socketToGame[socket.id];
+    
+    // Record ladder if eligible when leaving the game/lobby
+    try { maybeRecordLadderOnExit(socket, 'leave'); } catch(_e) {}
+const gameId = socketToGame[socket.id];
     const game = activeGames.find(g => g.id === gameId);
     if (!game) return;
     // Remove from current lobby's players
@@ -3111,7 +3114,9 @@ if (isPseudoTaken(p, socket.id)) { try { if (cb) cb({ ok:false, reason:'pseudo_t
 
   
   socket.on('disconnect', () => {
-    try { releaseWorldChatName(socket); } catch(_){}
+        // Record ladder if eligible on disconnect (covers F5 refresh/close)
+    try { maybeRecordLadderOnExit(socket, 'disconnect'); } catch(_e) {}
+try { releaseWorldChatName(socket); } catch(_){}
     try { lastPseudoBySocket.delete(socket.id); } catch(_){}
 
     // Try to resolve the game from mapping
@@ -4928,6 +4933,54 @@ function recordLadderScoreServer(playerName, wave, kills) {
     return false;
   }
 }
+
+// --- Helper: check if a (wave,kills) would qualify for Top 100 without writing ---
+function __qualifiesForTop100(wave, kills) {
+  try {
+    ensureLadderFile();
+    let ladder = loadLadder();
+    // Deduplicate best per player (same logic as writer)
+    const best = new Map();
+    for (const e of ladder) {
+      if (!e || !e.player) continue;
+      const k = e.player;
+      if (!best.has(k)) best.set(k, e);
+      else {
+        const cur = best.get(k);
+        const better = (e.wave|0) > (cur.wave|0) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) > (cur.kills|0)) ||
+                       ((e.wave|0) === (cur.wave|0) && (e.kills|0) === (cur.kills|0) && (e.ts|0) < (cur.ts|0));
+        if (better) best.set(k, e);
+      }
+    }
+    ladder = Array.from(best.values());
+    // Sort as used by writer
+    ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
+    if (ladder.length < 100) return (wave|0) > 0 || (kills|0) > 0;
+    const cut = ladder[99] || { wave:0, kills:0 };
+    return ((wave|0) > (cut.wave|0)) ||
+           (((wave|0) === (cut.wave|0)) && ((kills|0) > (cut.kills|0)));
+  } catch(_e) { return false; }
+}
+
+// --- Helper: when a player leaves/refreshes, record Top 100 if eligible (server‑side only) ---
+function maybeRecordLadderOnExit(sock, reason) {
+  try {
+    const gid = socketToGame[sock.id];
+    const game = activeGames.find(g => g && g.id === gid);
+    if (!game || !game.lobby || !game.lobby.started) return false;
+    const p = game.players && game.players[sock.id];
+    if (!p || p.isBot) return false;
+    if (p._ladderSubmitted) return false;
+    const name = (p.pseudo && String(p.pseudo)) || 'Anonymous';
+    const wave = Number(game.currentRound) || 0;
+    const kills = Number(p.kills) || 0;
+    if (!__qualifiesForTop100(wave, kills)) return false;
+    p._ladderSubmitted = true;
+    return !!recordLadderScoreServer(name, wave, kills);
+  } catch(e) { try { console.warn('[LADDER exit]', e && (e.message||e)); } catch(_){ } return false; }
+}
+
 
 app.get('/api/ladder', (req,res)=>{
   try {
