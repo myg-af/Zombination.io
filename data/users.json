@@ -77,17 +77,6 @@
         "hp": 0,
         "dmg": 0
       }
-    },
-    "yolo": {
-      "username": "yolo",
-      "usernameLower": "yolo",
-      "passHash": "pbkdf2$sha256$120000$3099fb5964811f55d5236bb29e36ebdc$69fc9eeee8ad75932690d47e12fcb8a0394a654226882e102e7e4d71ad48d6da",
-      "createdAt": 1756827861710,
-      "gold": 10000,
-      "shopUpgrades": {
-        "hp": 0,
-        "dmg": 0
-      }
     }
   }
 }

@@ -1130,9 +1130,9 @@ const SHOP_CONST = {
 
 // --- Prix d'achat des structures (serveur autoritatif) ---
 const SHOP_BUILD_PRICES = {
-  T: 2000, // Tourelle
-  t: 500,  // Mini-tourelle
-  G: 10000, // Big-tourelle
+  T: 1000, // Tourelle
+  t: 250,  // Mini-tourelle
+  G: 5000, // Big-tourelle
   B: 250,  // Mur
   D: 500   // Porte
 };
