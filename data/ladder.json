@@ -1,22 +1,10 @@
 {
   "ladder": [
     {
-      "player": "Myg",
-      "wave": 33,
-      "kills": 0,
-      "ts": 1756927697855
-    },
-    {
       "player": "Driga50",
       "wave": 8,
       "kills": 264,
       "ts": 1700000001000
-    },
-    {
-      "player": "Opiumdead",
-      "wave": 8,
-      "kills": 243,
-      "ts": 1756562223571
     },
     {
       "player": "Lexun46",
@@ -31,22 +19,10 @@
       "ts": 1700000003000
     },
     {
-      "player": "loadek",
-      "wave": 7,
-      "kills": 121,
-      "ts": 1756556265299
-    },
-    {
       "player": "Ivorky",
       "wave": 7,
       "kills": 112,
       "ts": 1700000004000
-    },
-    {
-      "player": "Mygs",
-      "wave": 7,
-      "kills": 0,
-      "ts": 1756682441949
     },
     {
       "player": "Quur",
@@ -119,12 +95,6 @@
       "wave": 6,
       "kills": 72,
       "ts": 1700000016000
-    },
-    {
-      "player": "kkk",
-      "wave": 6,
-      "kills": 2,
-      "ts": 1756562847940
     },
     {
       "player": "KyunbrZero64",
@@ -221,12 +191,6 @@
       "wave": 5,
       "kills": 45,
       "ts": 1700000032000
-    },
-    {
-      "player": "Mygv",
-      "wave": 5,
-      "kills": 0,
-      "ts": 1756792350676
     },
     {
       "player": "Yvemav749",
@@ -599,6 +563,42 @@
       "wave": 2,
       "kills": 7,
       "ts": 1700000094000
+    },
+    {
+      "player": "Uvilel",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000095000
+    },
+    {
+      "player": "Yvas715",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000096000
+    },
+    {
+      "player": "LexujaxGo80",
+      "wave": 2,
+      "kills": 6,
+      "ts": 1700000097000
+    },
+    {
+      "player": "Uvanyv",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000098000
+    },
+    {
+      "player": "UvesvyV2",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000099000
+    },
+    {
+      "player": "HyirpyNeo",
+      "wave": 2,
+      "kills": 5,
+      "ts": 1700000100000
     }
   ]
 }
