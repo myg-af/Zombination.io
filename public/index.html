@@ -513,19 +513,20 @@ input, textarea, select, button, label, [contenteditable]{
 </style>
 
 <style id="build-tile-selected-style">
-/* Selected build tile (PC & Mobile) */
-#buildTiles .build-tile.mb-selected{
-  /* Contour fin et visible, sans double carré */
-  outline: 2px solid #34e05a !important;
-  outline-offset: 2px;
-  box-shadow: 0 0 8px rgba(52,224,90,0.55);
-  border-radius: 10px !important;
-  transition: box-shadow .12s ease-out;
+/* Tuile sélectionnée (barre du menu + barre in-game) */
+#buildTiles .build-tile.mb-selected,
+#igBuildTiles .build-tile.mb-selected{
+  outline: 2px solid #33fc69 !important;  /* vert propre */
+  outline-offset: 3px;                     /* petit espace entre tuile et halo */
+  border-radius: 12px !important;          /* coins doux */
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.55) inset,       /* léger liseré intérieur */
+    0 0 14px rgba(51,252,105,.45);         /* glow vert discret */
+  transition: box-shadow .12s ease-out, outline-color .12s ease-out;
 }
-
-
-  .chatTime{font-size:12px;color:#9ab;opacity:.9;margin-right:6px;}
 </style>
+
+
 
 
 <style>
