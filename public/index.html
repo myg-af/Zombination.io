@@ -2143,7 +2143,7 @@ const UPGRADES = [
     label: "+5% Vitesse",
     desc: "Déplace-toi plus vite.",
     icon: "/icons/speed.svg",
-    getValue: (base, level) => +(base * (1 + 0.05 * level)).toFixed(1),
+    getValue: (base, level) => +(base * Math.pow(1.05, level)).toFixed(1),
     baseValue: 40,
     statLabel: "Vitesse",
     format: v => v + " px/s"

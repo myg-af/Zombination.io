@@ -1338,17 +1338,49 @@ function getPlayersHealthStateFiltered(game, cx, cy, r) {
 
 // Build a public map for a specific recipient: keep self under real sid, others as p1, p2...
 // If hostId is provided and differs from self, also include 'host' alias for the host player's entry.
-function buildPublicMapForRecipient(selfSid, fullMap, hostId) {
+function buildPublicMapForRecipient(selfSid, fullMap, hostId, game) {
+  // If a game object is provided, use the game's global alias table to ensure
+  // stable aliases across all recipients. Otherwise fall back to the old per-recipient
+  // deterministic scheme.
   const out = {};
   if (!fullMap || typeof fullMap !== 'object') return out;
+
+  // Use global per-game stable aliases if available
+  if (game && typeof game === 'object') {
+    game._playerAliases = game._playerAliases || {};
+    game._playerAliasCounter = game._playerAliasCounter || 0;
+
+    for (const realId in fullMap) {
+      if (!Object.prototype.hasOwnProperty.call(fullMap, realId)) continue;
+      if (realId === selfSid) {
+        out[realId] = fullMap[realId];
+        continue;
+      }
+      if (hostId && hostId !== selfSid && realId === hostId) {
+        out['host'] = fullMap[realId];
+        game._playerAliases[realId] = 'host';
+        continue;
+      }
+      if (game._playerAliases[realId]) {
+        out[game._playerAliases[realId]] = fullMap[realId];
+        continue;
+      }
+      // allocate a new stable alias
+      game._playerAliasCounter = (game._playerAliasCounter|0) + 1;
+      const alias = 'p' + game._playerAliasCounter;
+      game._playerAliases[realId] = alias;
+      out[alias] = fullMap[realId];
+    }
+    return out;
+  }
+
+  // Fallback: per-recipient aliasing (compat)
   let idx = 0;
   for (const k in fullMap) {
     if (Object.prototype.hasOwnProperty.call(fullMap, k)) {
       if (k === selfSid) {
         out[k] = fullMap[k];
       } else {
-        // Do not alias the host as pX for non-host recipients;
-        // it will be exposed once under 'host' below.
         if (hostId && hostId !== selfSid && k === hostId) {
           continue;
         }
@@ -2339,7 +2371,7 @@ try {
 try{ console.log('[EMIT gameStarted] lobby='+game.id+' players='+Object.keys(game.players||{}).length); }catch(_){}
   for (const sid in (game.players||{})) {
     try {
-      const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId) || null);
+      const pubPlayers = buildPublicMapForRecipient(sid, game.players, (game.lobby && game.lobby.hostId), game || null);
       io.to(sid).emit('gameStarted', { gameId: game.id,
         map: game.map,
         players: pubPlayers,
@@ -3114,6 +3146,40 @@ const gameId = socketToGame[socket.id];
 
   
   socket.on('disconnect', () => {
+        // === Started-game disconnect: remove only this player; don't nuke the whole game ===
+        try {
+          const gid_started = socketToGame[socket.id];
+          const __g = activeGames.find(g => g && g.id === gid_started);
+          if (__g && __g.lobby && __g.lobby.started) {
+            try { if (__g.players && __g.players[socket.id]) delete __g.players[socket.id]; } catch(_){}
+            try { if (__g.lobby && __g.lobby.players && __g.lobby.players[socket.id]) delete __g.lobby.players[socket.id]; } catch(_){}
+            try { if (__g._lastNetSend) delete __g._lastNetSend[socket.id]; } catch(_){}
+            try { socket.leave('lobby' + __g.id); } catch(_){}
+            try { delete socketToGame[socket.id]; } catch(_){}
+            // If no connected human sockets remain in this game, clean it up fully.
+            try {
+              const socketsMap = (io && io.sockets && io.sockets.sockets) || null;
+              let humanLeft = 0;
+              if (socketsMap && __g.players) {
+                for (const sid in __g.players) {
+                  if (!sid) continue;
+                  if (/^bot/.test(sid)) continue;
+                  if (socketsMap.get(sid)) { humanLeft++; break; }
+                }
+              }
+              if (humanLeft === 0) {
+                __g.spawningActive = false;
+                if (__g.spawnInterval) { try { clearInterval(__g.spawnInterval); } catch(_){} __g.spawnInterval = null; }
+                if (__g.lobby && __g.lobby.timer) { try { clearInterval(__g.lobby.timer); } catch(_){} __g.lobby.timer = null; }
+                // Best-effort cleanup of per-socket caches
+                try { if (__g._lastNetSend) { for (const k in __g._lastNetSend) delete __g._lastNetSend[k]; } } catch(_){}
+                activeGames = activeGames.filter(g => g !== __g);
+              }
+            } catch(_){}
+            return;
+          }
+        } catch(_){}
+
         // Record ladder if eligible on disconnect (covers F5 refresh/close)
     try { maybeRecordLadderOnExit(socket, 'disconnect'); } catch(_e) {}
 try { releaseWorldChatName(socket); } catch(_){}
@@ -3491,7 +3557,7 @@ const baseWithShop = {
 const up = player && player.upgrades || {};
 const maxHp = Math.round(baseWithShop.maxHp * Math.pow(1.1, (up.maxHp || 0)));
 const damage = Math.round(baseWithShop.damage * Math.pow(1.1, (up.damage || 0)));
-const speed  = +(baseWithShop.speed * (1 + 0.05 * (up.speed || 0))).toFixed(1);
+const speed  = +(baseWithShop.speed * Math.pow(1.05, (up.speed || 0))).toFixed(1);
 const goldGain = Math.round(baseWithShop.goldGain * Math.pow(1.1, up.goldGain || 0));
 const baseStats = { maxHp, speed, regen, damage, goldGain };
 return baseStats;
@@ -4449,24 +4515,37 @@ function stepOnce(dt) {
         const last = game._lastNetSend[sid] || 0;
         if (now - last >= sendInterval) {
           // --- Robust fix: remap bullet.owner to the SAME aliases used in playersHealth for this recipient ---
+          
           const hostId = (game.lobby && game.lobby.hostId) || null;
+          // Ultra-robust: assign a global, persistent alias per real player id for the lifetime of the game.
+          // This prevents any alias churn across recipients and eliminates ghost clones entirely.
+          game._playerAliases = game._playerAliases || {};
+          game._playerAliasCounter = game._playerAliasCounter || 0;
           const ownerAliasMap = {};
-          let __idx = 0;
-          for (const k in phSnap) {
-            if (k === sid) {
-              ownerAliasMap[k] = k; // keep self under real sid
-            } else {
-              if (hostId && hostId !== sid && k === hostId) {
-                // host will be exposed separately as 'host' (do not consume a pX slot)
-                continue;
-              }
-              ownerAliasMap[k] = 'p' + (++__idx);
+          for (const realId in phSnap) {
+            // keep self under real socket id so client treats self specially
+            if (realId === sid) {
+              ownerAliasMap[realId] = realId;
+              continue;
             }
+            // Host gets 'host' alias for readability; reserve it globally
+            if (hostId && hostId !== sid && realId === hostId) {
+              ownerAliasMap[realId] = 'host';
+              game._playerAliases[realId] = 'host';
+              continue;
+            }
+            // reuse a persistent alias if one already exists for that realId
+            if (game._playerAliases[realId]) {
+              ownerAliasMap[realId] = game._playerAliases[realId];
+              continue;
+            }
+            // allocate a new stable alias (pN)
+            game._playerAliasCounter = (game._playerAliasCounter|0) + 1;
+            const alias = 'p' + game._playerAliasCounter;
+            game._playerAliases[realId] = alias;
+            ownerAliasMap[realId] = alias;
           }
-          if (hostId && hostId !== sid && phSnap[hostId]) {
-            ownerAliasMap[hostId] = 'host';
-          }
-          const bPub = {};
+const bPub = {};
           for (const bid in bSnap) {
             const b = bSnap[bid];
             if (!b) continue;
@@ -4491,10 +4570,27 @@ function stepOnce(dt) {
             const zy = (typeof z.y === 'number') ? z.y : 0;
             zPub[zid] = { id: zid, x: zx, y: zy, hp: hp };
           }
-io.to(sid).volatile.emit('stateUpdate', {
+// Build public players map and include explicit removals for previously visible players to avoid ghosting.
+          const currentPlayersMap = buildPublicMapForRecipient(sid, phSnap, hostId, game);
+          game._lastVisiblePlayers = game._lastVisiblePlayers || {};
+          const prevSet = game._lastVisiblePlayers[sid] || {};
+          // For any key that was previously visible but is not in currentPlayersMap, send explicit null to clear client entry.
+          for (const pk in prevSet) {
+            if (!Object.prototype.hasOwnProperty.call(currentPlayersMap, pk)) {
+              try { currentPlayersMap[pk] = { alive: false }; } catch(_) {}
+            }
+          }
+          // Update last visible set to only keys that are currently present (non-null)
+          const newSet = {};
+          for (const k in currentPlayersMap) {
+            if (currentPlayersMap[k] && currentPlayersMap[k].alive) newSet[k] = true;
+          }
+          game._lastVisiblePlayers[sid] = newSet;
+
+          io.to(sid).volatile.emit('stateUpdate', {
             zombies: zPub,
             bullets: bPub,
-            playersHealth: buildPublicMapForRecipient(sid, phSnap, hostId),
+            playersHealth: currentPlayersMap,
             round: game.currentRound
           });
           game._lastNetSend[sid] = now;
