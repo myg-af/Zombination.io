@@ -3168,6 +3168,7 @@ const gameId = socketToGame[socket.id];
                 }
               }
               if (humanLeft === 0) {
+                try { endGame(__g, 'no_player'); } catch(_) {}
                 __g.spawningActive = false;
                 if (__g.spawnInterval) { try { clearInterval(__g.spawnInterval); } catch(_){} __g.spawnInterval = null; }
                 if (__g.lobby && __g.lobby.timer) { try { clearInterval(__g.lobby.timer); } catch(_){} __g.lobby.timer = null; }
@@ -3472,6 +3473,14 @@ socket.on('playerDied', () => {
   if (!game) return;
   if (game.players[socket.id]) {
     game.players[socket.id].alive = false;
+    try {
+      const humans = Object.values(game.players || {}).filter(p => !p.isBot);
+      const allDead = humans.length > 0 && humans.every(p => p.alive === false);
+      if (allDead) {
+        endGame(game, 'no_player');
+      }
+    } catch(_) {}
+
     
     (function(){ try {
       const _p = game.players[socket.id];
@@ -3585,31 +3594,42 @@ function getPlayersHealthState(game) {
 const zombieAttackCooldown = 350;
 
 // ---- FIN DE PARTIE FORCÉE QUAND AUCUN JOUEUR CONNECTÉ ----
-function endGame(game, reason = 'no_players') {
-  if (!game.lobby.started) return;
 
-  console.log(`---- Fin de partie (game ${game.id}) : ${reason}`);
-  game.lobby.started = false;
+function endGame(game, reason = 'no_player') {
+  // If game or lobby missing, nothing to do
+  if (!game || !game.lobby) return;
+  // Ensure idempotence: only run once
+  if (game._ended) return;
+  game._ended = true;
+
+  // normalize log reason but keep emitting original reason to clients
+  const __logReason = (reason === 'no_players' || reason === 'no_player') ? 'no_player' : reason;
+  const waveInfo = (typeof game.currentRound !== 'undefined') ? game.currentRound : ((typeof game.currentRound !== 'undefined') ? game.currentRound : 'N/A');
+  console.log(`---- Fin de partie (game ${game.id}) : ${__logReason} | Vague atteinte : ${waveInfo}`);
+
+  try { game.lobby.started = false; } catch(_) {}
 
   // arrêter le spawn
-  stopSpawning(game);
+  try { stopSpawning(game); } catch(_) {}
 
   // vider entités + remettre compteurs O(1)
-  game.zombies = {};
-  game.bullets = {};
-  game.players = {};
+  try { game.zombies = {}; } catch(_) {}
+  try { game.bullets = {}; } catch(_) {}
+  try { game.players = {}; } catch(_) {}
 
-  game._zombieCount = 0;
-  game._bulletCount = 0;
-  game._turretCount = 0;
+  try { game._zombieCount = 0; } catch(_) {}
+  try { game._bulletCount = 0; } catch(_) {}
+  try { game._turretCount = 0; } catch(_) {}
 
-  io.to('lobby' + game.id).emit('gameEnded', { reason });
+  try { io.to('lobby' + game.id).emit('gameEnded', { reason }); } catch(_) {}
+
   // on nettoie le lobby un peu après (conservé)
   setTimeout(() => {
-    game.lobby.players = {};
-    broadcastLobby(game);
+    try { game.lobby.players = {}; } catch(_) {}
+    try { broadcastLobby(game); } catch(_) {}
   }, 500);
 }
+
 
 
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
