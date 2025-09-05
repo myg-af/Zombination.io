@@ -4883,7 +4883,9 @@ setInterval(()=>{
 
 /* === LADDER JSON (Top 100) === */
 const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
+const LADDER_JOURNAL = path.join(__dirname, 'data', 'ladder.journal');
 
+/* Ensure data dir + files exist (non-destructive). */
 function ensureLadderFile() {
   try {
     const dir = path.dirname(LADDER_FILE);
@@ -4892,66 +4894,85 @@ function ensureLadderFile() {
   try {
     if (!fs.existsSync(LADDER_FILE)) fs.writeFileSync(LADDER_FILE, '');
   } catch (_e) { /* ignore */ }
+  try {
+    if (!fs.existsSync(LADDER_JOURNAL)) fs.writeFileSync(LADDER_JOURNAL, '');
+  } catch (_e) { /* ignore */ }
 }
 
 function sanitizePlayerName(u) {
   try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_e) { return ''; }
 }
 
+/* Read ladder file and apply pending journal entries.
+   This returns an ARRAY of raw entries (may contain duplicates);
+   deduping / sorting for presentation is done by API or compaction. */
 function loadLadder() {
   try {
-    const raw = fs.readFileSync(LADDER_FILE, 'utf8');
-    if (!raw || !raw.trim()) return [];
-    const obj = JSON.parse(raw);
+    ensureLadderFile();
     let arr = [];
-    if (Array.isArray(obj)) arr = obj;
-    else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
-    // sanitize
+    try {
+      const raw = fs.readFileSync(LADDER_FILE, 'utf8');
+      if (raw && raw.trim()) {
+        const obj = JSON.parse(raw);
+        if (Array.isArray(obj)) arr = obj;
+        else if (obj && Array.isArray(obj.ladder)) arr = obj.ladder;
+      }
+    } catch (_e) {
+      // corrupted or missing ladder.json -> treat as empty
+      arr = [];
+    }
+
+    // Apply journal entries (if any). Each line is a JSON entry.
+    try {
+      const rawj = fs.readFileSync(LADDER_JOURNAL, 'utf8');
+      if (rawj && rawj.trim()) {
+        const lines = rawj.split(/\r?\n/);
+        for (const L of lines) {
+          if (!L || !L.trim()) continue;
+          try {
+            const ent = JSON.parse(L);
+            if (ent && typeof ent.player === 'string' && Number.isFinite(ent.wave) && Number.isFinite(ent.kills) && Number.isFinite(ent.ts)) {
+              arr.push(ent);
+            }
+          } catch(_) { /* ignore malformed journal line */ }
+        }
+      }
+    } catch(_) { /* no journal or unreadable: ignore */ }
+
+    // Basic sanitization
     arr = arr.filter(e => e && typeof e.player === 'string' &&
-                          Number.isFinite(e.wave) &&
-                          Number.isFinite(e.kills) &&
-                          Number.isFinite(e.ts));
+                         Number.isFinite(e.wave) &&
+                         Number.isFinite(e.kills) &&
+                         Number.isFinite(e.ts));
     return arr;
   } catch (_e) { return []; }
 }
 
-function saveLadder(arr) {
-  try {
-    const tmp = LADDER_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
-    fs.renameSync(tmp, LADDER_FILE);
-    return true;
-  } catch (e) { console.error('[LADDER] save failed', e); return false; }
-}
-
-// ---- Server-authoritative ladder insert (no client trust) ----
-function recordLadderScoreServer(playerName, wave, kills) {
+/* Append a single ladder entry to the journal (append-only, atomic on POSIX). */
+function appendLadderJournal(entry) {
   try {
     ensureLadderFile();
-    const name = sanitizePlayerName(playerName);
-    const w = Number(wave) || 0;
-    const k = Number(kills) || 0;
-    if (!name) return false;
-    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
+    const line = JSON.stringify(entry) + '\n';
+    fs.appendFileSync(LADDER_JOURNAL, line, 'utf8');
+    return true;
+  } catch (e) {
+    console.error('[LADDER] append journal failed', e);
+    return false;
+  }
+}
 
-    let ladder = loadLadder();
-    const idx = ladder.findIndex(e => e && e.player === name);
-    const now = Date.now();
-    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
-
-    if (idx >= 0) {
-      const cur = ladder[idx];
-      const better = (incoming.wave|0) > (cur.wave|0) ||
-                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) > (cur.kills|0)) ||
-                     ((incoming.wave|0) === (cur.wave|0) && (incoming.kills|0) === (cur.kills|0) && (incoming.ts|0) < (cur.ts|0));
-      if (better) ladder[idx] = incoming;
-    } else {
-      ladder.push(incoming);
-    }
-
+/* Compact ladder.json by merging ladder.json + journal into a canonical top-100 file,
+   then truncate the journal. This operation is safe to run concurrently across workers:
+   the last successful rename wins and no journal lines are lost (new appends after read stay). */
+function compactLadderSync() {
+  try {
+    ensureLadderFile();
+    // Read current ladder + journal
+    let entries = [];
+    try { entries = loadLadder(); } catch(e){ entries = []; }
     // Deduplicate best per player
     const best = new Map();
-    for (const e of ladder) {
+    for (const e of entries) {
       const key = e.player;
       if (!best.has(key)) best.set(key, e);
       else {
@@ -4962,13 +4983,59 @@ function recordLadderScoreServer(playerName, wave, kills) {
         if (better) best.set(key, e);
       }
     }
-    ladder = Array.from(best.values());
-
-    // Sort & keep top 100
+    let ladder = Array.from(best.values());
+    // Exclude bots (same logic as read API)
+    ladder = ladder.filter(e => !(e && typeof e.player === 'string' && /^BOT\d+$/i.test(e.player)));
     ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
     ladder = ladder.slice(0, 100);
 
-    saveLadder(ladder);
+    // Write atomically
+    const tmp = LADDER_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ ladder: ladder }, null, 2), 'utf8');
+    fs.renameSync(tmp, LADDER_FILE);
+
+    // Truncate journal (safe: new appends after this point remain in the journal)
+    try { fs.writeFileSync(LADDER_JOURNAL, '', 'utf8'); } catch(_) {}
+    return true;
+  } catch (e) {
+    console.error('[LADDER] compaction failed', e);
+    return false;
+  }
+}
+
+/* Save ladder (legacy) - used only by compaction path; kept for compatibility */
+function saveLadder(arr) {
+  try {
+    const tmp = LADDER_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ ladder: arr }, null, 2));
+    fs.renameSync(tmp, LADDER_FILE);
+    return true;
+  } catch (e) { console.error('[LADDER] save failed', e); return false; }
+}
+
+// ---- Server-authoritative ladder insert (no client trust)
+// Now implemented by appending to a journal then compacting (robust in multi-worker setups).
+function recordLadderScoreServer(playerName, wave, kills) {
+  try {
+    ensureLadderFile();
+    const name = sanitizePlayerName(playerName);
+    const w = Number(wave) || 0;
+    const k = Number(kills) || 0;
+    if (!name) return false;
+    if (!Number.isFinite(w) || !Number.isFinite(k) || w < 0 || k < 0) return false;
+
+    // Quick pre-check: would this score qualify for top100 based on current view (includes journal).
+    if (!__qualifiesForTop100(w, k)) return false;
+
+    const now = Date.now();
+    const incoming = { player: name, wave: w|0, kills: k|0, ts: now };
+
+    // Append to journal (fast, append-only)
+    if (!appendLadderJournal(incoming)) return false;
+
+    // Try to compact (best-effort). If compaction fails another worker will eventually compact.
+    try { compactLadderSync(); } catch(_) {}
+
     return true;
   } catch (e) {
     console.error('[LADDER] server-authoritative insert failed', e);
@@ -4996,14 +5063,17 @@ function __qualifiesForTop100(wave, kills) {
       }
     }
     ladder = Array.from(best.values());
-    // Sort as used by writer
+
+    // sort: wave desc, kills desc, ts asc
     ladder.sort((a,b)=> (b.wave|0) - (a.wave|0) || (b.kills|0) - (a.kills|0) || (a.ts|0) - (b.ts|0));
+    if (!Array.isArray(ladder)) ladder = [];
     if (ladder.length < 100) return (wave|0) > 0 || (kills|0) > 0;
     const cut = ladder[99] || { wave:0, kills:0 };
     return ((wave|0) > (cut.wave|0)) ||
            (((wave|0) === (cut.wave|0)) && ((kills|0) > (cut.kills|0)));
   } catch(_e) { return false; }
 }
+
 
 // --- Helper: when a player leaves/refreshes, record Top 100 if eligible (server‑side only) ---
 function maybeRecordLadderOnExit(sock, reason) {

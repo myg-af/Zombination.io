@@ -1505,17 +1505,6 @@ window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV
     box.style.display = 'block';
     if (orig) try { orig(extraCounts); } catch(_){}
   };
-  if (!window.__DEV_PERF__iBound) {
-    window.__DEV_PERF__iBound = true;
-    window.addEventListener('keydown', function(e){
-      const k = e && (e.key||e.code);
-      if ((k==='i' || k==='I') && (typeof myPseudo==='string') && myPseudo==='Myg') {
-        DEV.on = !DEV.on;
-        DEV._forceNext = true;
-        try { DEV.renderOverlay(null); } catch(_){}
-      }
-    }, {passive:true});
-  }
 })();
 
 window.DEV = (typeof window !== "undefined" && window.__DEV_PERF) ? window.__DEV_PERF : undefined;
