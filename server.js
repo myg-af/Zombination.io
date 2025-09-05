@@ -302,7 +302,6 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
       } catch(_){}
     }
 
-
     function bindWorkerMessages(idx, w){
       try {
         w.on('message', (msg) => {
@@ -334,7 +333,6 @@ function isPseudoTakenForWorldChat(name, currentSocketId) {
     initFakeCounts();
     broadcastFakeCounts();
 
-
     // Broadcast initial counts (all 0)
     broadcastJoinedCounts();
 // Periodic aggregated connected count (every 5 minutes)
@@ -358,7 +356,6 @@ try {
         setInterval(() => { try { tickFakeCounts(); } catch(_){} }, 60 * 1000);
       }
     } catch(_){}
-
 
     // Choose an available worker index, preferring the desired one; falls back to nearest available
     function resolveWorkerIndex(desired) {
@@ -465,7 +462,6 @@ try {
 ;
 /*__/MULTIWORKER_BOOTSTRAP__*/
 
-
 // Ceci est le fichier server.js :
 process.on('uncaughtException', function (err) {
   console.error('Uncaught Exception:', err);
@@ -488,7 +484,6 @@ const gameMapModule = require('./game/gameMap');
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '1mb', verify:(req,res,buf)=>{ try{ req.rawBody = buf; }catch(_){ } } }));
-
 
 /* === Stripe Checkout (TEST) minimal integration — safe & isolated === */
 let stripe = null;
@@ -744,7 +739,6 @@ if (!entry) {
 });
 
 const server = http.createServer(app);
-
 
 // Persist chosen worker when a specific server is requested via the URL (?w=K).
 // Do NOT set any worker by default — but if ?w=K is present, consider it an explicit join.
@@ -1032,8 +1026,6 @@ function releaseWorldChatName(sock) {
   } catch(_){}
 }
 
-
-
 const chatLastByIp = new Map(); // per-IP cooldown
 // === Helper: normalize client IP (supports proxies) ===
 function getClientIP(socket) {
@@ -1140,7 +1132,6 @@ const SHOP_BUILD_PRICES = {
 // Cooldown for placing walls/doors (applies to both types)
 const BLOCK_PLACE_COOLDOWN_MS = 5000;
 
-
 function getUpgradePrice(nextLevel) {
   const tiers = SHOP_CONST.priceTiers;
   const step = SHOP_CONST.priceStepAfterTier;
@@ -1222,7 +1213,6 @@ function createNewGame() {
   return game;
 }
 
-
 function buildCentralEnclosure(game, spacingTiles = 1) {
   // Taille fixe 11x11 (bords inclus)
   const HALF = 5; // car 2*5 + 1 = 11
@@ -1279,7 +1269,6 @@ function buildCentralEnclosure(game, spacingTiles = 1) {
   }
 }
 
-
 function cleanupEmptyManualLobbies() {
   // Remove manual lobbies with no players and not started
   activeGames = activeGames.filter(g => {
@@ -1293,7 +1282,6 @@ function getAvailableLobby() {
   if (!game) game = createNewGame();
   return game;
 }
-
 
 function getAvailableAutoLobby() {
   // Returns a NON-manual, NOT-started lobby; creates a fresh one if needed.
@@ -1395,8 +1383,6 @@ function buildPublicMapForRecipient(selfSid, fullMap, hostId, game) {
   return out;
 }
 
-
-
 function getZombiesFiltered(game, cx, cy, r) {
   const r2 = r * r;
   const out = {};
@@ -1420,7 +1406,6 @@ function getBulletsFiltered(game, cx, cy, r) {
   }
   return out;
 }
-
 
 // ======= Structures (barricades/portes) helpers =======
 function worldToTile(x, y) {
@@ -1458,7 +1443,6 @@ function setStruct(game, tx, ty, s) {
   }
 game.structures[ty][tx] = s;
 }
-
 
 function canPlaceStructureAt(game, tx, ty, buyerId) {
   if (!game || !game.map) return false;
@@ -1500,14 +1484,12 @@ function canPlaceStructureAt(game, tx, ty, buyerId) {
   return true;
 }
 
-
 function isSolidForPlayer(struct) {
   // Joueurs traversent les portes, mais PAS barricades ni tourelles (grandes ou mini)
   return struct && (
     (struct.type === 'B' || struct.type === 'T' || struct.type === 't' || struct.type === 'G') && struct.hp > 0
   );
 }
-
 
 function isSolidForZombie(struct) {
   // Zombies bloqués par portes ET barricades tant que HP > 0
@@ -1678,7 +1660,6 @@ function tickTurrets(game) {
   }
 }
 
-
 function losBlockedForZombie(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
   const dist = Math.hypot(dx, dy);
@@ -1702,7 +1683,6 @@ function losBlockedForZombie(game, x0, y0, x1, y1) {
   return false;
 }
 
-
 // LOS des tourelles : bloquée uniquement par les murs de la MAP (pas par barricades/portes)
 function losBlockedForTurret(game, x0, y0, x1, y1) {
   const dx = x1 - x0, dy = y1 - y0;
@@ -1717,7 +1697,6 @@ function losBlockedForTurret(game, x0, y0, x1, y1) {
   return false;
 }
 
-
 function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   const dx = ax - bx;
   const dy = ay - by;
@@ -1725,7 +1704,6 @@ function entitiesCollide(ax, ay, aradius, bx, by, bradius, bonus = 0) {
   // <= au lieu de <
   return dist <= (aradius + bradius + bonus);
 }
-
 
 // Remplace TOUT le corps de isCircleColliding par ceci (dans server.js)
 function isCircleColliding(map, x, y, radius) {
@@ -1745,7 +1723,6 @@ function isCircleColliding(map, x, y, radius) {
   }
   return false;
 }
-
 
 function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   let spawnX, spawnY, border, tries = 0;
@@ -1769,7 +1746,6 @@ function spawnZombieOnBorder(game, hp = 10, speed = 40) {
   } while (isCollision(game.map, spawnX, spawnY));
   return { x: spawnX, y: spawnY, hp: hp, maxHp: hp, lastAttack: 0, speed: speed };
 }
-
 
 function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
   const centerX = (MAP_COLS / 2) * TILE_SIZE;
@@ -1861,7 +1837,6 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
       }
     } catch(_){}
 
-
     const stats = getPlayerStats(game.players[sid]);
     game.players[sid].maxHealth = stats.maxHp;
     game.players[sid].health = stats.maxHp;
@@ -1869,7 +1844,6 @@ function spawnPlayersNearCenter(game, pseudosArr, socketsArr) {
     usedPos.push({ x: spawnX, y: spawnY });
   }
 }
-
 
 function isNearObstacle(map, cx, cy, radius, tileSize) {
   const margin = Math.ceil(radius / tileSize);
@@ -1956,7 +1930,6 @@ function findPath(game, startX, startY, endX, endY) {
   return null;
 }
 
-
 const SHOOT_INTERVAL = 500;
 const BULLET_SPEED = 600;
 const BULLET_DAMAGE = 5;
@@ -2000,7 +1973,6 @@ function computePathfindBudget(game) {
   return base;
 }
 
-
 const NET_SEND_HZ = 30;
 const NET_INTERVAL_MS = Math.floor(1000 / NET_SEND_HZ);
 
@@ -2012,7 +1984,6 @@ const EMPTY_TICK_HZ = 2;            // tick serveur si aucune partie en cours
 // Timestamp du dernier tick pour cadence adaptative
 let _lastTickAtMs = 0;
 
-
 const TICK_HZ = 60;
 const FIXED_DT = 1 / TICK_HZ;     // 16.666... ms
 const MAX_STEPS = 5;              // anti-spirale si gros retard
@@ -2021,7 +1992,6 @@ let PF_BUDGET_THIS_TICK = 0;
 
 let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 let accumulator = 0;
-
 
 function broadcastLobby(game) {
   try {
@@ -2166,7 +2136,6 @@ function checkWaveEnd(game) {
   }
 }
 
-
 function startSpawning(game) {
   if (game.spawnInterval) clearInterval(game.spawnInterval);
   game.spawningActive = true;
@@ -2185,10 +2154,7 @@ function stopSpawning(game) {
   }
 }
 
-function launchGame(game, readyPlayersArr = null) {
-  
-  try{ console.log('[LAUNCH] game', game && game.id, 'readyCount=', (game && game.lobby && Object.values(game.lobby.players||{}).filter(p=>p&&p.ready).length)); }catch(_){ }
-// === ROBUST START FIX ===
+function launchGame(game, readyPlayersArr = null) {// === ROBUST START FIX ===
   // Some clients may reconnect right before the game starts, changing their socket.id.
   // To avoid spawning "ghost" players that don't match current connections, we reconstruct
   // the readyPlayers list from the CURRENT room membership intersected with lobby.ready.
@@ -2295,7 +2261,6 @@ Object.keys(game.players).forEach(id => delete game.players[id]);
     }
   } catch(_) {}
 
-
   // === SANITY: ensure all sockets in socketsArr have a player object ===
   try {
     for (const sid of socketsArr) {
@@ -2335,7 +2300,6 @@ try {
 } catch(e) {
   console.error('[launchGame] post-spawn sanity failed', e);
 }
-
 
   
 // === FINAL SYNC: ensure account-level shop upgrades are applied and stats are correct ===
@@ -2393,7 +2357,6 @@ accumulator = 0;
 _lastTickAtMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 }
 
-
 io.on('connection', socket => {
 
 // Per-IP connection limiter (max 6 sockets/IP). Counts exactly once per socket.
@@ -2418,7 +2381,6 @@ try {
     });
   }
 } catch(_){}
-
 
   try {
     // Determine if this socket is a joined player for this worker (cookie 'w=<idx>')
@@ -2751,7 +2713,6 @@ socket.on('clientPing', () => {});
       }
 if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_taken' }); return; }
 
-
 // Enforce limit: up to two manual lobbies per public IP at the same time (as founder)
     const __hostIp = getClientIP(socket);
     // Count existing manual lobbies for this IP whose host is currently connected (not started)
@@ -2778,7 +2739,6 @@ if (isPseudoTaken(pseudo, socket.id)) { if (cb) cb({ ok:false, reason:'pseudo_ta
     newGame.lobby.hostToken = crypto.randomBytes(16).toString('hex');
     newGame.lobby.players[socket.id] = { pseudo, ready: true };
     try { lastPseudoBySocket.set(socket.id, pseudo); } catch(_){ }
-
 
     // Move socket room + mapping
     if (oldGame) { try { socket.leave('lobby' + oldGame.id); } catch(_){} }
@@ -2886,7 +2846,6 @@ if (isPseudoTaken(pseudo, socket.id)) { try { io.to(socket.id).emit('join:error'
 
   
 
-
 // Host-only: kick a player from the manual lobby and block their IP for 30s
 
 // Host-only: kick a player from the manual lobby and block their IP for 30s
@@ -2913,7 +2872,6 @@ socket.on('kickPlayer', (data, cb) => {
       }
     }
     if (!game.lobby.players[targetId]) { if (cb) cb && cb({ ok:false, reason:'not_in_lobby' }); return; }
-
 
     // compute IP of target socket
     const targetSock = io.sockets.sockets.get(targetId);
@@ -2954,7 +2912,6 @@ socket.on('kickPlayer', (data, cb) => {
     launchGame(game, readyPlayers);
     if (cb) cb({ ok:true });
 });
-
 
 socket.on('hostBackManual', (cb) => {
     const gid = socketToGame[socket.id];
@@ -3009,7 +2966,6 @@ socket.on('upgradeTurret', ({ type }) => {
   }
 });
 
-
   socket.on('giveMillion', () => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -3020,7 +2976,6 @@ socket.on('upgradeTurret', ({ type }) => {
     socket.emit('upgradeUpdate', { myUpgrades: player.upgrades, myMoney: player.money });
   }
 });
-
 
 socket.on('skipRound', () => {
   const gameId = socketToGame[socket.id];
@@ -3143,7 +3098,6 @@ const gameId = socketToGame[socket.id];
     cleanupEmptyManualLobbies();
   });
 
-
   
   socket.on('disconnect', () => {
         // === Started-game disconnect: remove only this player; don't nuke the whole game ===
@@ -3194,7 +3148,6 @@ try { releaseWorldChatName(socket); } catch(_){}
     if (!game) {
       game = activeGames.find(g => g && g.lobby && g.lobby.manual && !g.lobby.started && g.lobby.hostId === socket.id) || null;
     }
-
 
     // Immediate cleanup for NON-HOST players who are sitting in any lobby (not started)
     // This prevents a refreshed page from leaving a ghost seat.
@@ -3323,7 +3276,6 @@ socket.on('moveDir', (dir) => {
     }
   });
 
-
 socket.on('buyStructure', ({ type, tx, ty }) => {
   const gameId = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gameId);
@@ -3432,7 +3384,6 @@ if (type === 'B' || type === 'D') {
   io.to(socket.id).emit('buildResult', { ok: true, type, tx, ty, newMoney: player.money });
 });
 
-
 socket.on('shoot', (data) => {
   const gid = socketToGame[socket.id];
   const game = activeGames.find(g => g.id === gid);
@@ -3535,7 +3486,6 @@ for (const sid in (game.players||{})) { const _pl = game.players[sid]; if (!_pl)
     if (p.viewY > worldH) p.viewY = worldH;
   });
 
-
   // Admin : tuer tous les zombies (uniquement si pseudo = 'Myg')
 socket.on('killAllZombies', () => {
   const gid = socketToGame[socket.id];
@@ -3571,7 +3521,6 @@ const goldGain = Math.round(baseWithShop.goldGain * Math.pow(1.1, up.goldGain ||
 const baseStats = { maxHp, speed, regen, damage, goldGain };
 return baseStats;
 }
-
 
 function getPlayersHealthState(game) {
   const obj = {};
@@ -3630,13 +3579,10 @@ function endGame(game, reason = 'no_player') {
   }, 500);
 }
 
-
-
 const ATTACK_REACH_PLAYER = 26;                   // avant 24
 const ATTACK_REACH_STRUCT = ZOMBIE_RADIUS + 2;    // contact (avant ~36)
 const ZOMBIE_ATTACK_COOLDOWN_MS = 300;            // avant 350
 const ZOMBIE_DAMAGE_BASE = 15;                                 // base dmg
-
 
 function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
   // pousse doucement l’entity hors des zombies si chevauchement (spawn/lag)
@@ -3652,7 +3598,6 @@ function separateFromZombies(entity, game, radiusSelf = PLAYER_RADIUS) {
     }
   }
 }
-
 
 function movePlayers(game, deltaTime) {
   const MAX_STEP = 6;   // px par micro-pas
@@ -3728,7 +3673,6 @@ function movePlayers(game, deltaTime) {
     }
   }
 }
-
 
 function moveBots(game, deltaTime) {
   const MAX_STEP = 6;
@@ -3897,7 +3841,6 @@ if (now - (bot.lastShot || 0) > SHOOT_INTERVAL) {
     }
   }
 }
-
 
 function moveZombies(game, deltaTime) {
   const MAX_STEP = 6;
@@ -4183,7 +4126,6 @@ function moveZombies(game, deltaTime) {
   }
 }
 
-
 // Test si un cercle (zombie) touche une tuile (structure)
 function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const x0 = tx * TILE_SIZE, y0 = ty * TILE_SIZE;
@@ -4193,7 +4135,6 @@ function circleIntersectsTile(cx, cy, cr, tx, ty) {
   const dx = cx - nx, dy = cy - ny;
   return (dx * dx + dy * dy) <= (cr * cr);
 }
-
 
 function handleZombieAttacks(game) {
   const now = Date.now();
@@ -4392,7 +4333,6 @@ io.to(pid).emit('youDied', { kills: p.kills || 0, round: game.currentRound, game
   }
 }
 
-
 function fixHealth(p) {
   if (typeof p.health !== 'number' || !isFinite(p.health) || isNaN(p.health)) {
     p.health = p.maxHealth || getPlayerStats(p).maxHp || 100;
@@ -4402,7 +4342,6 @@ function fixHealth(p) {
   }
   p.health = Math.max(0, Math.min(p.health, p.maxHealth));
 }
-
 
 function moveBullets(game, deltaTime) {
   for (const id in game.bullets) {
@@ -4635,7 +4574,6 @@ const bPub = {};
   }
 }
 
-
 function gameLoop() {
   try {
     const now = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
@@ -4685,7 +4623,6 @@ function gameLoop() {
   setTimeout(gameLoop, 1);
 }
 
-
 gameLoop();
 
 const PORT = process.env.PORT || 3000;
@@ -4705,7 +4642,6 @@ if ((parseInt(process.env.WORKERS||'1',10) || 1) > 1) {
 }
 
 // (removed old conditional listen block)
-
 
 /* === AUTH: JSON accounts (users.json), PBKDF2 hashes, cookie sessions === */
 const USERS_DIR = path.join(__dirname, 'data');
@@ -4780,9 +4716,6 @@ function getPlayerSkin(username){
   } catch(_){ return null; }
 }
 
-
-
-
 // --- Skin helpers (normalize, resolve by socket) ---
 function _validateSkinObject(s) {
   try {
@@ -4824,7 +4757,6 @@ function sanitizeUsername(u) {
   try { return String(u||'').trim().substring(0, 10).replace(/[^a-zA-Z0-9]/g, ''); } catch(_) { return ''; }
 }
 function normalizeKey(u) { return sanitizeUsername(u).toLowerCase(); }
-
 
 function isRegisteredUsername(name){ try { const users = loadUsers(); return !!users[normalizeKey(String(name||''))]; } catch(_){ return false; } }
 function hashPassword(password) {
@@ -4869,7 +4801,6 @@ function createSession(username) {
   return token;
 }
 
-
 function getSessionUsernameBySocketId(sid){
   try {
     // Fast path: explicit link
@@ -4895,9 +4826,6 @@ function getSessionUsernameBySocketId(sid){
     return sObj.username || null;
   } catch(_){ return null; }
 }
-
-
-
 
 function isAdminSocket(socket){
   try {
@@ -4952,8 +4880,6 @@ setInterval(()=>{
     for (const [t,s] of sessions) if ((now - (s.createdAt||0)) > SESSION_MAX_AGE_MS) sessions.delete(t);
   } catch(_){}
 }, 60*60*1000);
-
-
 
 /* === LADDER JSON (Top 100) === */
 const LADDER_FILE = path.join(__dirname, 'data', 'ladder.json');
@@ -5096,7 +5022,6 @@ function maybeRecordLadderOnExit(sock, reason) {
     return !!recordLadderScoreServer(name, wave, kills);
   } catch(e) { try { console.warn('[LADDER exit]', e && (e.message||e)); } catch(_){ } return false; }
 }
-
 
 app.get('/api/ladder', (req,res)=>{
   try {
@@ -5344,5 +5269,4 @@ app.post('/api/skin/buy', (req,res)=>{
     return res.json({ ok:true, gold: rec.gold|0, skin: { hair: rec.skin.hair, skin: rec.skin.skin, clothes: rec.skin.clothes } });
   } catch(e){ console.error('[skin_buy]', e); return res.status(500).json({ ok:false, code:'server_error' }); }
 });
-
 
