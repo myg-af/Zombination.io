@@ -2035,7 +2035,7 @@ function broadcastLobby(game) {
 }
 function startLobbyTimer(game) {
   if (game.lobby.timer) return;
-  game.lobby.timeLeft = LOBBY_TIME / 1000;
+  game.lobby.timeLeft = LOBBY_TIME / 1000000;
   game.lobby.started = false;
   game.lobby.timer = setInterval(() => {
     if (game.lobby.started) return;
@@ -4460,6 +4460,9 @@ function stepOnce(dt) {
       const sendInterval = calm ? NET_INTERVAL_IDLE_MS : NET_INTERVAL_MS;
 
       for (const sid of room) {
+    // --- PATCH: include global playersAlive count (total alive players & bots) to client stateUpdate
+    const playersAliveCount = Object.values(game.players || {}).filter(p => !!p && !!p.alive).length;
+    
         const p = game.players[sid];
         if (!p) continue;
 
@@ -4547,6 +4550,7 @@ const bPub = {};
           game._lastVisiblePlayers[sid] = newSet;
 
           io.to(sid).volatile.emit('stateUpdate', {
+      playersAlive: playersAliveCount,
             zombies: zPub,
             bullets: bPub,
             playersHealth: currentPlayersMap,

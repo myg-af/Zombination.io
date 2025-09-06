@@ -1917,6 +1917,10 @@ socket.on('stateUpdate', (payload) => {
 }
   if (payload.bullets)        bullets = payload.bullets; try { __ingestBulletSnapshot(bullets); } catch(_){ }
   if (payload.playersHealth)  playersHealth = Object.assign({}, playersHealth, payload.playersHealth);
+
+    try {
+      if (typeof payload.playersAlive === 'number') window.playersAliveCount = payload.playersAlive;
+    } catch(_){}
   try {
     if (!__centeredOnPlayerOnce && myId && playersHealth && playersHealth[myId] && isNum(playersHealth[myId].x) && isNum(playersHealth[myId].y)) {
       __centeredOnPlayerOnce = true;
@@ -2103,6 +2107,7 @@ function centerCameraOn(x, y){
 
 	let mapBuffer = null, mapBufCtx = null, mapBufW = 0, mapBufH = 0;
     const hudAlive = document.getElementById('hudAlive');
+window.playersAliveCount = null; // updated from server (total alive players & bots)
     const hudZombies = document.getElementById('hudZombies');
     const hudKills = document.getElementById('hudKills');
     const hudRound = document.getElementById('hudRound');
@@ -3973,7 +3978,7 @@ function tryPlaceStructureAtCursor(clientX, clientY) {
 
 function drawHUD() {
   const tr = TRANSLATIONS[currentLang] || TRANSLATIONS['en'];
-  const aliveCount = Object.values(playersHealth).filter(p => p.alive).length;
+  const aliveCount = (typeof window.playersAliveCount === 'number') ? window.playersAliveCount : Object.values(playersHealth).filter(p => p.alive).length;
 
   hudAlive.textContent = `${tr.alive} : ${aliveCount}`;
   hudMoney.textContent = `${tr.money || 'Money'} : $${myMoney}`;
@@ -5326,7 +5331,7 @@ if (btnCreate) {
                 showList();
                 requestLobbies();
                 clearInterval(listInterval);
-                listInterval = setInterval(requestLobbies, 2000);
+                listInterval = setInterval(requestLobbies, 250);
               } else if (res.reason === 'pseudo_taken' || res.reason === 'reserved') {
                 var tr = (window.TRANSLATIONS && (TRANSLATIONS[window.currentLang] || TRANSLATIONS['en'])) || {};
                 if (res.reason === 'reserved') {
@@ -5340,7 +5345,7 @@ if (btnCreate) {
                 showList();
                 requestLobbies();
                 clearInterval(listInterval);
-                listInterval = setInterval(requestLobbies, 2000);
+                listInterval = setInterval(requestLobbies, 250);
               }
             } finally {
               btnJoinList.disabled = false;
@@ -5353,7 +5358,7 @@ if (btnCreate) {
       showList();
       requestLobbies();
       clearInterval(listInterval);
-      listInterval = setInterval(requestLobbies, 2000);
+      listInterval = setInterval(requestLobbies, 250);
 }, { passive: true });
   }
 
@@ -5932,7 +5937,7 @@ try { setVersionBox(); } catch(_){}
       if (panel && panel.style.display === 'block') return; // join list already polling
       socket.emit('requestLobbies'); // reuse existing endpoint
     } catch(e){}
-  }, 2000);
+  }, 250);
 
   // Clean up on unload
   window.addEventListener('beforeunload', function(){ try{ clearInterval(__lobbyCountInterval); }catch(_){}});
