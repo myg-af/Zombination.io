@@ -1565,7 +1565,7 @@ if (lobbyJoin)       lobbyJoin.textContent = TRANSLATIONS[currentLang].join;
           _count = Number(lobbyData.count) || 0;
         }
       } catch(_){ _count = Number(lobbyData && lobbyData.count) || 0; }
-      lobbyPlayers.textContent = `${tr.playersInGame} : ${_count}/${_max}`;
+      //lobbyPlayers.textContent = `${tr.playersInGame} : ${_count}/${_max}`;
       lobbyTimer.textContent = `${tr.timeLeft} : ${lobbyData.timeLeft}s`;
       const readyCount = Object.values(lobbyData.players).filter(p=>p.ready).length;
       lobbyStatus.textContent = `${tr.waitingStart} (${readyCount} ${tr.playersReady}${readyCount>1?'s':''})`;
@@ -5585,8 +5585,17 @@ function renderManualPlayers() {
         count = Number(window.lobbyData.count) || 0;
       }
     } catch(_){ count = Number(window.lobbyData && window.lobbyData.count) || 0; }
-    if (lobbyPlayersEl) lobbyPlayersEl.textContent = showPlayers ? ((tr.playersInGame || 'Players in game') + ' : ' + count + '/' + max) : '';
-    // Hide legacy timer/status unconditionally in this global updater
+
+
+
+if (lobbyPlayersEl) {
+  // Masque totalement la ligne des joueurs en lobby
+  lobbyPlayersEl.textContent = '';
+}
+
+
+
+ // Hide legacy timer/status unconditionally in this global updater
     try { var t = document.getElementById('lobbyTimer'); if (t){ t.style.display='none'; t.textContent=''; } } catch(_){}
     try { var s = document.getElementById('lobbyStatus'); if (s){ s.style.display='none'; s.textContent=''; } } catch(_){}
   } catch(_){}
